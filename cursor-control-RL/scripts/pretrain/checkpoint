@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/sid/cursor-control-RL/scripts/pretrain/trained_decoder.tf"
+all_model_checkpoint_paths: "/home/sid/cursor-control-RL/scripts/pretrain/trained_decoder.tf"
