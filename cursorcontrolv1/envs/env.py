@@ -8,7 +8,6 @@ from gym.envs.classic_control import rendering
 import numpy as np
 from numpy.linalg import norm
 from numpy import random
-from scipy.decomposition import PCA
 
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -22,7 +21,7 @@ MAX_VEL = 10
 class CursorControl(gym.Env):
   def __init__(self):
 
-    self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*2+[0]),np.array([1]*3+[np.inf]*2+[1]))
+    self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
 
     self.max_ep_len = MAX_EP_LEN
@@ -122,8 +121,9 @@ def make_oracle_policy(goal,noise_sd=1):
 if __name__ == '__main__':
   env = CursorControl
   env.render()
-  action = np.array([2*pi,MAX_VEL,1])*random.random
+  action = np.array([2*pi,MAX_VEL,1])*random.random(3)
   for i in range(1000):
-    obs, r, done, debug = env.step((i,i/2,i/1000))
+    obs, r, done, debug = env.step(action)
+    action = (*obs[3:5],obs[-1])
     env.render()
 
