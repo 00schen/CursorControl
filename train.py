@@ -8,7 +8,7 @@ from spinup.utils.run_utils import ExperimentGrid
 
 from env import CursorControl
 
-ENV_NAME = "CursorControl"
+ENV_NAME = "cursorcontrol-v1"
 
 eg = ExperimentGrid(name='sac-tf1-bench')
 eg.add('env_name', ENV_NAME, True)
