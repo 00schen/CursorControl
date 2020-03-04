@@ -119,7 +119,7 @@ def make_oracle_policy(goal,noise_sd=1):
   return policy
 
 if __name__ == '__main__':
-  env = CursorControl
+  env = CursorControl()
   env.render()
   action = np.array([2*pi,MAX_VEL,1])*random.random(3)
   for i in range(1000):
