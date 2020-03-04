@@ -6,8 +6,6 @@ import tensorflow as tf
 from spinup import sac_tf1, td3_tf1
 from spinup.utils.run_utils import ExperimentGrid
 
-from env import CursorControl
-
 ENV_NAME = "cursorcontrol-v1"
 
 eg = ExperimentGrid(name='sac-tf1-bench')
