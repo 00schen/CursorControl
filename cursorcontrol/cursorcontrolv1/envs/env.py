@@ -43,7 +43,6 @@ class CursorControl(gym.Env):
     self.optimal_user_policy = make_oracle_policy(goal)
 
   def step(self, action):
-    print(action)
     vel, click = action[:2],np.rint(action[2])
     opt_act = self.optimal_user_policy(self.pos)
 
@@ -118,4 +117,11 @@ def make_oracle_policy(goal,noise_sd=1):
     dist = norm(goal-pos)
     return add_noise((*((goal-pos)/dist*MAX_VEL),dist<=GOAL_THRESH))
   return policy
+
+if __name__ == '__main__':
+  env = CursorControl
+  env.render()
+  for i in range(1000):
+    env.step((i,i/2,i/1000))
+    env.render()
 

@@ -9,7 +9,7 @@ from spinup.utils.run_utils import ExperimentGrid
 ENV_NAME = "cursorcontrol-v1"
 
 eg = ExperimentGrid(name='sac-tf1-bench')
-eg.add('env_name', ENV_NAME, True)
+eg.add('env_name', ENV_NAME, '',True)
 eg.add('epochs', 10)
 eg.add('steps_per_epoch', 4000)
 eg.add('ac_kwargs:hidden_sizes', [(32,), (64,64)], 'hid')
