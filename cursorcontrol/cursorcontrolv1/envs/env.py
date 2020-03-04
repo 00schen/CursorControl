@@ -8,6 +8,7 @@ from gym.envs.classic_control import rendering
 import numpy as np
 from numpy.linalg import norm
 from numpy import random
+from scipy.decomposition import PCA
 
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
