@@ -5,8 +5,11 @@ import tensorflow as tf
 
 from spinup import sac_tf1, td3_tf1
 from spinup.utils.run_utils import ExperimentGrid
+import gym_pull
 
-ENV_NAME = "cursorcontrol-v1"
+gym_pull.pull('github.com/00schen/CursorControl')
+
+ENV_NAME = '00schen/CursorControl'
 
 eg = ExperimentGrid(name='sac-tf1-bench')
 eg.add('env_name', ENV_NAME, '',True)
