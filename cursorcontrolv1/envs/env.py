@@ -50,7 +50,7 @@ class CursorControl(gym.Env):
     self.pos = np.minimum(np.ones(2), np.maximum(np.zeros(2), self.pos))
     goal_dist = norm(self.pos-self.goal)
     
-    obs = np.array((*goal_dist, self.click, *opt_act))
+    obs = np.array((*self.pos, self.click, *opt_act))
     self.click = click
     self.prev_obs = obs
 
