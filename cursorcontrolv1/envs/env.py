@@ -104,7 +104,7 @@ if __name__ == '__main__':
   env = CursorControl()
   env.render()
   action = np.array([2*np.pi,MAX_VEL,1])*random.random(3)
-  for i in range(1000):
+  for i in range(int(1e8)):
     obs, r, done, debug = env.step(action)
     action = (*obs[3:5],obs[-1])
     env.render()
