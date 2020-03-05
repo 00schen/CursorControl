@@ -75,7 +75,7 @@ class CursorControl(gym.Env):
     self.curr_step = 0 # timestep in current episode
     
     self.succ = 0 #True - most recent episode ended in success
-    self.prev_obs = np.concatenate((self.init,np.zeros(4)))
+    self.prev_obs = np.concatenate((self.init,np.zeros(ORACLE_DIM+2)))
     return self.prev_obs
 
   def render(self):
