@@ -68,7 +68,8 @@ class CursorControl(gym.Env):
 
     info = {
       'goal': self.goal, 'succ': self.succ,
-      'pos': self.curr_step, 'opt_action': opt_act
+      'pos': self.pos, 'opt_action': opt_act,
+      'step': self.curr_step
     }
 
     return obs, r, done, info
@@ -113,4 +114,5 @@ if __name__ == '__main__':
     obs, r, done, debug = env.step(action)
     action = (*obs[3:5],obs[-1])
     env.render()
+    print(debug['pos'])
 
