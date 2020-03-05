@@ -11,17 +11,19 @@ from numpy import random
 
 import pygame
 from pygame.locals import *
+import time
 
 GOAL_THRESH = 2e-3
 ORACLE_DIM = 16
 MAX_EP_LEN = 50
-MAX_VEL = 10
+MAX_VEL = .1
 SCREEN = (500,500)
 
 
 class CursorControl(gym.Env):
   def __init__(self):
     self.screen = pygame.display.set_mode(SCREEN) 
+    self.clock = pygame.time.Clock()
 
     self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
@@ -89,9 +91,10 @@ class CursorControl(gym.Env):
       (np.array([np.cos(self.prev_obs[3]),np.sin(self.prev_obs[3])])*self.prev_obs[4]*500).astype(int),2)
 
     pygame.display.flip()
+    clock.tick(100)
 
 # simulate user with optimal intended actions that go directly to the goal
-def make_oracle_policy(goal,noise_sd=1):
+def make_oracle_policy(goal,noise_sd=.1):
   def add_noise(action):
     noise = random.normal(np.vstack((np.identity(2),np.zeros((ORACLE_DIM-2,2)))),noise_sd)
     return np.array((*(noise@action[:2]),action[2] != (random.random() < .1))) # flip click with p = .1
@@ -106,7 +109,7 @@ if __name__ == '__main__':
   env = CursorControl()
   env.render()
   action = np.array([2*np.pi,MAX_VEL,1])*random.random(3)
-  for i in range(int(1e8)):
+  for i in range(int(1e4)):
     obs, r, done, debug = env.step(action)
     action = (*obs[3:5],obs[-1])
     env.render()
