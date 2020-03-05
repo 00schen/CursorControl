@@ -9,17 +9,19 @@ import numpy as np
 from numpy.linalg import norm
 from numpy import random
 
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import pygame
+from pygame.locals import *
 
-GOAL_THRESH = 1
+GOAL_THRESH = 2e-3
 ORACLE_DIM = 16
 MAX_EP_LEN = 50
 MAX_VEL = 10
+SCREEN = (500,500)
 
 
 class CursorControl(gym.Env):
   def __init__(self):
+    self.screen = pygame.display.set_mode(SCREEN) 
 
     self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
@@ -31,10 +33,10 @@ class CursorControl(gym.Env):
 
     self.pos = copy(self.init) # position
     self.click = False
+    self.prev_action = (0,0,0)
     self.curr_step = 0 # timestep in current episode
-    self.viewer = None
+    
     self.succ = 0 #True - most recent episode ended in success
-
     self.prev_obs = np.concatenate((self.init,np.zeros(4)))
 
   def _set_goal(self):
@@ -44,6 +46,7 @@ class CursorControl(gym.Env):
 
   def step(self, action):
     vel, click = action[:2],np.rint(action[2])
+    vel = np.minimum([2*np.pi, MAX_VEL], max([0,0], vel))
     opt_act = self.optimal_user_policy(self.pos)
 
     self.pos += vel
@@ -53,6 +56,7 @@ class CursorControl(gym.Env):
     obs = np.array((*self.pos, self.click, *opt_act))
     self.click = click
     self.prev_obs = obs
+    self.prev_action = action
 
     self.succ = goal_dist <= GOAL_THRESH
     r = self.succ + 1/goal_dist
@@ -76,36 +80,15 @@ class CursorControl(gym.Env):
     return prev_obs
 
   def render(self):
-    self.viewer = rendering.SimpleImageViewer()
-
-    fig = plt.figure()
-    canvas = FigureCanvas(fig)
-
-    size = 100
-
-    plt.scatter(
-      [self.goal[0]], [self.goal[1]],
-      color='green',
-      linewidth=0, alpha=0.75, marker='o', s=size*5
-    )
-
-    plt.scatter(
-      [self.pos[0]], [self.pos[1]],
-      color='orange',
-      linewidth=0, alpha=0.75, s=size
-    )
-
-    plt.xlim([-0.05, 1.05])
-    plt.ylim([-0.05, 1.05])
-    plt.axis('off')
-
-    agg = canvas.switch_backends(FigureCanvas)
-    agg.draw()
-    width, height = fig.get_size_inches() * fig.get_dpi()
-    self.viewer.imshow(
-      np.fromstring(agg.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3))
-    plt.close()
-
+    self.screen.fill(pygame.color.THECOLORS["white"])
+    pygame.draw.circle(self.screen, (10,10,10,0), self.pos*500, 5)
+    pygame.draw.circle(self.screen, (76,187,23,0), self.goal*500, 1)
+    pygame.draw.line(self.screen, (200, 10, 10), self.pos*500,\
+      self.pos*500+np.array([np.cos(self.prev_action[0]),np.sin(self.prev_action[0])])*self.prev_action[1]*500,\
+      width=2)
+    pygame.draw.line(self.screen, (10, 10, 200), self.pos*500,\
+      self.pos*500+np.array([np.cos(self.prev_obs[3]),np.sin(self.prev_obs[3])])*self.prev_obs[4]*500,\
+      width=2)
 
 # simulate user with optimal intended actions that go directly to the goal
 def make_oracle_policy(goal,noise_sd=1):
@@ -119,6 +102,7 @@ def make_oracle_policy(goal,noise_sd=1):
   return policy
 
 if __name__ == '__main__':
+  pygame.init()
   env = CursorControl()
   env.render()
   action = np.array([2*np.pi,MAX_VEL,1])*random.random(3)
