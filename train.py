@@ -19,7 +19,9 @@ model.save("sac_%s" % time_now)
 obs = env.reset()
 for i in range(100):
     action, _states = model.predict(obs)
-    obs, rewards, dones, info = env.step(action)
+    obs, rewards, done, info = env.step(action)
     env.render()
+    if done:
+        break
 
 env.close()
