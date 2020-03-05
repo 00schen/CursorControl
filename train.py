@@ -1,20 +1,25 @@
 import numpy as np
 import gym
-
 import tensorflow as tf
+import time
 
-from spinup import sac_tf1, td3_tf1
-from spinup.utils.run_utils import ExperimentGrid
-import gym_pull
+import CursorControl
 
-gym_pull.pull('github.com/00schen/CursorControl')
+from stable_baselines.common.policies import MlpPolicy
+from stable_baselines import SAC
 
-ENV_NAME = '00schen/CursorControl'
+env = gym.make('cursorcontrol-v1')
 
-eg = ExperimentGrid(name='sac-tf1-bench')
-eg.add('env_name', ENV_NAME, '',True)
-eg.add('epochs', 10)
-eg.add('steps_per_epoch', 4000)
-eg.add('ac_kwargs:hidden_sizes', [(32,), (64,64)], 'hid')
-eg.add('ac_kwargs:activation', [tf.tanh, tf.nn.relu], '')
-eg.run(sac_tf1, num_cpu=2)
+model = SAC(MlpPolicy, env, verbose=1)
+model.learn(total_timesteps=10000)
+print("Training Done")
+time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
+model.save("sac_%s" % time_now)
+
+obs = env.reset()
+for i in range(1000):
+    action, _states = model.predict(obs)
+    obs, rewards, dones, info = env.step(action)
+    env.render()
+
+env.close()
