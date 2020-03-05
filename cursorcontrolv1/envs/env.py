@@ -46,7 +46,7 @@ class CursorControl(gym.Env):
 
   def step(self, action):
     vel, click = action[:2],np.rint(action[2])
-    vel = np.minimum([2*np.pi, MAX_VEL], max([0,0], vel))
+    vel = np.minimum([2*np.pi, MAX_VEL], np.maximum([0,0], vel))
     opt_act = self.optimal_user_policy(self.pos)
 
     self.pos += vel
