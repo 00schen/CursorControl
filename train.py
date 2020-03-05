@@ -5,7 +5,7 @@ import time
 
 import CursorControl
 
-from stable_baselines.common.policies import MlpPolicy
+from stable_baselines.sac import MlpPolicy
 from stable_baselines import SAC
 
 env = gym.make('cursorcontrol-v1')
