@@ -81,8 +81,8 @@ class CursorControl(gym.Env):
 
   def render(self):
     self.screen.fill(pygame.color.THECOLORS["white"])
-    pygame.draw.circle(self.screen, (10,10,10,0), self.pos*500, 5)
-    pygame.draw.circle(self.screen, (76,187,23,0), self.goal*500, 1)
+    pygame.draw.circle(self.screen, (10,10,10,0), self.pos*500, 5.0)
+    pygame.draw.circle(self.screen, (76,187,23,0), self.goal*500, 1.0)
     pygame.draw.line(self.screen, (200, 10, 10), self.pos*500,\
       self.pos*500+np.array([np.cos(self.prev_action[0]),np.sin(self.prev_action[0])])*self.prev_action[1]*500,\
       width=2)
