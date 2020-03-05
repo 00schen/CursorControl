@@ -92,7 +92,7 @@ class CursorControl(gym.Env):
       (np.array([np.cos(self.prev_obs[3]),np.sin(self.prev_obs[3])])*self.prev_obs[4]*500).astype(int),2)
 
     pygame.display.flip()
-    self.clock.tick(10)
+    self.clock.tick(2)
 
 # simulate user with optimal intended actions that go directly to the goal
 def make_oracle_policy(goal,noise_sd=.1):
@@ -110,9 +110,9 @@ if __name__ == '__main__':
   env = CursorControl()
   env.render()
   action = np.array([2*np.pi,MAX_VEL,1])*random.random(3)
-  for i in range(1000):
+  for i in range(100):
     obs, r, done, debug = env.step(action)
     action = (*obs[3:5],obs[-1])
     env.render()
-    print(debug['opt_act'])
+    print(debug['opt_action'])
 
