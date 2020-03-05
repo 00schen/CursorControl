@@ -17,7 +17,7 @@ time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
 model.save("sac_%s" % time_now)
 
 obs = env.reset()
-for i in range(1000):
+for i in range(100):
     action, _states = model.predict(obs)
     obs, rewards, dones, info = env.step(action)
     env.render()
