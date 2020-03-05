@@ -21,25 +21,17 @@ SCREEN_SIZE = 500
 
 
 class CursorControl(gym.Env):
-  def __init__(self):
-    self.screen = pygame.display.set_mode((SCREEN_SIZE,SCREEN_SIZE)) 
-    self.clock = pygame.time.Clock()
-
+  def __init__(self,max_ep_len=MAX_EP_LEN):
     self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
 
-    self.max_ep_len = MAX_EP_LEN
+    self.max_ep_len = max_ep_len
 
     self.init = .5*np.ones(2)
-    self._set_goal()
-
-    self.pos = copy(self.init) # position
-    self.click = False
-    self.prev_action = (0,0,0)
-    self.curr_step = 0 # timestep in current episode
     
-    self.succ = 0 #True - most recent episode ended in success
-    self.prev_obs = np.concatenate((self.init,np.zeros(4)))
+    self.reset()
+
+    self.do_render = False # will automatically set to true the first time .render is called
 
   def _set_goal(self):
     goal = random.random(2)
@@ -75,14 +67,20 @@ class CursorControl(gym.Env):
     return obs, r, done, info
 
   def reset(self):
+    self._set_goal()
+
     self.pos = copy(self.init) # position
     self.click = False
+    self.prev_action = (0,0,0)
     self.curr_step = 0 # timestep in current episode
-    prev_obs = self.prev_obs
+    
+    self.succ = 0 #True - most recent episode ended in success
     self.prev_obs = np.concatenate((self.init,np.zeros(4)))
-    return prev_obs
+    return self.prev_obs
 
   def render(self):
+    if not self.do_render:
+      self._setup_render()
     self.screen.fill(pygame.color.THECOLORS["white"])
     pygame.draw.circle(self.screen, (10,10,10,0), (self.pos*SCREEN_SIZE).astype(int), 8)
     pygame.draw.circle(self.screen, (76,187,23,0), (self.goal*SCREEN_SIZE).astype(int), 5)
@@ -93,6 +91,12 @@ class CursorControl(gym.Env):
 
     pygame.display.flip()
     self.clock.tick(2)
+
+  def _setup_render(self):
+    pygame.init()
+    self.screen = pygame.display.set_mode((SCREEN_SIZE,SCREEN_SIZE)) 
+    self.clock = pygame.time.Clock()
+    self.do_render = True
 
 # simulate user with optimal intended actions that go directly to the goal
 def make_oracle_policy(goal,noise_sd=.01):
@@ -117,6 +121,7 @@ if __name__ == '__main__':
   env = CursorControl()
   env.render()
   agent = naiveAgent()
+
   action = agent.predict()
   for i in range(100):
     obs, r, done, debug = env.step(action)
@@ -124,4 +129,16 @@ if __name__ == '__main__':
     env.render()
     if done:
       break
+
+  env.reset()
+
+  action = agent.predict()
+  for i in range(100):
+    obs, r, done, debug = env.step(action)
+    action = agent.predict(obs,r)
+    env.render()
+    if done:
+      break
+
+
 
