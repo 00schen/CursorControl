@@ -27,7 +27,7 @@ for max_ep_len in max_ep_lens:
   env.set_max_ep_len(max_ep_len)
   env = Monitor(env, log_path)
 
-  model = SAC(MlpPolicy, env, verbose=1)
+  model = SAC(MlpPolicy, env, gamma=.1, verbose=1)
   callback = callbacks.EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
 
   model.learn(total_timesteps=time_steps,callback=callback)
