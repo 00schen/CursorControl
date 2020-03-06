@@ -12,7 +12,7 @@ import pygame
 from pygame.locals import *
 import time
 
-MAX_EP_LEN = 30
+MAX_EP_LEN = 250
 GOAL_THRESH = .02
 MAX_VEL = .1
 
