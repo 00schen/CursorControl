@@ -1,8 +1,5 @@
-import numpy as np
 import gym
-import tensorflow as tf
-import time
-
+import sys
 import CursorControl
 
 from stable_baselines.sac import MlpPolicy
