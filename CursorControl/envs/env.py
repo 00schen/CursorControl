@@ -4,7 +4,6 @@ from collections import namedtuple
 
 import gym
 from gym import spaces
-from gym.envs.classic_control import rendering
 import numpy as np
 from numpy.linalg import norm
 from numpy import random
