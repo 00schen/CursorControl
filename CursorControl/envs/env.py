@@ -12,7 +12,7 @@ import pygame
 from pygame.locals import *
 import time
 
-MAX_EP_LEN = 500
+MAX_EP_LEN = 30
 GOAL_THRESH = .02
 MAX_VEL = .1
 
@@ -23,17 +23,20 @@ SCREEN_SIZE = 500
 
 
 class CursorControl(gym.Env):
-  def __init__(self,max_ep_len=MAX_EP_LEN):
+  def __init__(self):
     self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
 
-    self.max_ep_len = max_ep_len
+    self.max_ep_len = MAX_EP_LEN
 
     self.init = .5*np.ones(2)
     
     self.reset()
 
     self.do_render = False # will automatically set to true the first time .render is called
+
+  def set_max_ep_len(self, max_ep_len):
+    self.max_ep_len = max_ep_len
 
   def _set_goal(self):
     goal = random.random(2)
@@ -55,7 +58,7 @@ class CursorControl(gym.Env):
     self.prev_action = action
 
     self.succ = goal_dist <= GOAL_THRESH
-    r = self.succ*500 + 1/goal_dist - 50*self.curr_step
+    r = self.succ*500 + 1/goal_dist - 10
 
     self.curr_step += 1
     done = self.succ or self.curr_step >= self.max_ep_len

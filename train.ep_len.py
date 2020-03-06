@@ -15,34 +15,35 @@ from stable_baselines.common import callbacks
 
 eval_env = gym.make('cursorcontrol-v1')
 time_steps = int(5e4)
-gammas = [.1,.3,.5,.7]
+max_ep_lens = [50,100,200,500]
 
-for gamma in gammas:
-  best_model_save_path = "sac_best_%f" % gamma
-  log_path = "sac_%f" % gamma
+for max_ep_len in max_ep_lens:
+  best_model_save_path = "sac_best_%f" % max_ep_len
+  log_path = "sac_%f" % max_ep_len
   os.makedirs(best_model_save_path, exist_ok=True)
   os.makedirs(log_path, exist_ok=True)
 
   env = gym.make('cursorcontrol-v1')
+  env.set_max_ep_len(max_ep_len)
   env = Monitor(env, log_path)
 
-  model = SAC(MlpPolicy, env, gamma=gamma, verbose=1)
+  model = SAC(MlpPolicy, env, verbose=1)
   callback = callbacks.EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
 
   model.learn(total_timesteps=time_steps,callback=callback)
   print("Training Done")
 
-results_plotter.plot_results(["sac_%f" % gamma for gamma in gammas], time_steps, results_plotter.X_TIMESTEPS, "SAC CursorControl")
+results_plotter.plot_results(["sac_%f" % max_ep_len for max_ep_len in max_ep_lens], time_steps, results_plotter.X_TIMESTEPS, "SAC CursorControl")
 plt.show()
 
-for gamma in gammas:
+for max_ep_len in max_ep_lens:
   env = gym.make('cursorcontrol-v1')
-  model.load("sac_best_%f/best_model" % gamma)
+  model.load("sac_best_%f/best_model" % max_ep_len)
   obs = env.reset()
   for i in range(100):
     action, _states = model.predict(obs)
     obs, rewards, done, info = env.step(action)
-    env.render("gamma: %f"% gamma)
+    env.render("max_ep_len: %f"% max_ep_len)
     if done:
       break
 
