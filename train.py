@@ -10,8 +10,7 @@ from stable_baselines.sac import MlpPolicy
 from stable_baselines import SAC
 from stable_baselines import results_plotter
 from stable_baselines.bench import Monitor
-from stable_baselines.results_plotter import load_results, ts2xy
-from stable_baselines.common.callbacks import EvalCallback
+from stable_baselines.common import callbacks
 
 
 time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
@@ -25,7 +24,7 @@ env = Monitor(env, log_path)
 eval_env = gym.make('cursorcontrol-v1')
 
 model = SAC(MlpPolicy, env, verbose=1)
-callback = EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
+callback = callbacks.EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
 
 time_steps = int(1e6)
 
