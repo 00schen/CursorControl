@@ -27,7 +27,7 @@ eval_env = gym.make('cursorcontrol-v1')
 model = SAC(MlpPolicy, env, verbose=1)
 callback = callbacks.EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
 
-time_steps = int(1e4)
+time_steps = int(1e5)
 
 model.learn(total_timesteps=time_steps,callback=callback)
 print("Training Done")
