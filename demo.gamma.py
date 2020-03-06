@@ -14,6 +14,7 @@ from stable_baselines.common import callbacks
 
 
 eval_env = gym.make('cursorcontrol-v1')
+env = gym.make('cursorcontrol-v1')
 time_steps = int(5e4)
 gammas = [.1,.3,.5,.7]
 
