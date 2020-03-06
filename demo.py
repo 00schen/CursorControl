@@ -13,7 +13,7 @@ best_model_save_path = "%s" % sys.argv[2]
 
 model = SAC(MlpPolicy, env, verbose=1)
 model.load(best_model_save_path)
-time_steps = int(1e6)
+time_steps = int(1e5)
 
 results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
