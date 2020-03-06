@@ -1,6 +1,7 @@
 import gym
 import sys
 import CursorControl
+import matplotlib.pyplot as plt
 
 from stable_baselines.sac import MlpPolicy
 from stable_baselines import SAC
