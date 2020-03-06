@@ -9,9 +9,10 @@ from stable_baselines import results_plotter
 
 env = gym.make('cursorcontrol-v1')
 log_path = "%s" % sys.argv[1]
+best_model_save_path = "%s" % sys.argv[2]
 
 model = SAC(MlpPolicy, env, verbose=1)
-model.load(log_path)
+model.load(best_model_save_path)
 time_steps = int(1e6)
 
 results_plotter.plot_results([log_path], time_steps, results_plotter.X_TIMESTEPS, "SAC CursorControl")
