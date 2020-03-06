@@ -12,10 +12,13 @@ import pygame
 from pygame.locals import *
 import time
 
-GOAL_THRESH = .01
-ORACLE_DIM = 16
-MAX_EP_LEN = 50
+MAX_EP_LEN = 30
+GOAL_THRESH = .02
 MAX_VEL = .1
+
+ORACLE_NOISE = .1
+ORACLE_DIM = 16
+
 SCREEN_SIZE = 500
 
 
@@ -77,7 +80,7 @@ class CursorControl(gym.Env):
     self.prev_obs = np.concatenate((self.init,np.zeros(ORACLE_DIM+2)))
     return self.prev_obs
 
-  def render(self):
+  def render(self, label=None):
     if not self.do_render:
       self._setup_render()
     self.screen.fill(pygame.color.THECOLORS["white"])
@@ -87,6 +90,12 @@ class CursorControl(gym.Env):
       (np.array([np.cos(self.prev_action[0]),np.sin(self.prev_action[0])])*self.prev_action[1]*SCREEN_SIZE).astype(int),2)
     pygame.draw.line(self.screen, (10, 10, 200), (self.pos*SCREEN_SIZE).astype(int), (self.pos*SCREEN_SIZE).astype(int)+\
       (np.array([np.cos(self.prev_obs[3]),np.sin(self.prev_obs[3])])*self.prev_obs[4]*SCREEN_SIZE).astype(int),2)
+
+    if label:
+      font = pygame.font.Font(None, 24)
+      text = label
+      text = font.render(text, 1, pygame.color.THECOLORS["black"])
+      self.screen.blit(text, (5,5))
 
     pygame.display.flip()
     self.clock.tick(2)
@@ -98,9 +107,9 @@ class CursorControl(gym.Env):
     self.do_render = True
 
 # simulate user with optimal intended actions that go directly to the goal
-def make_oracle_policy(goal,noise_sd=.01):
+def make_oracle_policy(goal):
   def add_noise(action):
-    noise = random.normal(np.vstack((np.identity(2),np.zeros((ORACLE_DIM-2,2)))),noise_sd)
+    noise = random.normal(np.vstack((np.identity(2),np.zeros((ORACLE_DIM-2,2)))),ORACLE_NOISE)
     return np.array((*(noise@action[:2]),action[2] != (random.random() < .1))) # flip click with p = .1
 
   def policy(pos):
@@ -125,7 +134,7 @@ if __name__ == '__main__':
   for i in range(100):
     obs, r, done, debug = env.step(action)
     action = agent.predict(obs,r)
-    env.render()
+    env.render("test")
     if done:
       break
 
