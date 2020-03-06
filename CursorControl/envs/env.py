@@ -12,7 +12,7 @@ import pygame
 from pygame.locals import *
 import time
 
-MAX_EP_LEN = 250
+MAX_EP_LEN = 500
 GOAL_THRESH = .02
 MAX_VEL = .1
 
@@ -55,7 +55,7 @@ class CursorControl(gym.Env):
     self.prev_action = action
 
     self.succ = goal_dist <= GOAL_THRESH
-    r = self.succ*500 + 1/goal_dist
+    r = self.succ*500 + 1/goal_dist - 10
 
     self.curr_step += 1
     done = self.succ or self.curr_step >= self.max_ep_len
