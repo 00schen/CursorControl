@@ -5,18 +5,7 @@ import matplotlib.pyplot as plt
 
 from stable_baselines.sac import MlpPolicy
 from stable_baselines import SAC
-from stable_baselines.results_plotter import ts2xy, load_results, plot_curves, X_EPISODES
-
-def plot_results(dirs, num_timesteps, xaxis, task_name):
-    tslist = []
-    for folder in dirs:
-        timesteps = load_results(folder)
-        if num_timesteps is not None:
-            timesteps = timesteps[timesteps.l.cumsum() <= num_timesteps]
-        tslist.append(timesteps)
-    xy_list = [ts2xy(timesteps_item, xaxis) for timesteps_item in tslist]
-    plot_curves(xy_list, xaxis, task_name)
-    plt.legend(list(zip(*xy_list))[0],[s.replace("sac_best_","") for s in dirs])
+from stable_baselines import results_plotter
 
 env = gym.make('cursorcontrol-v1')
 log_path = "%s" % sys.argv[1]
