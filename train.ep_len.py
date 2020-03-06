@@ -33,7 +33,7 @@ for max_ep_len in max_ep_lens:
   model.learn(total_timesteps=time_steps,callback=callback)
   print("Training Done")
 
-results_plotter.plot_results(["sac_%f" % max_ep_len for max_ep_len in max_ep_lens], time_steps, results_plotter.X_TIMESTEPS, "SAC CursorControl")
+results_plotter.plot_results(["sac_%f" % max_ep_len for max_ep_len in max_ep_lens], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
 
 for max_ep_len in max_ep_lens:

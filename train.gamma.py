@@ -32,7 +32,7 @@ for gamma in gammas:
   model.learn(total_timesteps=time_steps,callback=callback)
   print("Training Done")
 
-results_plotter.plot_results(["sac_%f" % gamma for gamma in gammas], time_steps, results_plotter.X_TIMESTEPS, "SAC CursorControl")
+results_plotter.plot_results(["sac_%f" % gamma for gamma in gammas], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
 
 for gamma in gammas:
