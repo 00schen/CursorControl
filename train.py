@@ -22,7 +22,7 @@ def plot_results(dirs, num_timesteps, xaxis, task_name):
         tslist.append(timesteps)
     xy_list = [ts2xy(timesteps_item, xaxis) for timesteps_item in tslist]
     plot_curves(xy_list, xaxis, task_name)
-    plt.legend(zip(*xy_list),[s.replace("sac_best_","") for s in dirs])
+    plt.legend(list(zip(*xy_list))[0],[s.replace("sac_best_","") for s in dirs])
 
 time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
 best_model_save_path = "sac_best_%s" % time_now
