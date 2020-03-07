@@ -62,6 +62,7 @@ class CursorControl(gym.Env):
     self.prev_action = action
 
     r = self.succ + (1/goal_dist/50 if goal_dist else 50)
+    r *= -1
 
     self.curr_step += 1
     done = self.curr_step >= self.max_ep_len
