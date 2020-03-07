@@ -24,7 +24,7 @@ SCREEN_SIZE = 500
 
 class CursorControl(gym.Env):
   def __init__(self):
-    self.observation_space = spaces.Box(np.array([0]*3+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*3+[np.inf]*ORACLE_DIM+[1]))
+    self.observation_space = spaces.Box(np.array([0]*5+[-np.inf]*ORACLE_DIM+[0]),np.array([1]*5+[np.inf]*ORACLE_DIM+[1]))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,MAX_VEL,1]))
 
     self.max_ep_len = MAX_EP_LEN
@@ -56,13 +56,12 @@ class CursorControl(gym.Env):
     goal_dist = norm(self.pos-self.goal)
     self.succ = goal_dist <= GOAL_THRESH and self.click
       
-    obs = np.array((*self.pos, self.click, *opt_act))
+    obs = np.array((*self.pos, *(self.pos-self.prev_obs[0:2]), self.click, *opt_act))
     
     self.prev_obs = obs
     self.prev_action = action
 
-    r = self.succ + (1/goal_dist/50 if goal_dist else 1)
-    r *= -1
+    r = self.succ + (1/goal_dist/50 if goal_dist else 50)
 
     self.curr_step += 1
     done = self.curr_step >= self.max_ep_len
@@ -84,7 +83,7 @@ class CursorControl(gym.Env):
     self.curr_step = 0 # timestep in current episode
     
     self.succ = 0 #True - most recent episode ended in success
-    self.prev_obs = np.concatenate((self.init,np.zeros(ORACLE_DIM+2)))
+    self.prev_obs = np.concatenate((self.init,np.zeros(2+ORACLE_DIM+2)))
     return self.prev_obs
 
   def render(self, label=None):
@@ -96,7 +95,7 @@ class CursorControl(gym.Env):
     pygame.draw.line(self.screen, (200, 10, 10), (self.pos*SCREEN_SIZE).astype(int), (self.pos*SCREEN_SIZE).astype(int)+\
       (np.array([np.cos(self.prev_action[0]),np.sin(self.prev_action[0])])*self.prev_action[1]*SCREEN_SIZE).astype(int),2)
     pygame.draw.line(self.screen, (10, 10, 200), (self.pos*SCREEN_SIZE).astype(int), (self.pos*SCREEN_SIZE).astype(int)+\
-      (np.array([np.cos(self.prev_obs[3]),np.sin(self.prev_obs[3])])*self.prev_obs[4]*SCREEN_SIZE).astype(int),2)
+      (np.array([np.cos(self.prev_obs[5]),np.sin(self.prev_obs[5])])*self.prev_obs[6]*SCREEN_SIZE).astype(int),2)
 
     if label:
       font = pygame.font.Font(None, 24)
@@ -131,7 +130,7 @@ class naiveAgent():
   def predict(self,obs=None,r=None):
     if r == None:
       return np.array([2*np.pi,MAX_VEL,1])*random.random(3)
-    return (*obs[3:5],obs[-1])
+    return (*obs[5:7],obs[-1])
 
 if __name__ == '__main__':
   pygame.init()
