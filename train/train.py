@@ -14,8 +14,8 @@ from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
 time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
-best_model_save_path = "sac_best_%s" % time_now
-log_path = "sac_%s" % time_now
+best_model_save_path = "../sac_best_%s" % time_now
+log_path = "../sac_%s" % time_now
 os.makedirs(best_model_save_path, exist_ok=True)
 os.makedirs(log_path, exist_ok=True)
 

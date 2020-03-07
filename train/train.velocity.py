@@ -13,8 +13,8 @@ from stable_baselines import results_plotter
 from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
-best_model_save_path = "sac_best_velocity"
-log_path = "sac_velocity"
+best_model_save_path = "../sac_best_velocity"
+log_path = "../sac_velocity"
 os.makedirs(best_model_save_path, exist_ok=True)
 os.makedirs(log_path, exist_ok=True)
 
