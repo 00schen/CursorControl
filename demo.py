@@ -15,7 +15,7 @@ model = SAC(MlpPolicy, env, verbose=1)
 model.load(best_model_save_path)
 time_steps = int(1e5)
 
-plot_results([log_path], time_steps, X_EPISODES, "SAC CursorControl")
+results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
 
 obs = env.reset()
