@@ -48,20 +48,22 @@ class CursorControl(gym.Env):
     vel = np.minimum([2*np.pi, MAX_VEL], np.maximum([0,0], vel))
     opt_act = self.optimal_user_policy(self.pos)
 
-    self.pos += vel[1]*np.array([np.cos(vel[0]),np.sin(vel[0])])
-    self.pos = np.minimum(np.ones(2), np.maximum(np.zeros(2), self.pos))
-    goal_dist = norm(self.pos-self.goal)
-    
+    if not self.succ:
+      self.pos += vel[1]*np.array([np.cos(vel[0]),np.sin(vel[0])])
+      self.pos = np.minimum(np.ones(2), np.maximum(np.zeros(2), self.pos))
+      goal_dist = norm(self.pos-self.goal)
+      self.click = click
+      self.succ = goal_dist <= GOAL_THRESH and self.click
+      
     obs = np.array((*self.pos, self.click, *opt_act))
-    self.click = click
+    
     self.prev_obs = obs
     self.prev_action = action
 
-    self.succ = goal_dist <= GOAL_THRESH
-    r = (1/max(self.curr_step,1) if self.succ else 0) + (1/goal_dist/50 if goal_dist else 50)
+    r = self.succ + (1/goal_dist/50 if goal_dist else 50)
 
     self.curr_step += 1
-    done = self.succ or self.curr_step >= self.max_ep_len
+    done = self.curr_step >= self.max_ep_len
 
     info = {
       'goal': self.goal, 'succ': self.succ,
