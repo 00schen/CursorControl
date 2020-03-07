@@ -13,8 +13,8 @@ from stable_baselines import results_plotter
 from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
-best_model_save_path = "../sac_best_velocity"
-log_path = "../sac_velocity"
+best_model_save_path = "../logs/sac_best_velocity"
+log_path = "../logs/sac_velocity"
 os.makedirs(best_model_save_path, exist_ok=True)
 os.makedirs(log_path, exist_ok=True)
 
@@ -25,7 +25,7 @@ eval_env = gym.make('cursorcontrol-v1')
 model = SAC(MlpPolicy, env, verbose=1)
 callback = callbacks.EvalCallback(eval_env, best_model_save_path=best_model_save_path, log_path=log_path)
 
-time_steps = int(2e4)
+time_steps = int(1e6)
 
 model.learn(total_timesteps=time_steps,callback=callback)
 print("Training Done")
@@ -33,6 +33,7 @@ print("Training Done")
 results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
 
+model.load(best_model_save_path+'/best_model')
 obs = env.reset()
 for i in range(100):
     action, _states = model.predict(obs)
