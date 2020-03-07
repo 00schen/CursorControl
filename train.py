@@ -31,7 +31,7 @@ time_steps = int(2e4)
 model.learn(total_timesteps=time_steps,callback=callback)
 print("Training Done")
 
-plot_results([log_path], time_steps, X_EPISODES, "SAC CursorControl")
+results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
 
 obs = env.reset()
