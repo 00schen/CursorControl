@@ -52,7 +52,7 @@ class CursorControl(gym.Env):
       self.pos += vel[1]*np.array([np.cos(vel[0]),np.sin(vel[0])])
       self.pos = np.minimum(np.ones(2), np.maximum(np.zeros(2), self.pos))
       self.click = click
-      
+
     goal_dist = norm(self.pos-self.goal)
     self.succ = goal_dist <= GOAL_THRESH and self.click
       
@@ -121,7 +121,9 @@ def make_oracle_policy(goal):
   def policy(pos):
     comp = goal-pos
     vel = ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi), min(MAX_VEL,norm(comp)))
-    return add_noise((*vel,norm(comp)<=GOAL_THRESH))
+    # return add_noise((*vel,norm(comp)<=GOAL_THRESH))
+    return (*vel,norm(comp)<=GOAL_THRESH)
+
   return policy
 
 class naiveAgent():
