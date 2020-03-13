@@ -7,3 +7,6 @@ register(id='cursorcontrol-v0',
 register(id='cursorcontrol-v1',
         entry_point='CursorControl.envs:CursorControl1',
         )
+register(id='cursorcontrol-v2',
+        entry_point='CursorControl.envs:CursorControl2',
+        )
