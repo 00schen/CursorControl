@@ -14,46 +14,27 @@ from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
 # time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
-log_path = "../logs/sac_%s" % 'reward_gamma'
-os.makedirs(log_path, exist_ok=True)
+log_path = "../logs/sac_%s" % 'pred_goal'
 
-env = gym.make('cursorcontrol-v1')
-eval_env = gym.make('cursorcontrol-v1')
-
-noise = 0
+noise = 0.05
 gamma = .9
+penalty = 100
+rollout = 3
+params = {'oracle_noise':noise,'gamma':gamma,'penalty':penalty,'rollout':rollout}
 
-env.set_gamma(gamma)
-eval_env.set_gamma(gamma)
-env.set_oracle_noise(noise)
-eval_env.set_oracle_noise(noise)
+env = gym.make('cursorcontrol-v1',**params)
+eval_env = gym.make('cursorcontrol-v1',**params)
+
 env = Monitor(env, log_path)
 model = SAC(MlpPolicy, env, gamma=gamma, verbose=1)
-callback = callbacks.EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path)
+callback = callbacks.CallbackList([
+        callbacks.EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path),
+        callbacks.CheckpointCallback(save_freq=int(5e4), save_path=log_path)])
 
-time_steps = int(2e4)
+time_steps = int(5e5)
 
 model.learn(total_timesteps=time_steps,callback=callback)
 print("Training Done")
 
 results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC CursorControl")
 plt.show()
-
-model = SAC.load(log_path+"/best_model",env)
-obs = env.reset()
-for i in range(100):
-    action, _states = model.predict(obs)
-    obs, rewards, done, info = env.step(action)
-    env.render()
-    if done:
-        break
-
-obs = env.reset()
-for i in range(100):
-    action, _states = model.predict(obs)
-    obs, rewards, done, info = env.step(action)
-    env.render()
-    if done:
-        break
-
-env.close()
