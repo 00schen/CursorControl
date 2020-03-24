@@ -1,2 +1,4 @@
 gym
 tensorflow
+stable-baselines
+pygame

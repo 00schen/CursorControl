@@ -30,17 +30,19 @@ class CursorControl(gym.Env):
 
   penalty = 10
 
-  def __init__(self, max_ep_len=30, oracle_noise=.1, gamma=.9, rollout=3, penalty=10):
+  def __init__(self, max_ep_len=30, oracle_noise=.1, gamma=.9, rollout=3, penalty=10, oracle_dim=16):
+    self.N = rollout
+    self.MAX_EP_LEN = max_ep_len
+    self.ORACLE_DIM = oracle_dim
+    self.ORACLE_NOISE = oracle_noise
+    self.GAMMA = gamma
+    self.penalty = penalty
+    
     self.observation_space = spaces.Box(np.array(([0]*3+[-np.inf]*self.ORACLE_DIM+[0])*self.N),\
       np.array(([1]*3+[np.inf]*self.ORACLE_DIM+[1])*self.N))
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,self.MAX_VEL,1]))
 
     self.init = .5*np.ones(2)
-
-    self.MAX_EP_LEN = max_ep_len
-    self.ORACLE_NOISE = oracle_noise
-    self.GAMMA = gamma
-    self.penalty = penalty
 
     self.reset()
 
