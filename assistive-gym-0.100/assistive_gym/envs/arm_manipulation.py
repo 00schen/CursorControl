@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import pybullet as p
 
-from env import AssistiveEnv
+from .env import AssistiveEnv
 
 class ArmManipulationEnv(AssistiveEnv):
     def __init__(self, robot_type='pr2', human_control=False):

@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pybullet as p
-from human_creation import HumanCreation
+from .human_creation import HumanCreation
 
 class WorldCreation:
     def __init__(self, pid, robot_type='pr2', task='scratch_itch', time_step=0.02, np_random=None, config=None):

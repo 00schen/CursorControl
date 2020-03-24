@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import pybullet as p
 
-from env import AssistiveEnv
+from .env import AssistiveEnv
 
 class ScratchItchEnv(AssistiveEnv):
     def __init__(self, robot_type='pr2', human_control=False):
@@ -78,7 +78,6 @@ class ScratchItchEnv(AssistiveEnv):
         shoulder_pos, shoulder_orient = p.getLinkState(self.human, 5, computeForwardKinematics=True, physicsClientId=self.id)[:2]
         elbow_pos, elbow_orient = p.getLinkState(self.human, 7, computeForwardKinematics=True, physicsClientId=self.id)[:2]
         wrist_pos, wrist_orient = p.getLinkState(self.human, 9, computeForwardKinematics=True, physicsClientId=self.id)[:2]
-
         robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, tool_pos - self.target_pos, self.target_pos-torso_pos, robot_joint_positions, shoulder_pos-torso_pos, elbow_pos-torso_pos, wrist_pos-torso_pos, forces]).ravel()
         if self.human_control:
             human_obs = np.concatenate([tool_pos-human_pos, tool_orient, tool_pos - self.target_pos, self.target_pos-human_pos, human_joint_positions, shoulder_pos-human_pos, elbow_pos-human_pos, wrist_pos-human_pos, forces_human]).ravel()

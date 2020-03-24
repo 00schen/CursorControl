@@ -1,4 +1,4 @@
-from scratch_itch import ScratchItchEnv
+from .scratch_itch import ScratchItchEnv
 
 class ScratchItchPR2Env(ScratchItchEnv):
     def __init__(self):

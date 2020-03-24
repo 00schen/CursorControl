@@ -1,4 +1,4 @@
-from arm_manipulation import ArmManipulationEnv
+from .arm_manipulation import ArmManipulationEnv
 
 class ArmManipulationPR2Env(ArmManipulationEnv):
     def __init__(self):

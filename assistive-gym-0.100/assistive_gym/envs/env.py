@@ -7,8 +7,8 @@ import pybullet as p
 # import cv2
 from keras.models import load_model
 
-from util import Util
-from world_creation import WorldCreation
+from .util import Util
+from .world_creation import WorldCreation
 
 class AssistiveEnv(gym.Env):
     def __init__(self, robot_type='pr2', task='scratch_itch', human_control=False, frame_skip=5, time_step=0.02, action_robot_len=7, action_human_len=0, obs_robot_len=30, obs_human_len=0):
