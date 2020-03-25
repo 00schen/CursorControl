@@ -14,7 +14,7 @@ from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
 # time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
-log_path = "../logs/sac_%s" % 'pred_goal'
+log_path = "../logs/sac_%s" % 'penalty_100_1'
 
 noise = 0.05
 gamma = .9
@@ -22,8 +22,8 @@ penalty = 100
 rollout = 3
 params = {'oracle_noise':noise,'gamma':gamma,'penalty':penalty,'rollout':rollout}
 
-env = gym.make('cursorcontrol-v1',**params)
-eval_env = gym.make('cursorcontrol-v1',**params)
+env = gym.make('cursorcontrol-v0',**params)
+eval_env = gym.make('cursorcontrol-v0',**params)
 
 env = Monitor(env, log_path)
 model = SAC(MlpPolicy, env, gamma=gamma, verbose=1)
@@ -31,7 +31,7 @@ callback = callbacks.CallbackList([
         callbacks.EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path),
         callbacks.CheckpointCallback(save_freq=int(5e4), save_path=log_path)])
 
-time_steps = int(5e5)
+time_steps = int(1e6)
 
 model.learn(total_timesteps=time_steps,callback=callback)
 print("Training Done")
