@@ -1,67 +1,99 @@
 from .scratch_itch_robots import ScratchItchJacoEnv
 import numpy as np
 import pybullet as p
-from gym import spaces
+from gym import spaces,make
 import numpy.random as random
+from numpy.linalg import norm
+from copy import deepcopy
 
 import torch
-# import torch.nn as nn
-# import torch.optim as optim
-# import torch.nn.functional as F
 
-from numpy.linalg import norm
+from a2c_ppo_acktr.envs import VecPyTorch, make_vec_envs
+from a2c_ppo_acktr.utils import get_render_func, get_vec_normalize
+
+
 model_path = "trained_models/ppo/ScratchItchJaco-v0.pt"
 
 class ScratchItchJacoOracleEnv(ScratchItchJacoEnv):
     N=3
     ORACLE_DIM = 16
     ORACLE_NOISE = 0.0
+    def __init__(self):
+        actor_critic, ob_rms = torch.load(model_path)
+
+        dummy_env = make('ScratchItchJaco-v0')
+        self.action_space = dummy_env.action_space
+        self.observation_space = dummy_env.observation_space
+
+        env = make_vec_envs('ScratchItchJaco-v0', 1001, 1, None, None,
+                    False, device='cpu', allow_early_resets=False)
+        vec_norm = get_vec_normalize(env)
+        if vec_norm is not None:
+            vec_norm.eval()
+            vec_norm.ob_rms = ob_rms
+        self.env = env
+
+        self.oracle = PretrainOracle(actor_critic)
+
+        render_func = get_render_func(env)
+        self.render = lambda: render_func('human') if render_func is not None else None
 
     def step(self,action):
-        obs,r,done,info = super(ScratchItchJacoOracleEnv,self).step(action)
+        obs,r,done,info = self.env.step(action)
+        done,info = done[0],info[0]
+        self.tool_pos,self.torso_pos,self.real_step = info['tool_pos'],info['torso_pos'],info['real_step']
 
-        opt_act = self.oracle.predict(obs,done)
-        tool_pos = self._get_tool_pos()
-        obs_2d = [*(tool_pos[:2]-self.org_tool_pos[:2]),norm(tool_pos-self.target_pos) < 0.025,\
-            *self._noiser(self._real_action_to_2D(opt_act)),norm(tool_pos-self.target_pos) < 0.025]
+        opt_act = self.oracle.predict(obs,done,False)
+        click = norm(obs[7:10]) < 0.025
+        obs_2d = [*(self.tool_pos[:2]-self.org_tool_pos[:2]),self.click,\
+            *self._noiser(self._real_action_to_2D(opt_act)),click]
+        self.click = click
         self.buffer_2d.pop()
         self.buffer_2d.insert(0,obs_2d)
-
-        return obs,r,done,{"obs_2d":np.array(self.buffer_2d).flatten(),"target_func":self.vel_to_target_rel}
+        info.update({'opt_act':opt_act})
+        return (obs,np.array(self.buffer_2d).flatten()),r,done,info
 
     def reset(self):
-        obs = super().reset()
+        obs = self.env.reset()
         actor_critic, _ob_rms = torch.load(model_path)
-        self.oracle = PretrainOracle1(actor_critic)
+        self.oracle = PretrainOracle(actor_critic)
 
-        tool_pos = self._get_tool_pos()
-        obs_2d = [*tool_pos[:2],norm(tool_pos-self.target_pos) < 0.025]\
-            +[0]*self.ORACLE_DIM+[norm(tool_pos-self.target_pos) < 0.025]
-        self.buffer_2d = [obs_2d]*self.N
+        self.buffer_2d = [[0]*(self.ORACLE_DIM+4)]*self.N
+        self.click = False
 
         self._noiser = self._make_noising()
-
         self.unnoised_opt_act = np.zeros(3)
-        self.org_tool_pos = self._get_tool_pos()
+        obs,_reward,_done,info = self.env.step(self.oracle.predict(obs,False,True))
+        info = info[0]
+        self.tool_pos,self.torso_pos,self.real_step = info['tool_pos'],info['torso_pos'],info['real_step']
+        self.id = info['id']
+        self.org_tool_pos = deepcopy(self.tool_pos)
 
         return obs
 
     def vel_to_target_rel(self, vel):
-        torso_pos = np.array(p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-        tool_pos = self._get_tool_pos()
         vel_coord = [np.cos(vel[0])*vel[1],np.sin(vel[0])*vel[1]]
-        pred_target = tool_pos + np.array(vel_coord+[self.unnoised_opt_act[2]])
-        return tool_pos-pred_target, pred_target-torso_pos
+        pred_target = self.tool_pos + np.array(vel_coord+[self.unnoised_opt_act[2]])
+        return self.tool_pos-pred_target, pred_target-self.torso_pos
 
-    def _real_action_to_2D(self,real_action):
+    def normalize(self,obs):
+        """ Use env.step as a proxy to normalize obs """
+        self.real_step[0] = False
+        obs,_r,_done,_info = self.env.step(obs)
+        self.real_step[0] = True
+        return obs
+
+    def _real_action_to_2D(self,sim_action):
         """take a real action by oracle and convert it into a 2d action"""
-        org_tool_pos = self._get_tool_pos()
         realID = p.saveState()
-        super().step(real_action)
-        new_tool_pos = self._get_tool_pos()
+        p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0, physicsClientId=self.id)
+        _obs,_r,_done,info = self.env.step(sim_action)
+        info = info[0]
+        new_tool_pos = info['tool_pos']
         p.restoreState(realID)
-        self.unnoised_opt_act = new_tool_pos - org_tool_pos
-        return (new_tool_pos - org_tool_pos)[:2]
+        p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
+        self.unnoised_opt_act = new_tool_pos - self.tool_pos
+        return self.unnoised_opt_act[:2]
 
     def _make_noising(self):
         # simulate user with optimal intended actions that go directly to the goal
@@ -85,10 +117,20 @@ class ScratchItchJacoOracleEnv(ScratchItchJacoEnv):
 
         return noiser
 
-    def _get_tool_pos(self):
-        state = p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)
-        tool_pos = np.array(state[0])
-        return tool_pos
+class PretrainAgent():
+    def __init__(self,model):
+        self.model = model
+
+        self.recurrent_hidden_states = torch.zeros(1, self.model.recurrent_hidden_state_size)
+        self.masks = torch.zeros(1, 1)
+
+    def predict(self,obs,done):
+        self.masks.fill_(0.0 if done else 1.0)
+        with torch.no_grad():
+            value, action, _, self.recurrent_hidden_states = self.model.act(
+                obs, self.recurrent_hidden_states, self.masks, deterministic=True)
+        
+        return action
 
 class PretrainOracle():
     def __init__(self,model):
@@ -97,28 +139,15 @@ class PretrainOracle():
         self.recurrent_hidden_states = torch.zeros(1, self.model.recurrent_hidden_state_size)
         self.masks = torch.zeros(1, 1)
 
-    def predict(self,obs,done):
+    def predict(self,obs,done,real):
         self.masks.fill_(0.0 if done else 1.0)
-        # obs = torch.tensor(obs,dtype=torch.float)
+        # obs = torch.tensor([obs],dtype=torch.float)
         with torch.no_grad():
-            value, action, _, self.recurrent_hidden_states = self.model.act(
+            value, action, _, recurrent_hidden_states = self.model.act(
                 obs, self.recurrent_hidden_states, self.masks, deterministic=True)
+        if real:
+            self.recurrent_hidden_states = recurrent_hidden_states
         return action
-
-class PretrainOracle1():
-    def __init__(self,model):
-        self.model = model
-
-        self.recurrent_hidden_states = torch.zeros(1, self.model.recurrent_hidden_state_size)
-        self.masks = torch.zeros(1, 1)
-
-    def predict(self,obs,done):
-        self.masks.fill_(0.0 if done else 1.0)
-        obs = torch.tensor(obs,dtype=torch.float)
-        with torch.no_grad():
-            value, action, _, self.recurrent_hidden_states = self.model.act(
-                obs, self.recurrent_hidden_states, self.masks, deterministic=True)
-        return action.numpy()[0,0,0,:]
 
 class TwoDAgent():
     def __init__(self,env,pretrain,predictor):
@@ -126,15 +155,25 @@ class TwoDAgent():
         self.pretrain = pretrain
         self.predictor = predictor       
 
-    def predict(self,obs,obs_2d=None,target_func=None,done=False):
-        if target_func == None:
-            action = self.pretrain.predict(obs,done)
-            return action
+    def predict(self,obs,real_step=None,done=False):
+        if len(obs) == 1:
+            return self.pretrain.predict(obs,done)
+        if real_step is not None:
+            self.env.real_step = real_step
+        obs,obs_2d = obs
 
+        ### Directly using pretrained action ###
+        # return self.pretrain.predict(obs,done)
+        # return real_step
+
+        ### Using in-the-loop set up ###
         vel,_states = self.predictor.predict(obs_2d)
-        predicted_obs = np.concatenate((obs[0,:7],*target_func(vel),obs[0,13:]))
-        action = self.pretrain.predict(torch.tensor(predicted_obs,dtype=torch.float),done)        
-        return action[0,0,:]
+        # obs_unnorm = np.concatenate((obs[0,:7],*self.env.vel_to_target_rel(vel),obs[0,13:]))
+        # obs_norm = self.env.normalize(torch.tensor(obs_unnorm.reshape((1,-1)),dtype=torch.float))
+        # predicted_obs = np.concatenate((obs[0,:7],obs_norm[0,7:13],obs[0,13:]))
+        predicted_obs = np.concatenate((obs[0,:7],*self.env.vel_to_target_rel(vel),obs[0,13:]))
+        action = self.pretrain.predict(torch.tensor([predicted_obs],dtype=torch.float),done)        
+        return action
 
 # class PredictingAgent():
 #     def __init__(self,env,model_path):
