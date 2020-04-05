@@ -16,7 +16,8 @@ import time
 SCREEN_SIZE = 500
 
 
-class CursorControl(gym.Env):
+class GoalControl(gym.Env):
+  """ The agent predicts goal position as well as whether to "click" """
   MAX_EP_LEN = 30
   GOAL_THRESH = .05
   MAX_VEL = .1
@@ -30,7 +31,7 @@ class CursorControl(gym.Env):
 
   penalty = 10
 
-  def __init__(self, max_ep_len=30, oracle_noise=.1, gamma=.9, rollout=3, penalty=10):
+  def __init__(self, max_ep_len=30, oracle_noise=.1, gamma=.9, rollout=3, penalty=10, oracle_dim=16):
     self.observation_space = spaces.Box(np.array(([0]*3+[-np.inf]*self.ORACLE_DIM+[0])*self.N),\
       np.array(([1]*3+[np.inf]*self.ORACLE_DIM+[1])*self.N))
     self.action_space = spaces.Box(np.zeros(3),np.ones(3))
@@ -39,6 +40,7 @@ class CursorControl(gym.Env):
 
     self.MAX_EP_LEN = max_ep_len
     self.ORACLE_NOISE = oracle_noise
+    self.ORACLE_DIM = oracle_dim
     self.GAMMA = gamma
     self.penalty = penalty
 
@@ -88,7 +90,7 @@ class CursorControl(gym.Env):
 
     self.pos = copy(self.init) # position
     self.click = False
-    self.prev_action = (0,0,0)
+    self.prev_action = np.zeros(3)
     self.curr_step = 0 # timestep in current episode
     
     self.succ = 0 #True - most recent episode ended in success
@@ -101,12 +103,16 @@ class CursorControl(gym.Env):
     self.screen.fill(pygame.color.THECOLORS["white"])
     pygame.draw.circle(self.screen, (10,10,10,0) if not self.click else (150,150,150,0), (self.pos*SCREEN_SIZE).astype(int), 8)
     pygame.draw.circle(self.screen, (76,187,23,0), (self.goal*SCREEN_SIZE).astype(int), 5)
+    pygame.draw.circle(self.screen, (240,94,35,0), (self.prev_action[0:2]*SCREEN_SIZE).astype(int), 5)
+    
     comp = self.prev_action[0:2] - self.pos
     vel = ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi), min(self.MAX_VEL,norm(comp)))
     pygame.draw.line(self.screen, (200, 10, 10), (self.pos*SCREEN_SIZE).astype(int), (self.pos*SCREEN_SIZE).astype(int)+\
       (np.array([np.cos(vel[0]),np.sin(vel[0])])*vel[1]*SCREEN_SIZE).astype(int),2)
+    ocomp = self.opt_act[:2] - self.pos
+    ovel = ((np.arctan2(ocomp[1],ocomp[0])+(2*np.pi))%(2*np.pi), min(self.MAX_VEL,norm(ocomp)))
     pygame.draw.line(self.screen, (10, 10, 200), (self.pos*SCREEN_SIZE).astype(int), (self.pos*SCREEN_SIZE).astype(int)+\
-      (np.array([np.cos(self.opt_act[0]),np.sin(self.opt_act[0])])*self.opt_act[1]*SCREEN_SIZE).astype(int),2)
+      (np.array([np.cos(ovel[0]),np.sin(ovel[0])])*ovel[1]*SCREEN_SIZE).astype(int),2)
 
     if label:
       font = pygame.font.Font(None, 24)
@@ -127,7 +133,7 @@ class CursorControl(gym.Env):
     goal = random.random(2)
     self.goal = goal
     self.optimal_user_policy = self.make_oracle_policy(goal)
-    self.opt_act = np.zeros(3)
+    self.opt_act = np.zeros(self.action_space.shape[0])
 
   # simulate user with optimal intended actions that go directly to the goal
   def make_oracle_policy(self, goal):
@@ -147,8 +153,8 @@ class CursorControl(gym.Env):
 
     def policy(pos):
       comp = goal-pos
-      vel = ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi), min(self.MAX_VEL,norm(comp)))
-      return add_dropout(add_noise((*vel,norm(comp)<= self.GOAL_THRESH)))
+      # vel = ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi), min(self.MAX_VEL,norm(comp)))
+      return add_dropout(add_noise((*goal,norm(comp)<= self.GOAL_THRESH)))
 
     return policy
 
@@ -164,7 +170,7 @@ class naiveAgent():
 
 
 if __name__ == '__main__':
-  env = CursorControl()
+  env = GoalControl()
   env.render()
   agent = naiveAgent(env.goal)
   env.ORACLE_NOISE = 0

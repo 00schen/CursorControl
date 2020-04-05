@@ -5,18 +5,13 @@ import pybullet as p
 
 from .env import AssistiveEnv
 
+import traceback
+
 class ScratchItchEnv(AssistiveEnv):
     def __init__(self, robot_type='pr2', human_control=False):
         super(ScratchItchEnv, self).__init__(robot_type=robot_type, task='scratch_itch', human_control=human_control, frame_skip=5, time_step=0.02, action_robot_len=7, action_human_len=(10 if human_control else 0), obs_robot_len=30, obs_human_len=(34 if human_control else 0))
 
     def step(self, action):
-        if self.real_step[0]:
-            return self._step(action)
-        else:
-            # This is purely a proxy to normalize obs as "action"
-            return action, None, None, None
-
-    def _step(self, action):
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'), human_gains=0.05)
 
         total_force_on_human, tool_force, tool_force_at_target, target_contact_pos = self.get_total_force()
@@ -43,9 +38,10 @@ class ScratchItchEnv(AssistiveEnv):
         if self.gui and tool_force_at_target > 0:
             print('Task success:', self.task_success, 'Tool force at target:', tool_force_at_target, reward_force_scratch)
 
-        info = {'total_force_on_human': total_force_on_human, 'task_success': int(self.task_success >= self.config('task_success_threshold')),\
-            'action_robot_len': self.action_robot_len, 'action_human_len': self.action_human_len, 'obs_robot_len': self.obs_robot_len, 'obs_human_len': self.obs_human_len\
-            , 'tool_pos': tool_pos, 'torso_pos': np.array(p.getLinkState(self.robot, 0, computeForwardKinematics=True, physicsClientId=self.id)[0]), 'real_step': self.real_step, 'id':self.id}
+        info = {'total_force_on_human': total_force_on_human, 'task_success': self.task_success,\
+        # info = {'total_force_on_human': total_force_on_human, 'task_success': int(self.task_success >= self.config('task_success_threshold')),\
+            'action_robot_len': self.action_robot_len, 'action_human_len': self.action_human_len, 'obs_robot_len': self.obs_robot_len, 'obs_human_len': self.obs_human_len}
+        # info.update({'tool_pos': tool_pos, 'torso_pos': np.array(p.getLinkState(self.robot, 0, computeForwardKinematics=True, physicsClientId=self.id)[0]), 'real_step': self.real_step, 'id':self.id, 'target_pos':self.target_pos})
         done = False
 
         return obs, reward, done, info
@@ -96,7 +92,6 @@ class ScratchItchEnv(AssistiveEnv):
         return np.concatenate([robot_obs, human_obs]).ravel()
 
     def reset(self):
-        print("called")
         self.setup_timing()
         self.task_success = 0
         self.prev_target_contact_pos = np.zeros(3)
@@ -150,8 +145,6 @@ class ScratchItchEnv(AssistiveEnv):
 
         # Enable rendering
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
-
-        self.real_step = [True]
 
         return self._get_obs([0], [0, 0])
 

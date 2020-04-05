@@ -6,3 +6,6 @@ from assistive_gym.envs.feeding_robots import FeedingPR2Env, FeedingBaxterEnv, F
 from assistive_gym.envs.dressing_robots import DressingPR2Env, DressingBaxterEnv, DressingSawyerEnv, DressingJacoEnv, DressingPR2HumanEnv, DressingBaxterHumanEnv, DressingSawyerHumanEnv, DressingJacoHumanEnv
 from assistive_gym.envs.arm_manipulation_robots import ArmManipulationPR2Env, ArmManipulationBaxterEnv, ArmManipulationSawyerEnv, ArmManipulationJacoEnv, ArmManipulationPR2HumanEnv, ArmManipulationBaxterHumanEnv, ArmManipulationSawyerHumanEnv, ArmManipulationJacoHumanEnv
 from assistive_gym.envs.scratch_itch_oracle import *
+from assistive_gym.envs.feeding_oracle import FeedingJacoOracleEnv, FeedingPretrainAgent, FeedingTwoDAgent
+from assistive_gym.envs.laptop import *
+

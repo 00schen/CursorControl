@@ -16,7 +16,7 @@ import time
 SCREEN_SIZE = 500
 
 
-class CursorControl(gym.Env):
+class VelocityControl(gym.Env):
   MAX_EP_LEN = 30
   GOAL_THRESH = .05
   MAX_VEL = .1
@@ -151,14 +151,14 @@ class CursorControl(gym.Env):
 
     return policy
 
-class naiveAgent(CursorControl):
+class naiveAgent(VelocityControl):
   def predict(self,obs=None,r=None):
     if r == None:
       return np.array([2*np.pi,self.MAX_VEL,1])*random.random(3)
     return (*obs[3:5],obs[-1])
 
 if __name__ == '__main__':
-  env = CursorControl()
+  env = VelocityControl()
   env.render()
   agent = naiveAgent()
   env.set_oracle_noise(0)

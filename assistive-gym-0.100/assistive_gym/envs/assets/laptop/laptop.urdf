@@ -2,49 +2,52 @@
 
 <robot name="laptop.urdf">
   <link name="baseLink">
-    <contact>
+    <!-- <contact>
       <lateral_friction value="1.0"/>
     </contact>
     <inertial>
       <mass value=".05"/>
       <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
-    </inertial>
+    </inertial> -->
     <visual>
-      <origin rpy="0 0 0" xyz="0 -0.25 0"/>
+      <origin xyz="0 0 0" rpy = "0 0 0"/>
       <geometry>
-			  <mesh filename="body_visual.obj" scale="0.03 0.05 0.001"/>
+			  <mesh filename="body_visual.obj"/>
       </geometry>
     </visual>
     <collision>
       <geometry>
-			  <box size="1.5 1 0.05"/>
+        <origin xyz="0 0 0" rpy = "0 0 0"/>
+			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
   </link>
   <link name="screenLink">
-    <contact>
+    <!-- <contact>
       <lateral_friction value="1.0"/>
     </contact>
     <inertial>
       <mass value=".01"/>
       <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
-    </inertial>
+    </inertial> -->
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <origin xyz="0 1 0" rpy="0 0 0"/>
       <geometry>
-			  <mesh filename="screen_visual.obj" scale=".5 .3 0.01"/>
+			  <mesh filename="screen_visual.obj"/>
       </geometry>
     </visual>
     <collision>
+      <origin xyz="0 1 0" rpy="0 0 0"/>
       <geometry>
-			  <box size="1.5 1 0.05"/>
+			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
   </link>
-  <joint>
+  <joint name="hinge", type="revolute">
       <parent link=baseLink/>
       <child link=screenLink/>
-      <axis xyz="0 1 0"/>
-      <dynamics friction="1.0"/>
+      <limit effort="100" velocity="100">
+      <!-- <axis xyz="0 1 0"/> -->
+      <!-- <dynamics friction="1.0"/> -->
   </joint>
 </robot>

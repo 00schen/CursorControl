@@ -6,10 +6,8 @@ import pybullet as p
 from .env import AssistiveEnv
 
 class LaptopEnv(AssistiveEnv):
-    def __init__(self, robot_type='Jaco', human_control=False):
-        super(LaptopEnv, self).__init__(robot_type=robot_type, task='laptop', human_control=human_control,\
-            frame_skip=10, time_step=0.01, action_robot_len=7, action_human_len=(10 if human_control else 0),\
-            obs_robot_len=30, obs_human_len=(34 if human_control else 0))
+    def __init__(self, robot_type='jaco', human_control=False):
+                super(LaptopEnv, self).__init__(robot_type=robot_type, task='laptop', human_control=human_control, frame_skip=5, time_step=0.02, action_robot_len=7, action_human_len=(10 if human_control else 0), obs_robot_len=30, obs_human_len=(34 if human_control else 0))
 
     def step(self, action):
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
@@ -63,10 +61,12 @@ class LaptopEnv(AssistiveEnv):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices, physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
         robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
-        lbody_pos = np.array(p.getLinkState(self.laptop, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
+        # print(p.getLinkState(self.laptop, 0, computeForwardKinematics=False, physicsClientId=self.id))
+        lbody_pos = np.array(p.getBasePositionAndOrientation(self.laptop, physicsClientId=self.id)[0])
         screen_pos = np.array(p.getLinkState(self.laptop, 1, computeForwardKinematics=True, physicsClientId=self.id)[0])
 
         robot_obs = np.concatenate([hand_pos-torso_pos, hand_orient, hand_pos - self.target_pos, self.target_pos-torso_pos, robot_joint_positions, lbody_pos-torso_pos, screen_pos-torso_pos, forces]).ravel()
+        # robot_obs = np.concatenate([hand_pos-torso_pos, hand_orient, hand_pos - self.target_pos, self.target_pos-torso_pos, robot_joint_positions, lbody_pos-torso_pos, forces]).ravel()
 
         return robot_obs
 
@@ -81,7 +81,8 @@ class LaptopEnv(AssistiveEnv):
     def reset(self):
         self.setup_timing()
         self.task_success = 0
-        self.human, self.wheelchair, self.robot, self.robot_lower_limits, self.robot_upper_limits, self.human_lower_limits, self.human_upper_limits, self.robot_right_arm_joint_indices, self.robot_left_arm_joint_indices, self.gender = self.world_creation.create_new_world(furniture_type='wheelchair', static_human_base=True, human_impairment='random', print_joints=False, gender='random')
+        self.human, self.wheelchair, self.robot, self.robot_lower_limits, self.robot_upper_limits, self.human_lower_limits, self.human_upper_limits, self.robot_right_arm_joint_indices, self.robot_left_arm_joint_indices, self.gender\
+             = self.world_creation.create_new_world(furniture_type='wheelchair', static_human_base=True, human_impairment='random', print_joints=False, gender='random')
         self.robot_lower_limits = self.robot_lower_limits[self.robot_left_arm_joint_indices]
         self.robot_upper_limits = self.robot_upper_limits[self.robot_left_arm_joint_indices]
         self.reset_robot_joints()
@@ -100,7 +101,7 @@ class LaptopEnv(AssistiveEnv):
         self.human_lower_limits = self.human_lower_limits[self.human_controllable_joint_indices]
         self.human_upper_limits = self.human_upper_limits[self.human_controllable_joint_indices]
 
-        # Place a laptop of food on a table
+        # Place a laptop on a table
         self.table = p.loadURDF(os.path.join(self.world_creation.directory, 'table', 'table_tall.urdf'), basePosition=[0.35, -0.9, 0], baseOrientation=p.getQuaternionFromEuler([0, 0, 0], physicsClientId=self.id), physicsClientId=self.id)
         self.laptop_scale = 0.75
         # TODO: Figure out dimensions
@@ -113,22 +114,25 @@ class LaptopEnv(AssistiveEnv):
         head_pos, head_orient = p.getLinkState(self.human, 23, computeForwardKinematics=True, physicsClientId=self.id)[:2]
 
         if self.robot_type == 'pr2':
-            target_orient = p.getQuaternionFromEuler([np.pi/2.0, 0, 0], physicsClientId=self.id)
-            self.position_robot_toc(self.robot, 54, [(target_pos, target_orient), (self.target_pos, None)], [(self.target_pos, target_orient)], self.robot_right_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=range(15, 15+7), pos_offset=np.array([0.1, 0.2, 0]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
-            self.world_creation.set_gripper_open_position(self.robot, position=0.03, left=False, set_instantly=True)
+            target_pos = np.array([-0.55, 0, 0.8]) + self.np_random.uniform(-0.05, 0.05, size=3)
+            target_orient = np.array(p.getQuaternionFromEuler(np.array([0, 0, 0]), physicsClientId=self.id))
+            self.position_robot_toc(self.robot, 76, [(target_pos, target_orient)], [(shoulder_pos, None), (elbow_pos, None), (wrist_pos, None)], self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=range(29, 29+7), pos_offset=np.array([0.1, 0, 0]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
+            self.world_creation.set_gripper_open_position(self.robot, position=0.25, left=True, set_instantly=True)
         elif self.robot_type == 'jaco':
-            target_orient = p.getQuaternionFromEuler(np.array([np.pi/2.0, 0, np.pi/2.0]), physicsClientId=self.id)
-            self.util.ik_random_restarts(self.robot, 8, target_pos, target_orient, self.world_creation, self.robot_right_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=1000, max_ik_random_restarts=40, random_restart_threshold=0.01, step_sim=True, check_env_collisions=True)
-            self.world_creation.set_gripper_open_position(self.robot, position=1.33, left=False, set_instantly=True)
+            target_pos = np.array([-0.5, 0, 0.8]) + self.np_random.uniform(-0.05, 0.05, size=3)
+            target_orient = p.getQuaternionFromEuler(np.array([0, np.pi/2.0, 0]), physicsClientId=self.id)
+            self.util.ik_random_restarts(self.robot, 8, target_pos, target_orient, self.world_creation, self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=1000, max_ik_random_restarts=40, random_restart_threshold=0.03, step_sim=True)
+            self.world_creation.set_gripper_open_position(self.robot, position=1, left=True, set_instantly=True)
         else:
-            target_orient = p.getQuaternionFromEuler(np.array([np.pi/2.0, 0, np.pi/2.0]), physicsClientId=self.id)
+            target_pos = np.array([-0.55, 0, 0.8]) + self.np_random.uniform(-0.05, 0.05, size=3)
+            target_orient = p.getQuaternionFromEuler(np.array([0, np.pi/2.0, 0]), physicsClientId=self.id)
             if self.robot_type == 'baxter':
-                self.position_robot_toc(self.robot, 26, [(target_pos, target_orient)], [(self.target_pos, target_orient)], self.robot_right_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=range(1, 8), pos_offset=np.array([0, 0.2, 0.975]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
+                self.position_robot_toc(self.robot, 48, [(target_pos, target_orient)], [(shoulder_pos, None), (elbow_pos, None), (wrist_pos, None)], self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=range(10, 17), pos_offset=np.array([0, 0, 0.975]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
             else:
-                self.position_robot_toc(self.robot, 19, [(target_pos, target_orient), (self.target_pos, None)], [(self.target_pos, target_orient)], self.robot_right_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=[0, 2, 3, 4, 5, 6, 7], pos_offset=np.array([-0.1, 0.2, 0.975]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
-            self.world_creation.set_gripper_open_position(self.robot, position=0.0, left=False, set_instantly=True)
+                self.position_robot_toc(self.robot, 19, [(target_pos, target_orient)], [(shoulder_pos, None), (elbow_pos, None), (wrist_pos, None)], self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits, ik_indices=[0, 2, 3, 4, 5, 6, 7], pos_offset=np.array([-0.1, 0, 0.975]), max_ik_iterations=200, step_sim=True, check_env_collisions=False, human_joint_indices=self.human_controllable_joint_indices, human_joint_positions=self.target_human_joint_positions)
+            self.world_creation.set_gripper_open_position(self.robot, position=0.015, left=True, set_instantly=True)
 
-        p.resetBasePositionAndOrientation(self.laptop, laptop_pos, p.getQuaternionFromEuler([np.pi/2.0, 0, 0], physicsClientId=self.id), physicsClientId=self.id)
+        # p.resetBasePositionAndOrientation(self.laptop, laptop_pos, p.getQuaternionFromEuler([np.pi/2.0, 0, 0], physicsClientId=self.id), physicsClientId=self.id)
 
         p.setGravity(0, 0, -9.81, physicsClientId=self.id)
         p.setGravity(0, 0, 0, body=self.robot, physicsClientId=self.id)

@@ -32,7 +32,9 @@ class FeedingEnv(AssistiveEnv):
         if self.gui and reward_food != 0:
             print('Task success:', self.task_success, 'Food reward:', reward_food)
 
-        info = {'total_force_on_human': total_force_on_human, 'task_success': int(self.task_success >= self.total_food_count*self.config('task_success_threshold')), 'action_robot_len': self.action_robot_len, 'action_human_len': self.action_human_len, 'obs_robot_len': self.obs_robot_len, 'obs_human_len': self.obs_human_len}
+        info = {'total_force_on_human': total_force_on_human, 'task_success': int(self.task_success >= self.total_food_count*self.config('task_success_threshold')),\
+            'action_robot_len': self.action_robot_len, 'action_human_len': self.action_human_len, 'obs_robot_len': self.obs_robot_len, 'obs_human_len': self.obs_human_len}
+        info.update({'spoon_pos': spoon_pos, 'torso_pos': np.array(p.getLinkState(self.robot, 0, computeForwardKinematics=True, physicsClientId=self.id)[0]), 'id': self.id})
         done = False
 
         return obs, reward, done, info
