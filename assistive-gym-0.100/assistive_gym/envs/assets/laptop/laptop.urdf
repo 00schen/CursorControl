@@ -45,8 +45,8 @@
   </link>
   <joint name="hinge" type="revolute">
       
-      <parent link=baseLink/>
-      <child link=screenLink/>
+      <parent link="baseLink"/>
+      <child link="screenLink"/>
       <limit effort="100" velocity="100">
       <axis xyz="0 1 0"/> -->
       <!-- <dynamics friction="1.0"/> -->
