@@ -43,7 +43,7 @@
       </geometry>
     </collision>
   </link>
-  <joint name="hinge", type="revolute">
+  <joint name="hinge" type="revolute">
       
       <parent link=baseLink/>
       <child link=screenLink/>
