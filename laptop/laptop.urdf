@@ -1,6 +1,12 @@
 <?xml version="1.0" ?>
 
 <robot name="laptop.urdf">
+  <material name="Blue">
+    <color rgba="0 0 1.0 0"/>
+  </material>
+  <material name="Red">
+    <color rgba="1.0 0 0 0"/>
+  </material>
   <link name="baseLink">
     <!-- <contact>
       <lateral_friction value="1.0"/>
@@ -14,10 +20,8 @@
       <geometry>
 			  <mesh filename="file:///home/schen/CursorControl/laptop/body_visual.obj"/>
       </geometry>
-
-      <material name="Blue">
-        <color rgba="0 0 1.0 0"/>
-      </material>
+      <material name="Blue"/>
+      <material name="Red"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy = "0 0 0"/>
@@ -40,9 +44,7 @@
       <geometry>
 			  <mesh filename="file:///home/schen/CursorControl/laptop/screen_visual.obj"/>
       </geometry>
-      <material name="Red">
-        <color rgba="1.0 0 0 0"/>
-      </material>
+      
     </visual>
     <collision>
       <origin xyz="0 1 0" rpy="0 0 0"/>
