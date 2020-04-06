@@ -66,7 +66,7 @@ class GoalControl(gym.Env):
     r = 100*self.succ/(1-self.GAMMA)\
       + (1/goal_dist/50 if goal_dist > self.GOAL_THRESH else 1)\
       - self.penalty*(self.click and not self.succ)\
-      - norm(self.prev_action[:2]-action[:2])
+      - 10*norm(self.prev_action[:2]-action[:2])
 
     obs = np.array((*self.pos, self.click, *self.opt_act))
     rollout_obs = np.concatenate((obs,self.obs_buffer.flatten()))

@@ -14,7 +14,7 @@ from stable_baselines.bench import Monitor
 from stable_baselines.common import callbacks
 
 # time_now = time.strftime('%Y-%m-%d-%H-%M', time.localtime())
-log_path = "../logs/sac_%s" % 'pred_goal2'
+log_path = "../logs/sac_%s" % 'pred_goal3'
 os.makedirs(log_path, exist_ok=True)
 
 env_name = 'goalcontrol-v2'
