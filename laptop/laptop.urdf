@@ -21,6 +21,9 @@
 			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
+    <material name="Cyan">
+      <color rgba="0 1.0 1.0 1.0"/>
+    </material>
   </link>
   <link name="screenLink">
     <!-- <contact>
@@ -42,6 +45,9 @@
 			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
+    <material name="Red">
+      <color rgba="1.0 0 0 1.0"/>
+    </material>
   </link>
   <joint name="hinge" type="revolute">
       
