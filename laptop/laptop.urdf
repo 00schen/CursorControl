@@ -12,7 +12,7 @@
     <visual>
       <origin xyz="0 0 0" rpy = "0 0 0"/>
       <geometry>
-			  <mesh filename="/home/schen/CursorControl/laptop/body_visual.obj"/>
+			  <mesh filename="file:///home/schen/CursorControl/laptop/body_visual.obj"/>
       </geometry>
     </visual>
     <collision>
@@ -33,7 +33,7 @@
     <visual>
       <origin xyz="0 1 0" rpy="0 0 0"/>
       <geometry>
-			  <mesh filename="/home/schen/CursorControl/laptop/screen_visual.obj"/>
+			  <mesh filename="file:///home/schen/CursorControl/laptop/screen_visual.obj"/>
       </geometry>
     </visual>
     <collision>
