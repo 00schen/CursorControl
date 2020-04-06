@@ -61,18 +61,21 @@ class GoalControl(gym.Env):
     goal_dist = norm(self.pos-self.goal)
     self.succ = goal_dist <= self.GOAL_THRESH and self.click
       
+    
+
+    r = 100*self.succ/(1-self.GAMMA)\
+      + (1/goal_dist/50 if goal_dist > self.GOAL_THRESH else 1)\
+      - self.penalty*(self.click and not self.succ)\
+      - norm(self.prev_action[:2]-action[:2])
+
     obs = np.array((*self.pos, self.click, *self.opt_act))
     rollout_obs = np.concatenate((obs,self.obs_buffer.flatten()))
     
     self.obs_buffer = np.concatenate(([obs],self.obs_buffer),axis=0)
     self.obs_buffer = np.delete(self.obs_buffer,-1,0)
     self.prev_action = action
-
-    r = 100*self.succ/(1-self.GAMMA)\
-      + (1/goal_dist/50 if goal_dist > self.GOAL_THRESH else 1)\
-      - self.penalty*(self.click and not self.succ)
-
     self.curr_step += 1
+
     done = self.curr_step >= self.MAX_EP_LEN or self.succ
 
     info = {
