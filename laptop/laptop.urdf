@@ -21,7 +21,6 @@
 			  <mesh filename="file:///home/schen/CursorControl/laptop/body_visual.obj"/>
       </geometry>
       <material name="Blue"/>
-      <material name="Red"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy = "0 0 0"/>
@@ -44,7 +43,7 @@
       <geometry>
 			  <mesh filename="file:///home/schen/CursorControl/laptop/screen_visual.obj"/>
       </geometry>
-      
+      <material name="Red"/>
     </visual>
     <collision>
       <origin xyz="0 1 0" rpy="0 0 0"/>
