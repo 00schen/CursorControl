@@ -2,12 +2,12 @@
 
 <robot name="laptop.urdf">
   <material name="Blue">
-    <color rgba="0 0 1.0 0"/>
+    <color rgba="0 0 1.0 1.0"/>
   </material>
   <material name="Red">
-    <color rgba="1.0 0 0 0"/>
+    <color rgba="1.0 0 0 1.0"/>
   </material>
-  <link name="baseLink">
+  <link name="base_link">
     <!-- <contact>
       <lateral_friction value="1.0"/>
     </contact>
@@ -30,7 +30,7 @@
     </collision>
     
   </link>
-  <link name="screenLink">
+  <link name="screen_link">
     <!-- <contact>
       <lateral_friction value="1.0"/>
     </contact>
@@ -54,8 +54,8 @@
   </link>
   <joint name="hinge" type="revolute">
       
-      <parent link="baseLink"/>
-      <child link="screenLink"/>
+      <parent link="base_link"/>
+      <child link="screen_link"/>
       <limit effort="100" velocity="100"/>
       <axis xyz="0 1 0"/>
       <!-- <dynamics friction="1.0"/> -->
