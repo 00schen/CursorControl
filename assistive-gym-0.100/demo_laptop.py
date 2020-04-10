@@ -13,6 +13,7 @@ predictor_path = "../logs/sac_penalty_100/rl_model_500000_steps"
 
 if __name__ == '__main__':
     env = LaptopEnv()
+    env.render()
     env.reset()
     while True:
-      1+1
+      env.render()

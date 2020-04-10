@@ -190,7 +190,7 @@ class ScratchItchJacoOracleEnv(ScratchItchJacoEnv):
     ORACLE_DIM = 16
     ORACLE_NOISE = 0.0
     
-    scale = .5
+    scale = .1
 
     def step(self, action):
         """ Use step as a proxy to format and normalize predicted observation """
@@ -322,11 +322,13 @@ class TwoDAgent():
             self.prediction_buffer = np.delete(self.prediction_buffer,-1,0)
         mean_pred = np.mean(self.prediction_buffer,axis=0)
 
-        if info['task_success'] > len(self.succeeded) and len(self.succeeded) < self.success_length:
-            self.succeeded.append(self.curr_prediction)
-            self.curr_prediction = np.mean(self.succeeded,axis=0)
-        if len(self.curr_prediction) == 0 or len(self.succeeded) < self.success_length:
-            self.curr_prediction = np.mean(self.succeeded+[mean_pred],axis=0)       
+        # if info['task_success'] > len(self.succeeded) and len(self.succeeded) < self.success_length:
+        #     self.succeeded.append(self.curr_prediction)
+        #     self.curr_prediction = np.mean(self.succeeded,axis=0)
+        # if len(self.curr_prediction) == 0 or len(self.succeeded) < self.success_length:
+        #     self.curr_prediction = np.mean(self.succeeded+[mean_pred],axis=0)     
+
+        self.curr_prediction = mean_pred
 
         pred_obs_rel = np.concatenate((obs,self.curr_prediction))
         norm_obs,_r,_done,_info = self.env.step(torch.tensor([pred_obs_rel],dtype=torch.float))
