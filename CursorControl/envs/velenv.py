@@ -31,7 +31,7 @@ class VelocityControl(gym.Env):
     self.ORACLE_NOISE = oracle_noise
     self.ORACLE_DIM = oracle_dim
     
-    if oracle != None:
+    if oracle:
       self.oracle = oracle
       self.observation_space = spaces.Box(np.array(([0]*3+[-np.inf]*self.ORACLE_DIM+[0])*self.N),\
         np.array(([1]*3+[np.inf]*self.ORACLE_DIM+[1])*self.N))
@@ -56,7 +56,7 @@ class VelocityControl(gym.Env):
     self.click = click
 
     oracle_rollout_obs = np.concatenate(((*self.pos, self.click),self.obs_buffer[:-1,:3].flatten(),self.goal))
-    self.opt_act = self.noise.get_noise(self.oracle.predict(oracle_rollout_obs))    
+    self.opt_act = self.noise.get_noise(self.oracle.predict(oracle_rollout_obs)[0])    
   
     obs = np.array((*self.pos, self.click, *self.opt_act)) if self.oracle else np.array((*self.pos, self.click))
         
@@ -166,8 +166,8 @@ class NaiveAgent():
     if len(obs) == 0:
       return self.env.action_space.sample()
     comp = self.env.goal - self.env.pos
-    return ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi),\
-      min(self.env.MAX_VEL,norm(comp)),False)
+    return [((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi),\
+      min(self.env.MAX_VEL,norm(comp)),norm(comp) < self.env.GOAL_THRESH)]
 
 if __name__ == '__main__':
   env = VelocityControl()

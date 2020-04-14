@@ -24,7 +24,7 @@ gamma = .9
 penalty = 20
 rollout = 3
 
-params = {'oracle_noise':noise,'gamma':gamma,'penalty':penalty,'rollout':rollout, 'oracle':None}
+params = {'oracle_noise':noise,'gamma':gamma,'penalty':penalty,'rollout':rollout}
 env = gym.make(env_name,**params)
 eval_env = gym.make(env_name,**params)
 

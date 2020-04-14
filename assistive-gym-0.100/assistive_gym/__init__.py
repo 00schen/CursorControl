@@ -43,6 +43,13 @@ register(
     max_episode_steps=200,
 )
 
+# Scratch Itch Jaco From Simple 2D Environment
+register(
+    id='ScratchItchJacoSimple2d-v0',
+    entry_point='assistive_gym.envs:ScratchItchJacoSimple2dEnv',
+    max_episode_steps=200,
+)
+
 # Scratch Itch PR2 Human
 register(
     id='ScratchItchPR2Human-v0',

@@ -17,10 +17,14 @@ assistive_gym/envs/drinking.py
 assistive_gym/envs/drinking_robots.py
 assistive_gym/envs/env.py
 assistive_gym/envs/feeding.py
+assistive_gym/envs/feeding_oracle.py
 assistive_gym/envs/feeding_robots.py
 assistive_gym/envs/human_creation.py
 assistive_gym/envs/human_testing.py
+assistive_gym/envs/laptop.py
+assistive_gym/envs/object_testing.py
 assistive_gym/envs/scratch_itch.py
+assistive_gym/envs/scratch_itch_oracle copy.py
 assistive_gym/envs/scratch_itch_oracle.py
 assistive_gym/envs/scratch_itch_robots.py
 assistive_gym/envs/util.py

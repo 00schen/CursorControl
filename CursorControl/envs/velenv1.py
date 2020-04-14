@@ -31,13 +31,10 @@ class VelocityControl(gym.Env):
     self.ORACLE_NOISE = oracle_noise
     self.ORACLE_DIM = oracle_dim
     
-    if oracle != None:
-      self.oracle = oracle
-      self.observation_space = spaces.Box(np.array(([0]*3+[-np.inf]*self.ORACLE_DIM+[0])*self.N),\
-        np.array(([1]*3+[np.inf]*self.ORACLE_DIM+[1])*self.N))
-    else: # Used for training the Oracle
-      self.oracle = NaiveAgent(self)
-      self.observation_space = spaces.Box(np.array([0]*3*self.N+[0]*2),np.array([1]*3*self.N+[1]*2))
+    self.oracle = oracle
+    self.observation_space = spaces.Box(np.array(([0]*3+[-np.inf]*self.ORACLE_DIM+[0])*self.N),\
+      np.array(([1]*3+[np.inf]*self.ORACLE_DIM+[1])*self.N)) if oracle \
+      else spaces.Box(np.array([0]*3*self.N+[0]*2),np.array([1]*3*self.N+[1]*2)) # used if training the oracle
     
     self.action_space = spaces.Box(np.zeros(3),np.array([2*np.pi,self.MAX_VEL,1]))
 
@@ -58,8 +55,9 @@ class VelocityControl(gym.Env):
       self.pos = np.minimum(np.ones(2), np.maximum(np.zeros(2), self.pos))
     self.click = click
 
-    oracle_rollout_obs = np.concatenate(((*self.pos, self.click),self.obs_buffer[:-1,:3].flatten(),self.goal))
-    self.opt_act = self.noise.get_noise(self.oracle.predict(oracle_rollout_obs))    
+    if self.oracle:
+      oracle_rollout_obs = np.concatenate(((*self.pos, self.click),self.obs_buffer[:-1,:3].flatten(),self.goal))
+      self.opt_act = self.noise.get_noise(self.oracle.predict(oracle_rollout_obs)[0])    
   
     obs = np.array((*self.pos, self.click, *self.opt_act)) if self.oracle else np.array((*self.pos, self.click))
         
@@ -226,32 +224,30 @@ class NaiveAgent():
     self.env = env
   def predict(self,obs=[]):
     if len(obs) == 0:
-      return self.env.action_space.sample()
+      return [self.env.action_space.sample()]
     comp = self.env.goal - self.env.pos
-    return ((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi),\
-      min(self.env.MAX_VEL,norm(comp)),False)
+    return [((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi),\
+      min(self.env.MAX_VEL,norm(comp)),False)]
+
 
 if __name__ == '__main__':
   env = VelocityControl()
   env.render()
   agent = NaiveAgent(env)
 
-  action = agent.predict()
+  action = agent.predict()[0]
   for i in range(30):
     obs, r, done, debug = env.step(action)
-    action = agent.predict(obs)
+    action = agent.predict(obs)[0]
     env.render("test")
     if done:
       break
 
   env.reset()
-  action = agent.predict()
+  action = agent.predict()[0]
   for i in range(30):
     obs, r, done, debug = env.step(action)
-    action = agent.predict(obs)
+    action = agent.predict(obs)[0]
     env.render("test")
     if done:
       break
-
-
-

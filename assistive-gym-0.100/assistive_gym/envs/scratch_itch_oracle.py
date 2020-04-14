@@ -8,9 +8,6 @@ from copy import deepcopy
 
 import torch
 
-from a2c_ppo_acktr.envs import VecPyTorch, make_vec_envs
-from a2c_ppo_acktr.utils import get_render_func, get_vec_normalize
-
 
 model_path = "trained_models/ppo/ScratchItchJaco-v0.pt"
 
