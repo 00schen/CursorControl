@@ -1,19 +1,26 @@
 <?xml version="1.0" ?>
 
 <robot name="laptop.urdf">
-  <link name="baseLink">
+  <material name="Blue">
+    <color rgba="0 0 1.0 1.0"/>
+  </material>
+  <material name="Red">
+    <color rgba="1.0 0 0 1.0"/>
+  </material>
+  <link name="base_link">
     <!-- <contact>
       <lateral_friction value="1.0"/>
-    </contact>
+    </contact> -->
     <inertial>
       <mass value=".05"/>
       <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
-    </inertial> -->
+    </inertial>
     <visual>
       <origin xyz="0 0 0" rpy = "0 0 0"/>
       <geometry>
-			  <mesh filename="body_visual.obj"/>
+			  <mesh filename="body_visual.dae"/>
       </geometry>
+      <material name="Blue"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy = "0 0 0"/>
@@ -21,34 +28,37 @@
 			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
+    
   </link>
-  <link name="screenLink">
-    <contact>
+  <link name="screen_link">
+    <!-- <contact>
       <lateral_friction value="1.0"/>
-    </contact>
+    </contact> -->
     <inertial>
+      <!-- <origin xyz="0.005 0 .122" rpy="0 0 0"/> -->
+      <origin xyz="0.005 0 .13" rpy="0 0 0"/>
       <mass value=".01"/>
       <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
     </inertial>
     <visual>
-      <origin xyz="0 1 0" rpy="0 0 0"/>
+      <origin xyz="0.005 0 .13" rpy="0 0 0"/>
       <geometry>
-			  <mesh filename="screen_visual.obj"/>
+			  <mesh filename="screen_visual.dae"/>
       </geometry>
+      <material name="Red"/>
     </visual>
     <collision>
-      <origin xyz="0 1 0" rpy="0 0 0"/>
+      <origin xyz="0.005 0 .13" rpy="0 0 0"/>
       <geometry>
 			  <box size="0.1 0.1 0.1"/>
       </geometry>
     </collision>
   </link>
-  <joint name="hinge", type="revolute">
-      
-      <parent link=baseLink/>
-      <child link=screenLink/>
-      <limit effort="100" velocity="100">
-      <axis xyz="0 1 0"/> -->
-      <!-- <dynamics friction="1.0"/> -->
+  <joint name="hinge" type="revolute">
+      <parent link="base_link"/>
+      <child link="screen_link"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="0" upper="3.14" effort="100" velocity="100"/>
+      <dynamics dampling="0" friction="1.0"/>
   </joint>
 </robot>

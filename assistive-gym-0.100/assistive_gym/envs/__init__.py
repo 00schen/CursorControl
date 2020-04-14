@@ -8,4 +8,5 @@ from assistive_gym.envs.arm_manipulation_robots import ArmManipulationPR2Env, Ar
 from assistive_gym.envs.scratch_itch_oracle import *
 from assistive_gym.envs.feeding_oracle import FeedingJacoOracleEnv, FeedingPretrainAgent, FeedingTwoDAgent
 from assistive_gym.envs.laptop import *
+from assistive_gym.envs.scratch_itch_simple_2d import ScratchItchJacoSimple2dEnv
 

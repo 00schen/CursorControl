@@ -7,16 +7,16 @@ from stable_baselines import results_plotter
 
 from proxy_draw_curve import make_plot_curves
 
-log_path = '../logs/sac_pred_goal2'
-env_name = 'goalcontrol-v2'
+log_path = '../logs/sac_penalty_20'
+env_name = 'velocitycontrol-v0'
 
 rollout = 3
-oracle_dim = 16
+oracle_dim = 2
 noise,gamma = .05,.9
-penalty = 100
+penalty = 20
 time_steps = int(5e5)
 
-results_plotter.plot_curves = make_plot_curves([100])
+results_plotter.plot_curves = make_plot_curves([penalty])
 results_plotter.plot_results([log_path], time_steps, results_plotter.X_EPISODES, "SAC GoalControl")
 plt.show()
 
@@ -31,7 +31,7 @@ for r in range(time_steps-int(5e4),time_steps+int(5e4),int(5e4)):
     obs = env.reset()
     for i in range(100):
       action, _states = model.predict(obs)
-      obs, rewards, done, info = env.step(action)s
+      obs, rewards, done, info = env.step(action)
       env.render(str(r))
       if done:
         break
