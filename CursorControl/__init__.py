@@ -1,6 +1,7 @@
 from gym.envs.registration import register
 import gym
 from CursorControl.envs import VelNaiveAgent
+from CursorControl.envs import VelocityControl2
 
 register(id='velocitycontrol-v0',
         entry_point='CursorControl.envs:VelocityControl',

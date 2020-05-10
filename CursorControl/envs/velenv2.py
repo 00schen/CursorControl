@@ -17,12 +17,12 @@ SCREEN_SIZE = 500
 class VelocityControl(gym.GoalEnv):
   """ Version 1 copy only for pretraining 2D Oracle using HER """
   GOAL_THRESH = .05
-  MAX_VEL = .1
+  MAX_VEL = .05
 
   NUM_OBSTACLES = 5
   OBSTACLE_WIDTH = np.array((.2,.3))
 
-  def __init__(self, max_ep_len=30, oracle_noise=.05, gamma=.9, rollout=3, penalty=10, oracle_dim=2):
+  def __init__(self, max_ep_len=200, oracle_noise=.05, gamma=.9, rollout=3, penalty=10, oracle_dim=2):
     self.MAX_EP_LEN = max_ep_len
     self.GAMMA = gamma
     self.penalty = penalty
@@ -66,7 +66,8 @@ class VelocityControl(gym.GoalEnv):
     self.success = goal_dist <= self.GOAL_THRESH and self.click
 
     r = 100*self.success\
-      - self.penalty*(self.click and not self.success)
+      - self.penalty*(self.click and not self.success)\
+      - self.penalty*(self._hit_obstacle(self.pos[:2]) and not self.success)
       # - self.penalty*blocked
 
     self.curr_step += 1
@@ -87,7 +88,8 @@ class VelocityControl(gym.GoalEnv):
     goal_dist = norm(acheived[:2]-desired[:2])
     success = goal_dist <= self.GOAL_THRESH and click
     r = 100*success\
-      - self.penalty*(click and not success)
+      - self.penalty*(click and not success)\
+      - self.penalty*(self._hit_obstacle(acheived[:2]) and not success)
       # - self.penalty*blocked
     return r
 
@@ -163,6 +165,14 @@ class VelocityControl(gym.GoalEnv):
         return True
     return False
 
+  def _hit_obstacle(self,a):
+    p,q = self.obstacles[:,0,:],self.obstacles[:,1,:]
+    norms = norm(q-p,axis=1)**2
+    t = ((a-p).reshape((-1,1,2))@(q-p).reshape((-1,2,1))).flatten()/norms
+    idx = np.where(np.bitwise_and(t>0, t<1))
+    x = ((q-p)*t.reshape((-1,1))+p)[idx]
+    return np.any(norm(x-a,axis=1) < self.MAX_VEL)
+
 class Noise():
   def __init__(self, env, sd, dim):
     self.SD = sd
@@ -199,20 +209,67 @@ class NaiveAgent():
     return [((np.arctan2(comp[1],comp[0])+(2*np.pi))%(2*np.pi),\
       min(self.env.MAX_VEL,norm(comp)),False)]
 
+class MouseAgent():
+  def __init__(self,env):
+    self.env = env
+  def predict(self,obs=None):
+    pressed = pygame.key.get_pressed()
+    if pressed[pygame.K_a]:
+      vel = np.array((np.pi,self.env.MAX_VEL))
+    if pressed[pygame.K_w]:
+      vel = np.array((np.pi/2,self.env.MAX_VEL))
+    if pressed[pygame.K_d]:
+      vel = np.array((0,self.env.MAX_VEL))
+    if pressed[pygame.K_s]:
+      vel = np.array((1.5*np.pi,self.env.MAX_VEL))
+    else:
+      vel = np.array((0,0))
+    return [(*vel, norm(self.env.pos-self.env.goal)<self.env.GOAL_THRESH)]
+
 
 if __name__ == '__main__':
   env = VelocityControl()
   env.render()
+  env._max_episode_steps = 4000
   agent = NaiveAgent(env)
 
-  for j in range(5):
+  for j in range(1):
     action = agent.predict()[0]
-    for i in range(10):
+    for i in range(1000):
       obs, r, done, debug = env.step(action)
       action = agent.predict(obs)[0]
       env.render("test")
+      print("just hit_obs: ", env._hit_obstacle(env.pos))
+      print(env._hit_obstacle(env.pos) and not norm(env.pos-env.goal)<env.GOAL_THRESH)
       if done:
         break
 
     env.reset()
+
+    # action = env.action_space.sample()
+    # done = False
+    # while not done:
+    #   for event in pygame.event.get():
+    #     if event.type == QUIT or pygame.key.get_pressed()[K_ESCAPE]: 
+    #       break
+
+    #   pressed = pygame.key.get_pressed()
+    #   if pressed[pygame.K_a]:
+    #     vel = np.array((np.pi,env.MAX_VEL))
+    #   if pressed[pygame.K_w]:
+    #     vel = np.array((np.pi/2,env.MAX_VEL))
+    #   if pressed[pygame.K_d]:
+    #     vel = np.array((0,env.MAX_VEL))
+    #   if pressed[pygame.K_s]:
+    #     vel = np.array((1.5*np.pi,env.MAX_VEL))
+    #   else:
+    #     vel = np.array((0,0))
+    #   action = (*vel, norm(env.pos-env.goal)<env.GOAL_THRESH)
+
+    #   obs, r, done, debug = env.step(action)
+    #   action = agent.predict(obs)[0]
+    #   env.render("test")
+    #   print(env._hit_obstacle(env.pos))
+
+    # env.reset()
   
