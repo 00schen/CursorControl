@@ -23,6 +23,17 @@ class TCNBlock(tf.keras.layers.Layer):
         X = reduce(lambda value,func: func(value),self.layers,X)
         return self.add([X,X_short])       
 
+class TCN(tf.keras.Model):
+    def __init__(self,lr,num_blocks=1,kernel_size=5,block_size=3,dilation=2,dropout_rate=0):
+        super().__init__()
+        self.start = Conv1D(64,1, padding='causal',input_shape=(200,27))
+        self.blocks = [TCNBlock(kernel_size=kernel_size,block_size=block_size,dilation=dilation,dropout_rate=dropout_rate) for _i in range(num_blocks)]
+        self.classifier = Conv1D(3,kernel_size,padding='causal')
+
+    def call(self,X,trainable=False):
+        return reduce(lambda value,func: func(value,trainable), [self.start]+self.blocks+[self.classifier],X)
+    
+
 def make_TCN(lr,num_blocks=1,kernel_size=5,block_size=3,dilation=2,dropout_rate=0):
     model = tf.keras.Sequential([Conv1D(64,1, padding='causal',input_shape=(200,27))]\
         + [TCNBlock(kernel_size=kernel_size,block_size=block_size,dilation=dilation,dropout_rate=dropout_rate) for _i in range(num_blocks)]\

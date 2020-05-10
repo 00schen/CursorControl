@@ -107,11 +107,11 @@ if __name__ == "__main__":
 	kernel_sizes = range(10,40,10)
 
 	for lr,num_block,block_size,kernel_size in product(lrs,num_blocks,block_sizes,kernel_sizes):
-		# model = make_TCN(lr,num_blocks=num_block,block_size=block_size,kernel_size=kernel_size)
+		model = make_TCN(lr,num_blocks=num_block,block_size=block_size,kernel_size=kernel_size)
 
-		strategy = tf.distribute.MirroredStrategy()
-		with strategy.scope():
-			model = make_TCN(lr,num_blocks=num_block,block_size=block_size,kernel_size=kernel_size)
+		# strategy = tf.distribute.MirroredStrategy()
+		# with strategy.scope():
+		# 	model = make_TCN(lr,num_blocks=num_block,block_size=block_size,kernel_size=kernel_size)
 		
 		model_dir = f'block_{num_block}_{block_size}_kernel_{kernel_size}_lr_{lr:.2E}'
 
