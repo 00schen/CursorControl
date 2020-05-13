@@ -10,6 +10,74 @@ from functools import reduce
 from collections import deque
 import os
 
+class DataGenerator(tf.keras.utils.Sequence):
+	'Generates data for Keras'
+	def __init__(self, list_IDs, batch_size=50, shuffle=True):
+		'Initialization'
+		self.batch_size = batch_size
+		self.list_IDs = list_IDs
+		self.shuffle = shuffle
+		self.on_epoch_end()
+		self.cache = {}
+
+	def __len__(self):
+		'Denotes the number of batches per epoch'
+		return len(self.list_IDs)*500//self.batch_size
+
+	def __getitem__(self, index):
+		'Generate one batch of data'
+		X, Y = self.__data_generation(self.indexes[self.count:self.count+self.batch_size//10])
+		self.count += self.batch_size//10
+
+		return X, Y
+
+	def on_epoch_end(self):
+		'Updates indexes after each epoch'
+		self.indexes = np.arange(len(self.list_IDs)*50)
+		if self.shuffle == True:
+			np.random.shuffle(self.indexes)
+		self.count = 0
+		self.cache = {}
+
+	def __data_generation(self, indices):
+		'Generates data containing batch_size samples'
+		X = np.empty((self.batch_size, 201, 27))
+		Y = np.empty((self.batch_size, 200, 3))
+
+		for index,count in zip(indices,range(0,len(indices*10),10)):
+			file_id,block = index//50, index%50
+			if file_id in self.cache:
+				X[count:count+10] = self.cache[file_id][block*10:(block+1)*10]
+			else:
+				self.cache[file_id] = np.load(self.list_IDs[file_id])
+				X[count:count+10] = self.cache[file_id][block*10:(block+1)*10]
+		if len(self.cache) > 100: 
+			self.cache.popitem()
+		X = X[:,:-1,:]
+		Y = np.tile(np.expand_dims(X[:,-1,:3],axis=1),(1,200,1))
+
+		return X, Y
+
+def serve_data(file,batch_size,buffer_size):
+	data = np.load(file)
+	X,Y = data.values()
+	Y = np.repeat(Y[:,np.newaxis,:],200,1)
+
+	idx = np.random.choice(range(len(X)),int(.2*len(X)),replace=False)
+	X_train,Y_train = np.delete(X,idx,axis=0),np.delete(Y,idx,axis=0)
+	X_valid,Y_valid = X[idx],Y[idx]
+
+	X_train = (X_train-np.mean(X_train,axis=1,keepdims=True))/np.std(X_train,axis=1,keepdims=True)
+	X_valid = (X_valid-np.mean(X_valid,axis=1,keepdims=True))/np.std(X_valid,axis=1,keepdims=True)
+
+	train_data = tf.data.Dataset.from_tensor_slices((X_train,Y_train))
+	train_data = train_data.cache().shuffle(buffer_size).batch(batch_size)
+
+	val_data = tf.data.Dataset.from_tensor_slices((X_valid,Y_valid))
+	val_data = val_data.batch(batch_size)
+
+	return train_data,val_data
+
 class Noise():
     def __init__(self, action_space, dim, sd=.1, dropout=.3, lag=.3, batch=1,include=(0,1,2)):
         self.sd = sd
