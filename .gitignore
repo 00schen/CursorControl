@@ -1,2 +1,9 @@
 CursorControl.egg-info
-*__pycache__
+*/__pycache__
+*/samples/*
+*/logs/*
+logs/*
+*.zip
+*.npz
+*.npy
+*/trained_models/*

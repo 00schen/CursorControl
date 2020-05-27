@@ -10,7 +10,6 @@ import assistive_gym
 import gym
 
 from utils import PretrainAgent
-from stable_baselines.common import make_vec_env
 
 parser = argparse.ArgumentParser(description='Sequence Modeling - Velocity Controlled 2D Simulation')
 parser.add_argument('--seed', default=12345, help='Also the folder name data is saved under')
@@ -18,7 +17,7 @@ parser.add_argument('--seed', default=12345, help='Also the folder name data is 
 parser.add_argument('--env_name', default='ScratchItchJaco-v0', help='gym name of assistive environment')
 args = parser.parse_args()
 
-model_dir = os.path.join('trained_models','ppo','ScratchItchJaco-v0.pt')
+model_dir = os.path.join('trained_models','ppo',f'{args.env_name}.pt')
 save_dir = os.path.join('samples',args.env_name)
 os.makedirs(save_dir, exist_ok=True)
 

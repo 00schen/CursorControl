@@ -1,23 +1,15 @@
+import tensorflow as tf
 import numpy as np
-from numpy.linalg import norm
-import os
 
-from utils import Predictor
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.layers import LSTM
 
-dirname = os.path.dirname(__file__)
-predictor_path = os.path.join(dirname,'demo','final_model.h5')
-data_path = os.path.join(dirname,'samples','ScratchItchJaco-v0','noised_action.npz')
+X,Y = np.random.random((int(5e4),200,27)),np.random.random((int(5e4),200,3))
 
-X,y = np.load(data_path).values()
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
-predictor = Predictor(predictor_path)
+model = tf.keras.Sequential()
+model.add(LSTM(3,return_sequences=True,input_shape=(200,27)))
+model.compile(optimizer=Adam(1e-3),loss='mse',run_eagerly=False)
 
-i = 0
-for data,target in zip(X,y):
-    if i > 5:
-        break
-    i += 1
-    predictor.reset()
-    for step in data:
-        print(step.shape)
-        print(norm(predictor.predict(step)-target))
+model.fit(X,Y)

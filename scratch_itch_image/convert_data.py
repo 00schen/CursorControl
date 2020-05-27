@@ -10,7 +10,7 @@ from tqdm import tqdm
 from utils import Noise
 
 dirname = os.path.dirname(__file__)
-file_path = os.path.join(dirname,'samples','trajectory')
+file_path = os.path.join(dirname,'samples','ScratchItchJaco-v0')
 filenames = [f'{1000+i}_{j}.npz' for j in range(1,5) for i in range(1,26)]
 
 
@@ -41,18 +41,4 @@ for i in tqdm(range(len(act))):
 act = np.array(act).transpose((1,0,2))
 
 X = np.concatenate((data['obs'][...,:7],data['obs'][...,13:],act),axis=2)
-np.savez_compressed(os.path.join(file_path,'noised_trajectory'),X=X,Y=data['target'])
-
-# X = np.concatenate((data['obs'],data['act']),axis=2)
-# mean = np.mean(X.reshape((-1,37)),axis=0)
-# sd = np.std(X.reshape((-1,37)),axis=0)
-# stats = np.vstack((mean,sd))
-
-# np.save(os.path.join(file_path,'stats'),stats)
-
-# X = np.concatenate((data['obs'],act),axis=2)
-# mean = np.mean(X.reshape((-1,33)),axis=0)
-# sd = np.std(X.reshape((-1,33)),axis=0)
-# stats = np.vstack((mean,sd))
-
-# np.save(os.path.join(file_path,'trajectory_stats'),stats)
+np.savez_compressed(os.path.join(file_path,'t.noised_trajectory'),X=X,Y=data['target'])
