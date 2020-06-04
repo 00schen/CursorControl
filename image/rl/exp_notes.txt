@@ -1,0 +1,7 @@
+5_30_0: decoder is updated every rl update, but the prediction weight is only updated every episode
+6_1_0: checkpoint decoder, uses feeding environment
+6_2_0: curriculum learning, but was not updating curriculum
+
+
+laptop_6_1_0: Using SAC from sb3 implementation, did not succeed enough
+laptop_6_3_0: Using PPO from rllib implementation, added parallelism
