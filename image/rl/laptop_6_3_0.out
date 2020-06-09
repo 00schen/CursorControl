@@ -1,3 +1,0 @@
-Using TensorFlow backend.
-2020-06-03 11:25:30,138	INFO resource_spec.py:212 -- Starting Ray with 182.18 GiB memory available for workers and up to 82.08 GiB for objects. You can adjust these settings with ray.init(memory=<bytes>, object_store_memory=<bytes>).
-2020-06-03 11:25:30,712	INFO services.py:1170 -- View the Ray dashboard at [1m[32mlocalhost:8265[39m[22m

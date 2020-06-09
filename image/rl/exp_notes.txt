@@ -1,7 +1,19 @@
 5_30_0: decoder is updated every rl update, but the prediction weight is only updated every episode
 6_1_0: checkpoint decoder, uses feeding environment
 6_2_0: curriculum learning, but was not updating curriculum
-
+6_3_0: still didn't update curriculum :L
+6_4_0: infinite success buffer
+6_4_1: starting radius of .3
+6_4_2: starting radius of .4
+6_4_3: Pretrain data has dropout
+6_7_0: oracle produces noised target
+6_7_1: curriculum directly measures prediction distance
+6_7_2: directly measure distance and oracle produces noised target
+6_8_0: same as 6_7_0 but prediction lstm looks at output, not cell layer
+6_8_1: same as 6_7_2 ^^^
+6_8_2: SAC on vanilla FeedingJaco
+6_8_3: SAC on FeedingJaco with noise added to goal information 
+6_8_4: SAC on FeedingJaco with noise added to goal information but uses lstm to decode
 
 laptop_6_1_0: Using SAC from sb3 implementation, did not succeed enough
-laptop_6_3_0: Using PPO from rllib implementation, added parallelism
+laptop_6_3_0: Using PPO from rllib implementation, added parallelism, NaN errors?
