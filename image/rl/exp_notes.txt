@@ -1,19 +1,14 @@
-5_30_0: decoder is updated every rl update, but the prediction weight is only updated every episode
-6_1_0: checkpoint decoder, uses feeding environment
-6_2_0: curriculum learning, but was not updating curriculum
-6_3_0: still didn't update curriculum :L
-6_4_0: infinite success buffer
-6_4_1: starting radius of .3
-6_4_2: starting radius of .4
-6_4_3: Pretrain data has dropout
-6_7_0: oracle produces noised target
-6_7_1: curriculum directly measures prediction distance
-6_7_2: directly measure distance and oracle produces noised target
-6_8_0: same as 6_7_0 but prediction lstm looks at output, not cell layer
-6_8_1: same as 6_7_2 ^^^
-6_8_2: SAC on vanilla FeedingJaco
-6_8_3: SAC on FeedingJaco with noise added to goal information 
-6_8_4: SAC on FeedingJaco with noise added to goal information but uses lstm to decode
-
-laptop_6_1_0: Using SAC from sb3 implementation, did not succeed enough
-laptop_6_3_0: Using PPO from rllib implementation, added parallelism, NaN errors?
+6_25_18-21: SI curr-prime,curr-empty,sparse-prime,sparse-empty
+6_25_22-25: F curr-prime,curr-empty,sparse-prime,sparse-empty
+6_25_26-29: L curr-prime,curr-empty,sparse-prime,sparse-empty
+6_26_0-3: F curr-prime,curr-empty,sparse-prime,sparse-empty
+6_26_4-7: R prime-bc, prime-no bc, empty-bc, empty-no bc
+6_27_0-3: R no curr-2 target, no curr-10 target, curr-2 target, curr-10 target
+6_27_5-10: R no curr - 2,10,inf; curr - 2,10,inf
+6_27_11-16: R prime no curr - 2,10,inf; curr - 2,10,inf
+6_27_17-19: R no prime no curr relabel all - 2,10,inf; curr - 2,10,inf
+6_29_1: curriculum initial .01, trajectory,rewards added directly
+6_29_2: curriculum initial .05, trajectory,rewards added directly
+6_29_3: curriculum initial .05, joint, rewards added directly
+6_29_4: curriculum initial .05, starting positions change, joint, rewards added directly
+6_29_5: curriculum initial .05, starting positions change, trajectory, rewards added directly

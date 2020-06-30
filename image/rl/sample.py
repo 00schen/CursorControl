@@ -1,84 +1,125 @@
-import os
 import argparse
-
-import numpy as np
-
-import assistive_gym
-import gym
-from gym import spaces
-
 import ray
 from tqdm import tqdm
+from copy import deepcopy
 
-from utils import VanillaPretrain,BatchNoise
+from utils import *
+from envs import *
+
+from stable_baselines3.common.buffers import ReplayBuffer
+from stable_baselines3.common.cmd_util import make_vec_env
+from stable_baselines3.common.vec_env import VecNormalize
 
 parser = argparse.ArgumentParser(description='Sequence Modeling - Velocity Controlled 2D Simulation')
-parser.add_argument('--batch', default=25, type=int, help='Number of environments to run in parallel')
-parser.add_argument('--env_name', default='ScratchItchJaco-v0', help='gym name of assistive environment')
+parser.add_argument('--workers', default=10, type=int, help='Number of environments to run in parallel')
+parser.add_argument('--reward_type', default=4, type=int, help='1: rollout, 2: distance+action_size')
 args = parser.parse_args()
 
-@ray.remote
+@ray.remote(num_cpus=1,num_gpus=.2)
 class Sampler:
-	def sample(self,env_name,seed,count):
-		env_name0 = env_name[:-1]+'0'
-		env_name1 = env_name[:-1]+'1'
-		env = gym.make(env_name1)
+	def sample(self,config,seed,count):
+		env = make_vec_env(lambda: PreviousN(config))
 		env.seed(seed)
 		rng = np.random.default_rng(seed)
-		agent = VanillaPretrain(env_name0)
 
-		obs_data = []
-		traj_data = []
-		targets = []
+		data = []
 		for i in tqdm(range(count)):
-			obs_eps = []
-			traj_eps = []
-			target_eps = []
+			eps_data = []
 
 			obs = env.reset()
-			targets.append(env.target_pos)
+			obs = obs[0]
 
+			count = 0
 			done = False
-			action = agent.predict(obs)
-			while not done: # Scratch Itch will only finish because of gym cutoff
-				trajectory = env.oracle2trajectory(action)
-				obs_eps.append(obs)
-				traj_eps.append(trajectory)
+			while not done:
+				action = [env.envs[0].env.env.target_pos-env.envs[0].env.env.tool_pos]\
+						 if rng.random() > config['pr'] else [env.action_space.sample()]
+				new_obs,r,done,info = env.step(action) 
+				new_obs,r,done,info = new_obs[0],r[0],done[0],info[0]
+				r += info['diff_distance']
+				done = count >= 200
+				if info["distance_target"] < .025:
+					r += 100
+					eps_data.append((obs,new_obs,action,r,done,info))
+					break
+				eps_data.append((obs,new_obs,action,r,done,info))
+				obs = new_obs
 
-				obs,r,done,info = env.step(action) if rng.random() > .6 else env.step(env.action_space.sample())
-				action = agent.predict(obs)
+				count += 1
 
-			obs_data.append(obs_eps)
-			traj_data.append(traj_eps)
+			obs,new_obs,action,r,done,info = zip(*eps_data)
+			data.append([obs,new_obs,action,r,done,info])
 
-		return obs_data, traj_data, targets
+		return data
 
 if __name__ == "__main__":
-	# ray.init(temp_dir='/tmp/ray_exp')
-
-	# samplers = [Sampler.remote() for i in range(args.batch)]
-	# samples = [samplers[i].sample.remote(args.env_name,1000+i,1500//args.batch) for i in range(args.batch)]
-	# samples = [ray.get(sample) for sample in samples]
-	# obs,trajectory,targets = zip(*samples)
-	# obs,trajectory,targets = list(obs),list(trajectory),list(targets)
-	# obs,trajectory,targets = np.concatenate(obs),np.concatenate(trajectory),np.concatenate(targets)
-
-	# np.savez_compressed(f"{args.env_name[0]}.dropout_sample",obs=obs,trajectory=trajectory,targets=targets)
+	ray.init(temp_dir='/tmp/ray_exp')
 	
-	# obs,trajectory,targets = np.load(f"{args.env_name[0]}.dropout_sample.npz").values()
-	# act = np.copy(trajectory.transpose((1,0,2)))
-	# noise = BatchNoise(spaces.Box(low=-.01*np.ones(3),high=.01*np.ones(3)),3,batch=act.shape[1])
-	# for i in tqdm(range(len(act))):
-	# 	act[i] = noise(act[i])
-	# act = np.array(act).transpose((1,0,2))
-	# np.savez_compressed(f"{args.env_name[0]}1.noised_trajectory",obs=obs,noised=act,unnoised=trajectory,targets=targets)
+	# envs = ['ScratchItch']
+	# success_rates = []
+	# min_distances = []
+	# for env in envs:
+	# 	curriculum_default_config = {'num_obs': 5, 'oracle': 'trajectory', 'coop': False,
+	# 								'action_type': 'joint', 'step_limit': np.inf}
+	# 	env_config = deepcopy(default_config)
+	# 	env_config.update(curriculum_default_config)
+	# 	env_config.update(env_map[env])
+	# 	print(env)
+	# 	print(env_config['env_name'])
 
-	obs,trajectory,targets = np.load(f"{args.env_name[0]}.dropout_sample.npz").values()
-	act = np.copy(obs[...,7:10])
-	act = np.array(act).transpose((1,0,2))
-	noise = BatchNoise(spaces.Box(low=-1*np.ones(3),high=np.ones(3)),3,batch=act.shape[1])
-	for i in tqdm(range(len(act))):
-		act[i] = noise(act[i])
-	act = np.array(act).transpose((1,0,2))
-	np.savez_compressed(f"{args.env_name[0]}1.noised_trajectory",obs=obs,noised=act,unnoised=obs[...,7:10],targets=targets)
+	# 	configs = [{**deepcopy(env_config),**{'pr': pr}} for pr in [0,.25,.5,.75]]
+	# 	success_rate = []
+	# 	min_distance = []
+	# 	for config in configs:
+	# 		print(config['env_name'])
+	# 		samplers = [Sampler.remote() for i in range(args.workers)]
+	# 		samples = [samplers[i].sample.remote(config,1000+i,500//args.workers) for i in range(args.workers)]
+	# 		samples = [ray.get(sample) for sample in samples]
+	# 		# samples = [Sampler().sample(config,1000+i,100//args.workers) for i in range(args.workers)]
 
+	# 		samples = list(zip(*sum(samples,[])))
+			
+	# 		success_rate.append(np.mean([np.any(np.array(sample)>50) for sample in samples[3]]))
+	# 		success_rates.append(success_rate)
+
+	# 		min_distance.append(np.mean([np.amin([info["distance_target"] for info in sample]) for sample in samples[5]]))
+	# 		min_distances.append(min_distance)
+
+	# np.savez_compressed('S.success_rates',**dict(list(zip(envs,success_rates))))
+	# np.savez_compressed('S.min_distances',**dict(list(zip(envs,min_distances))))
+
+	envs = ['Reach']
+	for env in envs:
+		num_obs = 1 if args.reward_type==OBS1 else 2 if args.reward_type==OBS2 else 5
+		curriculum_default_config = {'oracle': 'trajectory', 'step_limit': np.inf}
+		env_config = deepcopy(default_config)
+		env_config.update(curriculum_default_config)
+		env_config.update(action_map['trajectory'])
+		env_config.update(env_map[env])
+		env_config['pr'] = .5
+
+		samplers = [Sampler.remote() for i in range(args.workers)]
+		samples = [samplers[i].sample.remote(env_config,1000+i,5000//args.workers) for i in range(args.workers)]
+		samples = [ray.get(sample) for sample in samples]
+
+		print("sampling done")
+		samples = list(zip(*sum(samples,[])))
+		samples = [sum(component,()) for component in samples]
+		print(len(samples[0]))
+
+		if args.reward_type == NORM:
+			samples[3] = (samples[3]-np.mean(samples[3],axis=0))/np.std(samples[3],axis=0)
+			stats_path = os.path.join(os.path.abspath(''),"replays",f"replay.{env[0]}.stats")
+			np.savez_compressed(stats_path,mean=np.mean(samples[3],axis=0),std=np.std(samples[3],axis=0))
+		buffer = ReplayBuffer(int(1e6),
+							spaces.Box(-np.inf,np.inf,(
+									(env_config["sa_obs_size"]+env_config['oracle_size'])*env_config['num_obs'],)),
+							env_config['action_space'],device='cuda')
+		buffer.extend(*samples)
+
+		reward_name = SAMPLE_NAME[args.reward_type]
+		path = os.path.join(os.path.abspath(''),"replays",f"replay.{env[0]}.traj")
+		with open(path, "wb") as file_handler:
+			pickle.dump(buffer, file_handler)
+
+	
