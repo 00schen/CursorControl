@@ -26,7 +26,7 @@ class IKPretrain:
 		self.new_pos = -1
 		self.tool_pos = -1
 	
-	def predict(self,env,pred,obs):
+	def predict(self,env,pred):
 		joint_states = p.getJointStates(env.robot, jointIndices=env.robot_left_arm_joint_indices, physicsClientId=env.id)
 		joint_positions = np.array([x[0] for x in joint_states])
 
@@ -60,13 +60,14 @@ class GymWrapper(Env):
 			"Laptop": assistive_gym.LaptopJacoEnv,
 			"LightSwitch": assistive_gym.LightSwitchJacoEnv,
 			"Reach": assistive_gym.ReachJacoEnv,
-		}[env_name](**config['env_kwargs'])
+		}[config['env_name']](**config['env_kwargs'])
 
 		if config['action_type'] in ['target', 'trajectory']:
 			self.pretrain = config['pretrain'](config)
 		joint_action = lambda action: action
 		target_action = lambda pred: self.pretrain.predict(self.env,pred)
-		trajectory_action = lambda traj: target_action(self.env.tool_pos+tf.clip_by_norm(traj,.05).numpy())
+		clip_by_norm = lambda traj,limit: traj/norm(traj)*np.clip(norm(traj),None,limit)
+		trajectory_action = lambda traj: target_action(self.env.tool_pos+clip_by_norm(traj,.05))
 		self.translate_action = {
 			'joint': joint_action,
 			'target': target_action,
@@ -97,7 +98,7 @@ class Noise():
 		self.dropout = dropout
 
 		self.action_space = action_space
-		self.noises = [[self._add_awg,self._add_lag,self._add_dropout][i] for i in include]
+		self.noises = [[self._add_awg,self._add_lag,self._add_dropout][i] for i in include]+[lambda value: value]
 
 	def reset(self):
 		# self.noise = random.normal(np.identity(self.dim), self.sd)
@@ -119,7 +120,7 @@ class Oracle:
 		self.determiner = config['determiner']
 		self.indices = config['indices']
 		self.noise = Noise(spaces.Box(-.01,.01,(config['oracle_size'],)))
-		self.reset()
+		# self.noise = Noise(spaces.Box(-.01,.01,(config['oracle_size'],)),include=())
 
 	def reset(self):
 		self.noise.reset()
@@ -156,6 +157,8 @@ class Sparse(SharedAutonomy):
 		self.step_limit = config['step_limit']
 		self.success_count = deque([0]*20,20)
 		self.end_early = config['end_early']
+		self.reward_type = config['reward_type']
+		self.phi = config['phi']
 
 	def step(self,action):
 		obs,r,done,info = super().step(action)
@@ -176,7 +179,10 @@ class Sparse(SharedAutonomy):
 			else:
 				done = False
 
-		r -= info['distance_target']
+		r += self.phi({
+			'distance_target': info['distance_target'],
+			'diff_distance': info['diff_distance']
+		}[self.reward_type])
 
 		return obs,r,done,info
 
@@ -230,7 +236,7 @@ class TargetRegion(PreviousN):
 	def reset(self):
 		self.wait_time += 1
 		if self.wait_time > 20 and np.mean(self.success_count) > .5:
-			self.t = min(self.t + .01, 1)
+			self.t = min(self.t + .005, 1)
 			self.wait_time = 0
 		t = self.t
 
@@ -249,8 +255,8 @@ class TargetRegion(PreviousN):
 
 		def generate_targets(self):
 			nonlocal t
-			lim = (np.clip(self.init_pos-t*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)),
-				np.clip(self.init_pos+t*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)))
+			lim = (np.clip(self.init_pos-t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)),
+				np.clip(self.init_pos+t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)))
 			target_pos = self.target_pos = self.np_random.uniform(*lim)
 			if self.gui:
 				sphere_collision = -1
@@ -263,15 +269,13 @@ class TargetRegion(PreviousN):
 		return obs
 
 default_config = {
-	'radius_max': 1,
-	'pred_step': 10,
 	'step_limit': 200,
-	'action_gamma': 10,
-	'coop': False,
 	'end_early': False,
 	'env_kwargs': {},
 	'oracle_size': 3,
-	'num_obs': 5
+	'num_obs': 5,
+	'reward_type': 'distance_target',
+	'phi': lambda d: -d
 	}
 env_keys = ('env_name','obs_size','sa_obs_size','indices','pretrain')
 env_map = {
