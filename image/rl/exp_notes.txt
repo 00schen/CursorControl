@@ -24,3 +24,8 @@
 6_30_18-20: traj, lr 1e-4: 1/total, diff, diff**3, noise, trajectory oracle
 7_1_0-2: traj, lr 1e-4: 1/total, diff, diff**3, noise, target oracle
 7_1_3-5: joint, lr 1e-4: 1/total, diff, diff**3, noise, trajectory oracle
+
+7_1_6-8: movinginit joint, lr 1e-4: 1/total, diff, diff**3, noise, trajectory oracle
+7_1_9-11: movinginit traj, lr 1e-4: 1/total, diff, diff**3, noise, trajectory oracle
+7_1_12-14: movingint joint, lr 1e-4: 1/total, diff, diff**3, noise, target oracle
+7_1_15-17: movinginit traj, lr 1e-4: 1/total, diff, diff**3, noise, target oracle

@@ -23,11 +23,10 @@ class TensorboardCallback(BaseCallback):
 		env = self.training_env.envs[0].env.env
 		self.min_dist = np.minimum(self.min_dist,np.linalg.norm(env.target_pos - env.tool_pos))	
 		self.logger.record('success_metric/success_rate', np.mean(base_env.success_count))
-		if self.n_calls % 200 == 195:
-			if self.curriculum:
-				self.logger.record('success_metric/t', base_env.t)	
-			self.logger.record('success_metric/min_distance', self.min_dist)
-			self.logger.record('success_metric/final_distance', np.linalg.norm(env.target_pos - env.tool_pos))
+		if self.curriculum:
+			self.logger.record('success_metric/t', base_env.t)	
+		self.logger.record('success_metric/min_distance', self.min_dist)
+		self.logger.record('success_metric/noop_rate', np.mean(base_env.noop_buffer))
 
 		return True
 	def _on_rollout_start(self):

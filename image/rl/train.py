@@ -19,13 +19,13 @@ parser.add_argument('--local_dir', default="~/share/image/rl/test",help='dir to 
 parser.add_argument('--tag')
 args, _ = parser.parse_known_args()
 
-@ray.remote(num_cpus=1,num_gpus=.33)
+@ray.remote(num_cpus=1,num_gpus=.25)
 class Runner:
 	def run(self,config):
 		env_config = config['env_config']
 		logdir = os.path.join(args.local_dir,config['exp_name'])
 		os.makedirs(logdir, exist_ok=True)
-		env = TargetRegion if config['curriculum'] else PreviousN
+		env = config['wrapper']
 		env = make_vec_env(lambda: env(env_config),monitor_dir=logdir)
 		env = VecNormalize(env,norm_reward=False)
 		env.seed(config['seed'])
@@ -68,82 +68,86 @@ if __name__ == "__main__":
 	ls_config.update(env_map['LightSwitch'])
 	r_config.update(env_map['Reach'])
 
-	"""joint, lr 1e-4"""
-	trial_configs = [
-		{'exp_name': '6_30_6b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-		{'exp_name': '6_30_7b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-		{'exp_name': '6_30_8b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
-	]
-	for trial in trial_configs:
-		trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'trajectory'})
-		trial['env_config'].update(action_map['joint'])
-		trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
-
-	"""traj, lr 1e-4"""
-	trial_configs = [
-		{'exp_name': '6_30_9b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-		{'exp_name': '6_30_10b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-		{'exp_name': '6_30_11b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
-	]
-	for trial in trial_configs:
-		trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'trajectory'})
-		trial['env_config'].update(action_map['trajectory'])
-		trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
-
-	"""joint, lr 1e-4, target oracle"""
-	trial_configs = [
-		{'exp_name': '6_30_12b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-		{'exp_name': '6_30_13b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-		{'exp_name': '6_30_14b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
-	]
-	for trial in trial_configs:
-		trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'target'})
-		trial['env_config'].update(action_map['joint'])
-		trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
-
-	"""traj, lr 1e-4"""
-	trial_configs = [
-		{'exp_name': '6_30_15b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-		{'exp_name': '6_30_16b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-		{'exp_name': '6_30_17b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
-	]
-	for trial in trial_configs:
-		trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'target'})
-		trial['env_config'].update(action_map['trajectory'])
-		trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
-
-	"""traj, lr 1e-4, noised"""
-	trial_configs = [
-		{'exp_name': '6_30_18b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-		{'exp_name': '6_30_19b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-		{'exp_name': '6_30_20b', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
-	]
-	for trial in trial_configs:
-		trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'trajectory'})
-		trial['env_config'].update(action_map['trajectory'])
-		trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
-
-	# """traj, lr 1e-4, noised, target oracle"""
+	# """no reward term noised"""
 	# trial_configs = [
-	# 	{'exp_name': '7_1_0', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-	# 	{'exp_name': '7_1_1', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-	# 	{'exp_name': '7_1_2', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
+	# 	{'exp_name': '7_1_18', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_19', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_20', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_21', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+
+	# 	{'exp_name': '7_1_22', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_23', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_24', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_25', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'target'})
+	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
 	# 	trial['env_config'].update(action_map['trajectory'])
-	# 	trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
+	# 	trial.update({'curriculum': True, 'lr': 1e-4})
 
-	# """joint, lr 1e-4, noised, traj oracle"""
+	# """no reward term noised"""
 	# trial_configs = [
-	# 	{'exp_name': '7_1_3', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'distance_target','phi':lambda d: 1/d}}},
-	# 	{'exp_name': '7_1_4', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d}}},
-	# 	{'exp_name': '7_1_5', 'seed': 1001, 'env_config':{**r_config,**{'reward_type':'diff_distance','phi':lambda d: d**3}}},
+	# 	{'exp_name': '7_1_18a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_19a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_20a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_21a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+
+	# 	{'exp_name': '7_1_22a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_23a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_24a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_25a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'env_kwargs': {'target_first': False}, 'oracle': 'trajectory'})
-	# 	trial['env_config'].update(action_map['joint'])
-	# 	trial.update({'relabel_all': True, 'curriculum': True, 'lr': 1e-4})
+	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update(action_map['trajectory'])
+	# 	trial.update({'curriculum': True, 'lr': 1e-4})
+
+	# """no reward term no noised"""
+	# trial_configs = [
+	# 	{'exp_name': '7_1_26', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_27', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_28', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_29', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+
+	# 	{'exp_name': '7_1_30', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_31', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_32', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_33', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+	# ]
+	# for trial in trial_configs:
+	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update(action_map['trajectory'])
+	# 	trial.update({'curriculum': True, 'lr': 1e-4})
+
+	# """no reward term noised"""
+	# trial_configs = [
+	# 	{'exp_name': '7_1_26a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_27a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_28a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_29a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+
+	# 	{'exp_name': '7_1_30a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':2,'target_first':True},}}},
+	# 	{'exp_name': '7_1_31a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':5,'target_first':True},}}},
+	# 	{'exp_name': '7_1_32a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':10,'target_first':True},}}},
+	# 	{'exp_name': '7_1_33a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
+	# ]
+	# for trial in trial_configs:
+	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update(action_map['trajectory'])
+	# 	trial.update({'curriculum': True, 'lr': 1e-4})
+
+	"""no noise inverse reward traj control"""
+	trial_configs = [
+		{'exp_name': '7_1_34', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target',}}},
+		{'exp_name': '7_1_34a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target',}}},
+		
+		{'exp_name': '7_1_35', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'target',}}},
+		{'exp_name': '7_1_35a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target',}}},
+	]
+	for trial in trial_configs:
+		trial['env_config'].update({'noise_type':'none','reward_type':'distance_target','phi':lambda d:1/d,'env_kwargs':{'target_first':True},})
+		trial['env_config'].update(action_map['trajectory'])
+		trial.update({'curriculum': True, 'wrapper': MovingInit, 'lr': 1e-4})
 
 	runners = [Runner.remote() for _i in range(len(trial_configs))]
 	runners = [runner.run.remote(config) for runner,config in zip(runners,trial_configs)]
