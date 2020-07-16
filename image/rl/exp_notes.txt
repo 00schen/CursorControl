@@ -29,3 +29,19 @@
 7_1_9-11: movinginit traj, lr 1e-4: 1/total, diff, diff**3, noise, trajectory oracle
 7_1_12-14: movingint joint, lr 1e-4: 1/total, diff, diff**3, noise, target oracle
 7_1_15-17: movinginit traj, lr 1e-4: 1/total, diff, diff**3, noise, target oracle
+
+7_2_0: dist_hot_cold
+7_2_1: rad_hot_cold
+7_2_2: dist_disc_traj
+7_2_3: rad_disc_traj
+7_3_0: linear
+7_3_1: concave
+7_3_2: convex
+7_4_0: rad-hot-cold pavlov
+7_4_1: rad-disc-traj pavlov
+7_5_0: rad_disc_traj pavlov, new param range.
+7_7_1: blank sweep four tasks
+7_10_0: scratch-itch,feeding,laptop empirical user
+7_11_0: discrete targets, light-switch,feeding,laptop, empirical user, curriculum
+7_12_0: switch to target based control
+7_13_0: dense user input during pretraining. positive examples, mixed, masking obs

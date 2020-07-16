@@ -314,3 +314,26 @@ class ResidualLearning(PreviousN):
 		self.prev_inputs = deque([],10)
 		self.prev_inputs.append(obs[-3:])
 		return obs
+
+class GymWrapper(Env):
+	def __init__(self,config):
+		self.env = {
+			"ScratchItch": assistive_gym.ScratchItchJacoEnv,
+			"Feeding": assistive_gym.FeedingJacoEnv,
+			"Laptop": assistive_gym.LaptopJacoEnv,
+			"LightSwitch": assistive_gym.LightSwitchJacoEnv,
+			"Reach": assistive_gym.ReachJacoEnv,
+		}[config['env_name']](**config['env_kwargs'])
+
+	def step(self,action):
+		obs,r,done,info = self.env.step(action)
+		return obs,r,done,info
+	def reset(self):
+		obs = self.env.reset()
+		return obs
+	def render(self,mode=None,**kwargs):
+		return self.env.render(mode)
+	def seed(self,value):
+		self.env.seed(value)
+	def close(self):
+		self.env.close()

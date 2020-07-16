@@ -8,6 +8,7 @@ import torch
 import numpy as np
 from copy import deepcopy
 from types import MethodType
+import pybullet as p
 
 from stable_baselines3.sac import SAC
 from stable_baselines3.common.cmd_util import make_vec_env
@@ -20,25 +21,45 @@ from envs import *
 dirname = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == "__main__":
-	curriculum_default_config = \
-	{'oracle': 'trajectory', 'oracle_size': 3, 'step_limit': 200, 'env_kwargs':{'target_first': False}}
 	env_config = deepcopy(default_config)
-	env_config.update(curriculum_default_config)
-	env_config.update(env_map["Reach"])
-	env_config.update(action_map['trajectory'])
-	config = env_config
+	env_config.update(env_map["LightSwitch"])
+	env_config.update(action_map['disc_target'])
+	env_config.update({
+		'end_early': True,
+		'noise': False,
+		'oracle_size': 6,
+		'phi':lambda d: 0,
+		'oracle': 'dd_target',
+		'num_obs': 6,
+		# 'num_obs': 4,
+		'num_nonnoop': 10,
+		'blank': 1,
+		'oracle': 'user_model',
+		"input_penalty": 2,
+	})
 
-	env = make_vec_env(lambda: TargetRegion(config))
-	env = VecNormalize(env,norm_reward=False)
-	agent = SAC.load("rl_model_100000_steps")
-	env = env.load("norm_100000_steps",env)
+	env = make_vec_env(lambda: PrevNnonNoopK(env_config))
+	env = VecNormalize.load("norm.750000",env)
+	# env = VecNormalize.load("norm.1000000",env)
+	# env = VecVideoRecorder(env, 'videos/',
+    #                    record_video_trigger=lambda x: x == 0, video_length=1000,
+    #                    name_prefix="light_switch")
+	agent = SAC.load("model.750000")
+	# agent = SAC.load("model.1000000")
 
-	env.render()
+	env.render('human')
+	# p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, "light_switch.mp4")
+
 	obs = env.reset()[0]
-	while True:
+
+	# while True:
+	i = 0
+	while i < 10:
 		action = agent.predict(obs)
 		obs,r,done,info = env.step(action)
 		obs,r,done,info = obs[0],r[0],done[0],info[0]
-		print(info['distance_target'])
-		# print("target_pos", env.envs[0].env.env.target_pos)
-		env.render()
+		if done:
+			i+=1
+	env.close()
+
+

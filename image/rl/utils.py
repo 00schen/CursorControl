@@ -1,17 +1,23 @@
 import numpy as np
 
-import torch
+import torch as th
 from tensorflow import keras
 from tensorflow.keras.layers import Dense
 
+from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.running_mean_std import RunningMeanStd
 from stable_baselines3.common.callbacks import BaseCallback,CallbackList,CheckpointCallback
-from stable_baselines3.common.buffers import ReplayBuffer
+from stable_baselines3.common.cmd_util import make_vec_env
+from stable_baselines3.common import logger
 
 import pybullet as p
 
 import os
 import pickle
+
+from envs import *
+from collections import namedtuple
+from tqdm import tqdm,trange
 
 """Stable Baseline Callbacks"""
 class TensorboardCallback(BaseCallback):
@@ -24,9 +30,12 @@ class TensorboardCallback(BaseCallback):
 		self.min_dist = np.minimum(self.min_dist,np.linalg.norm(env.target_pos - env.tool_pos))	
 		self.logger.record('success_metric/success_rate', np.mean(base_env.success_count))
 		if self.curriculum:
-			self.logger.record('success_metric/t', base_env.t)	
+			self.logger.record('success_metric/t', base_env.scheduler.t)
+		self.logger.record('success_metric/init_distance', np.linalg.norm(env.target_pos-env.init_pos))
 		self.logger.record('success_metric/min_distance', self.min_dist)
 		self.logger.record('success_metric/noop_rate', np.mean(base_env.noop_buffer))
+		self.logger.record('success_metric/accuracy', np.mean(base_env.accuracy))
+		# self.logger.record('success_metric/log_loss', np.mean(base_env.log_loss))
 
 		return True
 	def _on_rollout_start(self):
@@ -145,6 +154,94 @@ def norm_factory(base):
 			with open(path, "rb") as file_handler:
 				self.norm = pickle.load(file_handler)
 	return NormEnv
+
+"""Pretrain"""
+class TransitionFeeder:
+	def __init__(self,config):
+		obs_data,r_data,done_data,targets_data = config['obs_data'],config['r_data'],config['done_data'],config['targets_data']
+		self.data = zip(obs_data,r_data,done_data,targets_data)
+		self.env = config['env'].env.env
+		self.env.reset()
+		self.action_space = config['env'].action_space
+		self.blank_obs = config['blank_obs']
+	def reset(self):
+		obs,r,done,targets = next(self.data,([],[],[],[]))
+		self.obs,self.r,self.done,self.targets = iter(obs),iter(r),iter(done),iter(targets)
+		return next(self.obs,None)
+	def step(self,action):
+		obs,r,done = next(self.obs,None),next(self.r,0),next(self.done,True)
+		self.env.targets = next(self.targets,None)
+		info = {'noop':not np.count_nonzero(obs[-6:])}
+
+		if self.blank_obs:
+			obs[:-6] = 0
+
+		return obs,r,done,info
+
+IndexReplayBufferSamples = namedtuple("IndexReplayBufferSamples",
+	["observations","actions","next_observations", "dones", "rewards", "indices"])
+class IndexReplayBuffer(ReplayBuffer):
+	def __init__(self, buffer_size, observation_space, action_space, device = 'cpu', n_envs = 1):
+		super().__init__(buffer_size, observation_space, action_space, device, n_envs)
+		self.indices = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)		
+	def add(self, obs, next_obs, action, reward, done, index=None):
+		if index is not None:
+			self.indices[self.pos] = np.array(index).copy()
+		super().add(obs, next_obs, action, reward, done)
+	def _get_samples(self,batch_inds,env):
+		data = (self._normalize_obs(self.observations[batch_inds, 0, :], env),
+				self.actions[batch_inds, 0, :],
+				self._normalize_obs(self.next_observations[batch_inds, 0, :], env),
+				self.dones[batch_inds],
+				self._normalize_reward(self.rewards[batch_inds], env),
+				self.indices[batch_inds])
+		return IndexReplayBufferSamples(*tuple(map(self.to_torch, data)))
+
+def pretrain(config,env,policy):
+	if not config['bad_demonstrations']:
+		config['obs_data'],action_data,config['r_data'],config['done_data'],index_data,config['targets_data'] =\
+			np.load(os.path.join(config['og_path'],f"{config['env_name'][:2]}_demo.npz"),allow_pickle=True).values()
+	else:
+		config['obs_data'],action_data,config['r_data'],config['done_data'],index_data,config['targets_data'] =\
+			np.load(os.path.join(config['og_path'],f"{config['env_name'][:2]}_demo1.npz"),allow_pickle=True).values()
+
+	config['env'] = env.envs[0]
+	t_env = window_factory(TransitionFeeder)(config)
+	env.envs[0] = t_env
+	buffer = IndexReplayBuffer(int(1e6), t_env.observation_space, t_env.action_space, device=policy.device, n_envs=1)
+
+	obs = env.reset()
+	action_data,index_data = iter(action_data),iter(index_data)
+	for i in range(len(config['obs_data'])):
+		action_ep,index_ep = iter(next(action_data,"act_seq_done")),next(index_data,"index_done")		
+		done = False
+		while not done:
+			action = [next(action_ep,"action_done")]
+			next_obs,r,done,info = env.step(action)	
+			if not done:
+				buffer.add(obs,next_obs,action,r,done,index_ep)	
+				obs = next_obs
+			else:
+				prev_obs = obs
+				obs = next_obs
+				next_obs = [info[0]['terminal_observation']]
+				buffer.add(prev_obs,next_obs,action,r,done,index_ep)
+
+	with trange(int(buffer.size()*10/config['batch_size'])) as t:
+		for gradient_step in t:
+			replay_data = buffer.sample(config['batch_size'], env=env)
+			logits,_kwargs = policy.get_action_dist_params(replay_data.observations)
+			actor_loss = th.nn.CrossEntropyLoss()(logits,replay_data.indices.squeeze().long())
+			with th.no_grad():
+				actions = policy(replay_data.observations)
+				accuracy = actions.eq(replay_data.indices.squeeze()).float().mean()
+			logger.record('pretraining/accuracy',accuracy)
+			logger.record('pretraining/log-loss',actor_loss)
+			t.set_postfix(accuracy=accuracy.item(),loss=actor_loss.item())
+
+			policy.optimizer.zero_grad()
+			actor_loss.backward()
+			policy.optimizer.step()
 
 """Miscellaneous"""
 ROLLOUT  = 1
