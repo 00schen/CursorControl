@@ -48,7 +48,7 @@ def run(config, reporter):
 	env = make_vec_env(lambda: config['wrapper'](env_config['env_name'])(env_config),monitor_dir=logdir)
 	env = VecNormalize(env,norm_reward=False)
 	env.seed(config['seed'])
-	model = SAC(DiscretePolicy,env,train_freq=-1,n_episodes_rollout=1,gradient_steps=100,gamma=1.,
+	model = SAC(MlpPolicy,env,train_freq=-1,n_episodes_rollout=1,gradient_steps=1,gamma=1.,
 				verbose=1,tensorboard_log=logdir,seed=config['seed'],
 				learning_rate=10**config['lr'],
 				policy_kwargs={'net_arch': [config['layer_size']]*config['layer_depth']})
@@ -106,8 +106,8 @@ if __name__ == "__main__":
 		# "input_penalty": hp.uniform("input_penalty",1,50),
 		# "threshold": hp.uniform("threshold", -.6,.6),
 		# "blank": hp.uniform("blank", 0,1),
-		"num_obs": hp.randint("num_obs",10,21),
-		"input_penalty": hp.uniform("input_penalty",0,1),
+		"num_obs": hp.randint("num_obs",5,21),
+		"action_penalty": hp.uniform("action_penalty",0,5),
 		# "num_nonnoop": hp.randint("num_nonnoop",5,21),
 		# "layer_size": hp.choice("layer_size",[256,512]),
 		# "layer_depth": hp.choice("layer_depth",[3,4,5]),
@@ -138,36 +138,26 @@ if __name__ == "__main__":
 
 	"""trial configs"""
 	trial = [
-		{'exp_name': '7_14_0', 'seed': 1000, 'env_config':{**ls_config,}},
-		{'exp_name': '7_14_1', 'seed': 1000, 'env_config':{**l_config,}},
+		{'exp_name': '7_16_0', 'seed': 1000, 'env_config':{**ls_config,}},
+		{'exp_name': '7_16_1', 'seed': 1000, 'env_config':{**l_config,}},
 
 		# # use constant radian threshold
 		# {'exp_name': '7_7_3', 'seed': 1000, 'env_config':{**r_config,**{'env_kwargs': {'num_targets': 2,},}}},
 	][args.config]
 
 	trial['env_config'].update({
-		'end_early': True,
-		'noise': False,
 		'oracle_size': 6,
-		'phi':lambda d: 0,
-		# 'traj_clip': .1,
 		'oracle': 'dd_target',
-		# 'curr_phase': 'linear',
-		# "curr_inc": .03,
-		# "threshold": .6,
-		# 'num_obs': 2,
 		'num_nonnoop': 10,
-		'blank': 1,
-		'oracle': 'user_model',
 		"input_penalty": 2,
-		'action_type': 'cat_target',
+		'action_type': 'disc_target',
 	})
 	# trial['pretrain_config'].update({
 	# 	'gradient_step': 4000,
 	# 	'batch_size': 256,
 	# 	'og_path': os.path.abspath('')
 	# })
-	trial.update({'curriculum': True, 'wrapper': default_class,
+	trial.update({'curriculum': False, 'wrapper': default_class,
 				'layer_size': 256, 'layer_depth': 3})
 
 	results = tune.run(run, name= trial['exp_name'], local_dir=args.local_dir,

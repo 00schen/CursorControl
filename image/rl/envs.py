@@ -44,8 +44,9 @@ class IKPretrain:
 
 		clip_by_norm = lambda traj,limit: traj/max(1e-8,norm(traj))*np.clip(norm(traj),None,limit)
 		action = clip_by_norm(action,.1)
+
 		# p.removeBody(self.new_pos)
-		# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.01, rgbaColor=[10, 255, 10, 1], physicsClientId=env.id)
+		# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.02, rgbaColor=[10, 255, 10, 1], physicsClientId=env.id)
 		# self.new_pos = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
 		# 		basePosition=pred, useMaximalCoordinates=False, physicsClientId=env.id)
 
@@ -57,35 +58,29 @@ class IKPretrain:
 		return action
 
 def sparse_factory(env_name):
-	env = {
-			"ScratchItch": assistive_gym.ScratchItchJacoEnv,
-			"Feeding": assistive_gym.FeedingJacoEnv,
-			"Laptop": assistive_gym.LaptopJacoEnv,
-			"LightSwitch": assistive_gym.LightSwitchJacoEnv,
-			"Reach": assistive_gym.ReachJacoEnv,
-		}[env_name]
-
-	class Sparse(env):
+	class Sparse(Env):
 		def __init__(self,config):
-			super().__init__(**config['env_kwargs'])
+			self.env = {
+				"ScratchItch": assistive_gym.ScratchItchJacoEnv,
+				"Feeding": assistive_gym.FeedingJacoEnv,
+				"Laptop": assistive_gym.LaptopJacoEnv,
+				"LightSwitch": assistive_gym.LightSwitchJacoEnv,
+				"Reach": assistive_gym.ReachJacoEnv,
+			}[env_name](**config['env_kwargs'])
 
 			self.timesteps = 0
 			self.step_limit = config['step_limit']
 			self.success_count = deque([0]*20,20)
-			self.accuracy = deque([0]*1000,1000)
-			# self.log_loss = deque([1]*20,20)
 			self.end_early = config['end_early']
 			self.reward_type = config['reward_type']
 			self.phi = config['phi']
 
 		def step(self,action):
-			obs,r,done,info = super().step(action)
+			obs,r,done,info = self.env.step(action)
 			self.timesteps += 1
 			if norm(self.env.target_pos-self.env.tool_pos) < .025:
 				self.env.task_success += 1
 				info['task_success'] = True
-
-			self.accuracy.append(action==self.env.target_index)
 
 			if not self.end_early:
 				if self.timesteps >= self.step_limit:
@@ -110,9 +105,18 @@ def sparse_factory(env_name):
 			return obs,r,done,info
 
 		def reset(self):
-			obs = super().reset()
+			obs = self.env.reset()
 			self.timesteps = 0
 			return obs
+
+		def render(self,mode=None,**kwargs):
+			return self.env.render(mode)
+		def seed(self,value):
+			self.env.seed(value)
+		def close(self):
+			self.env.close()
+
+	return Sparse
 
 class Noise():
 	def __init__(self, action_space=None, sd=.1, dropout=.3, lag=.85, include=(0,1,2)):
@@ -146,14 +150,15 @@ def shared_autonomy_factory(base):
 			super().__init__(config)
 			self.noop_buffer = deque([],2000)
 			self.input_penalty = config['input_penalty']
-			# self.blank_p = config['blank']
+			self.oracle_size = config['oracle_size']
 			self.action_penalty = config['action_penalty']
+			# self.accuracy = deque([0]*1000,1000)
+			# self.log_loss = deque([1]*20,20)
 			
-			# def trajectory(obs,info):
-			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['diff_distance'] < -.1 or info['distance_target'] > .5:
-			# 		recommend[0:2] = self.env.target_pos - self.env.tool_pos
-			# 	return recommend
+			def trajectory(obs,info):
+				recommend = np.zeros(config['oracle_size'])
+				recommend[0:3] = self.env.target_pos - self.env.tool_pos
+				return recommend
 			# def dist_hot_cold(obs,info):
 			# 	"""User only tells if the robot is moving away from target or very off"""
 			# 	recommend = np.zeros(config['oracle_size'])
@@ -221,15 +226,27 @@ def shared_autonomy_factory(base):
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
 				return recommend
+
+			self.poses = [-1,-1]
 			def dd_target(obs,info):
-				diff_distances = np.array([norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])\
-								- np.array([norm(info['old_tool_pos']-target_pos) for target_pos in self.env.targets])
+				# diff_distances = np.array([norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])\
+				# 				- np.array([norm(info['old_tool_pos']-target_pos) for target_pos in self.env.targets])
+				diff_distances = np.array([-norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])
 				recommend = np.zeros(config['oracle_size'])
 				if self.env.target_index != np.argmax(diff_distances):
+					# traj = self.env.target_pos-self.env.targets[np.argmax(diff_distances)]
 					traj = self.env.target_pos-self.env.tool_pos
-					bad_traj = self.env.targets[np.argmax(diff_distances)] - self.env.tool_pos
-					axis = np.argmax(np.delete(np.abs(traj), np.argmax(np.abs(bad_traj))))
+					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
+
+					# p.removeBody(self.poses[0])
+					# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[255, 10, 10, .5])
+					# self.poses[0] = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
+					# 		basePosition=self.env.target_pos, useMaximalCoordinates=False)
+					# p.removeBody(self.poses[1])
+					# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[255, 10, 10, .5])
+					# self.poses[1] = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
+					# 		basePosition=self.env.targets[np.argmax(diff_distances)], useMaximalCoordinates=False, )
 				return recommend
 			def ded_target(obs,info):
 				recommend = np.zeros(config['oracle_size'])
@@ -247,7 +264,7 @@ def shared_autonomy_factory(base):
 				# 'user': user,
 				# 'user_model': user_model,
 				'dd_target': dd_target,
-				'ded_target': ded_target,
+				# 'ded_target': ded_target,
 			}[config['oracle']]
 
 			# if not config['noise']:
@@ -266,49 +283,58 @@ def shared_autonomy_factory(base):
 			clip_by_norm = lambda traj,limit: traj/max(1e-8,norm(traj))*np.clip(norm(traj),None,limit)
 			trajectory = lambda traj: target(self.env.tool_pos+traj)
 			# trajectory = lambda traj: target(self.env.tool_pos+clip_by_norm(traj,config['traj_clip']))
-			disc_target = lambda f_probs: target(self.env.targets[rng.choice(self.env.num_targets,p=softmax(f_probs))])
-			cat_target = lambda index: target(self.env.targets[index])
+			def disc_target(f_probs):
+				self.index = rng.choice(self.env.num_targets,p=softmax(f_probs))
+				return target(self.env.targets[self.index])
+			def cat_target(index):
+				self.index = index
+				return target(self.env.targets[index])
 			self.translate = {
-				'joint': joint,
-				'target': target,
+				# 'target': target,
 				'trajectory': trajectory,
-				'disc_target': disc_target,
-				'cat_target': cat_target,
+				# 'joint': joint,
+				# 'disc_target': disc_target,
+				# 'cat_target': cat_target,
 			}[config['action_type']]
 			self.action_space = {
-				"target": spaces.Box(-1,1,(3,)),
+				# "target": spaces.Box(-1,1,(3,)),
 				"trajectory": spaces.Box(-1,1,(3,)),
-				"joint": spaces.Box(-1,1,(7,)),
-				"disc_target": spaces.Box(-1,1,(self.env.num_targets,)),
-				"cat_target": spaces.Discrete(self.env.num_targets)
+				# "joint": spaces.Box(-1,1,(7,)),
+				# "disc_target": spaces.Box(-100,100,(self.env.num_targets,)),
+				# "cat_target": spaces.Discrete(self.env.num_targets)
 			}[config['action_type']]
 
 		def step(self,action):
 			t_action = self.translate(action)
+			# self.accuracy.append(self.index==self.env.target_index)
 			obs,r,done,info = super().step(t_action)
 			obs = self.predict(obs,info)
 			r -= self.input_penalty*(not info['noop'])
 			r -= self.action_penalty*cosine(self.env.tool_pos-info['old_tool_pos'],self.coasted_input)
+
 			return obs,r,done,info
 
 		def reset(self):
 			obs = super().reset()
-			obs = np.concatenate((obs,np.zeros(6)))
-			self.coasted_input = rng.random(3)
+			obs = np.concatenate((obs,np.zeros(self.oracle_size)))
+			self.coasted_input = rng.uniform(-1,1,3)
 			return obs
 
 		def predict(self,obs,info):
 			recommend = self.determiner(obs,info)
 
-			# recommend = recommend if rng.random() < self.blank_p else np.zeros(recommend.shape)
 			info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
 			self.noop_buffer.append(info['noop'])
 
 			if not info['noop']:
-				self.coasted_input = recommend
+				self.coasted_input = np.zeros(3)
+				index = np.argmax(recommend)
+				self.coasted_input[index//2] = 2*(index > 0) - 1
 
 			return np.concatenate((obs,recommend))
+
+	return SharedAutonomy
 
 def window_factory(base):
 	class PrevNnonNoopK(base):
@@ -329,7 +355,8 @@ def window_factory(base):
 			self.is_nonnoop.append((not info['noop']))
 			info['current_obs'] = obs
 
-			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
+			# return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
+			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),)),r,done,info
 
 		def reset(self):
 			obs = super().reset()
@@ -339,7 +366,8 @@ def window_factory(base):
 			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
 			self.history.append(obs)
-			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
+			# return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
+			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
 	return PrevNnonNoopK
 
 class CurriculumScheduler:
@@ -365,7 +393,7 @@ def moving_init_factory(base):
 		def __init__(self,config):
 			super().__init__(config)
 			self.wait_time = 0
-			config.update({'init_t': .1, 'curr_inc': .03, 'curr_phase': 'linear'})
+			config.update({'init_t': .3, 'curr_inc': .03, 'curr_phase': 'linear'})
 			self.scheduler = CurriculumScheduler(config)
 
 		def reset(self):
@@ -382,53 +410,24 @@ def moving_init_factory(base):
 			return obs
 	return MovingInit
 
-class TargetRegion(PreviousN):
-	def __init__(self,config):
-		super().__init__(config)
-		self.t = .05
-		self.wait_time = 0
-
-	def reset(self):
-		self.wait_time += 1
-		if self.wait_time > 20 and np.mean(self.success_count) > .5:
-			self.t = min(self.t + .005, 1)
-			self.wait_time = 0
-		t = self.t
-
-		def generate_targets(self):
-			nonlocal t
-			lim = (np.clip(self.init_pos-t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)),
-				np.clip(self.init_pos+t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)))
-			target_pos = self.target_pos = self.np_random.uniform(*lim)
-			if self.gui:
-				sphere_collision = -1
-				sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.01, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
-				self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual,
-												basePosition=target_pos, useMaximalCoordinates=False, physicsClientId=self.id)
-		self.env.generate_targets = MethodType(generate_targets,self.env)
-
-		obs = super().reset()
-		return obs
-
 default_config = {
 	'step_limit': 200,
-	'end_early': False,
+	'end_early': True,
 	'env_kwargs': {},
-	'oracle_size': 3,
-	'num_obs': 5,
-	'reward_type': 'distance_target',
-	'phi': lambda d: 1/d,
+	'oracle_size': 6,
+	'reward_type': 'diff_distance',
+	'phi': lambda d: 0,
 	'noise': False,
-	}
+}
 env_keys = ('env_name','obs_size','pretrain')
 env_map = {
 	"ScratchItch": dict(zip(env_keys,("ScratchItch",24,IKPretrain))),
 	"Feeding": dict(zip(env_keys,("Feeding",22,IKPretrain))),
-	"Laptop": dict(zip(env_keys,("Laptop",15,IKPretrain))),
-	"LightSwitch": dict(zip(env_keys,("LightSwitch",15,IKPretrain))),
-	# "Laptop": dict(zip(env_keys,("Laptop",18,IKPretrain))),
-	# "LightSwitch": dict(zip(env_keys,("LightSwitch",18,IKPretrain))),
+	# "Laptop": dict(zip(env_keys,("Laptop",15,IKPretrain))),
+	# "LightSwitch": dict(zip(env_keys,("LightSwitch",15,IKPretrain))),
+	"Laptop": dict(zip(env_keys,("Laptop",18,IKPretrain))),
+	"LightSwitch": dict(zip(env_keys,("LightSwitch",18,IKPretrain))),
 	"Reach": dict(zip(env_keys,("Reach",14,IKPretrain))),
 	}
 default_class = lambda env_name: reduce(lambda value,func: func(value),
-				[sparse_factory,shared_autonomy_factory,window_factory,moving_init_factory],env_name)
+				[sparse_factory,shared_autonomy_factory,window_factory],env_name)

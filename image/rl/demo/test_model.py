@@ -15,6 +15,8 @@ from stable_baselines3.common.cmd_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.vec_env import VecVideoRecorder
 
+from stable_baselines3.sac.policies import DiscretePolicy
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils import *
 from envs import *
@@ -23,29 +25,33 @@ dirname = os.path.dirname(os.path.abspath(__file__))
 if __name__ == "__main__":
 	env_config = deepcopy(default_config)
 	env_config.update(env_map["LightSwitch"])
-	env_config.update(action_map['disc_target'])
 	env_config.update({
 		'end_early': True,
 		'noise': False,
 		'oracle_size': 6,
 		'phi':lambda d: 0,
 		'oracle': 'dd_target',
-		'num_obs': 6,
-		# 'num_obs': 4,
+		'num_obs': 17,
 		'num_nonnoop': 10,
-		'blank': 1,
-		'oracle': 'user_model',
 		"input_penalty": 2,
+		'action_type': 'disc_target',
+		'action_penalty': 0.266090617689725,
+		# 'step_limit': 10
 	})
 
-	env = make_vec_env(lambda: PrevNnonNoopK(env_config))
-	env = VecNormalize.load("norm.750000",env)
-	# env = VecNormalize.load("norm.1000000",env)
+	env = make_vec_env(lambda: default_class(env_config['env_name'])(env_config))
+	env = VecNormalize.load("norm.800000",env)
 	# env = VecVideoRecorder(env, 'videos/',
     #                    record_video_trigger=lambda x: x == 0, video_length=1000,
     #                    name_prefix="light_switch")
-	agent = SAC.load("model.750000")
-	# agent = SAC.load("model.1000000")
+	agent = SAC.load("model.800000")
+
+	# agent = SAC(DiscretePolicy,env,train_freq=-1,n_episodes_rollout=1,gradient_steps=2,gamma=1.,
+	# 			verbose=1,seed=1000,
+	# 			learning_rate=1e-3,
+	# 			policy_kwargs={'net_arch': [256]*3})
+	# time_steps = int(2e6)
+	# agent.learn(total_timesteps=time_steps)
 
 	env.render('human')
 	# p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, "light_switch.mp4")

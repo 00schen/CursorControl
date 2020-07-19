@@ -337,3 +337,31 @@ class GymWrapper(Env):
 		self.env.seed(value)
 	def close(self):
 		self.env.close()
+
+class TargetRegion(PreviousN):
+	def __init__(self,config):
+		super().__init__(config)
+		self.t = .05
+		self.wait_time = 0
+
+	def reset(self):
+		self.wait_time += 1
+		if self.wait_time > 20 and np.mean(self.success_count) > .5:
+			self.t = min(self.t + .005, 1)
+			self.wait_time = 0
+		t = self.t
+
+		def generate_targets(self):
+			nonlocal t
+			lim = (np.clip(self.init_pos-t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)),
+				np.clip(self.init_pos+t*2*np.array([.75,.5,.35]),(-1,-1,.5),(.5,0,1.2)))
+			target_pos = self.target_pos = self.np_random.uniform(*lim)
+			if self.gui:
+				sphere_collision = -1
+				sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.01, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
+				self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual,
+												basePosition=target_pos, useMaximalCoordinates=False, physicsClientId=self.id)
+		self.env.generate_targets = MethodType(generate_targets,self.env)
+
+		obs = super().reset()
+		return obs
