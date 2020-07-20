@@ -98,8 +98,8 @@ def sparse_factory(env_name):
 					done = False
 
 			r += self.phi({
-				'distance_target': info['distance_target'],
-				'diff_distance': info['diff_distance']
+				'distance_to_target': info['distance_to_target'],
+				# 'diff_distance': info['diff_distance']
 			}[self.reward_type])
 
 			return obs,r,done,info
@@ -162,19 +162,19 @@ def shared_autonomy_factory(base):
 			# def dist_hot_cold(obs,info):
 			# 	"""User only tells if the robot is moving away from target or very off"""
 			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['diff_distance'] < -.1 or info['distance_target'] > .5:
+			# 	if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
 			# 		recommend[0] = 1
 			# 	return recommend
 			# def rad_hot_cold(obs,info):
 			# 	"""User only tells if the robot is off course"""
 			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['cos_off_course'] < self.threshold:
+			# 	if info['cos_error'] < self.threshold:
 			# 		recommend[0] = 1
 			# 	return recommend
 			# def dist_discrete_traj(obs,info):
 			# 	"""User corrects direction robot is most off course"""
 			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['diff_distance'] < -.1 or info['distance_target'] > .5:
+			# 	if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
 			# 		traj = self.env.target_pos-self.env.tool_pos
 			# 		axis = np.argmax(np.abs(traj))
 			# 		recommend[2*axis+(traj[axis]>0)] = 1
@@ -182,7 +182,7 @@ def shared_autonomy_factory(base):
 			def rad_discrete_traj(obs,info):
 				"""if the robot is off course, user corrects the most off direction"""
 				recommend = np.zeros(config['oracle_size'])
-				if info['cos_off_course'] < config['threshold']:
+				if info['cos_error'] < config['threshold']:
 					traj = self.env.target_pos-self.env.tool_pos
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
@@ -219,7 +219,7 @@ def shared_autonomy_factory(base):
 										0.04878049, 0.03030303, 0.03703704, 0.04278075, 0.06285714,
 										0.0430622 , 0.07220217, 0.05031447, 0.03071672, 0.02222222])
 				bins = np.linspace(-.9,1,20)
-				prob = input_probs[np.min(np.where(bins>info['cos_off_course']))]
+				prob = input_probs[np.min(np.where(bins>info['cos_error']))]
 				recommend = np.zeros(config['oracle_size'])
 				if rng.random() < prob:
 					traj = self.env.target_pos-self.env.tool_pos
@@ -323,7 +323,7 @@ def shared_autonomy_factory(base):
 		def predict(self,obs,info):
 			recommend = self.determiner(obs,info)
 
-			info['recommend'] = recommend
+			# info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
 			self.noop_buffer.append(info['noop'])
 
@@ -342,8 +342,9 @@ def window_factory(base):
 			super().__init__(config)
 			self.history_shape = (config['num_obs'],config['obs_size']+config['oracle_size'])
 			self.nonnoop_shape = (config['num_nonnoop'],config['obs_size']+config['oracle_size'])
-			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)\
-												+np.prod(self.nonnoop_shape)+3*self.env.num_targets,))
+			# self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)\
+			# 									+np.prod(self.nonnoop_shape)+3*self.env.num_targets,))
+			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
 
 		def step(self,action):
 			obs,r,done,info = super().step(action)
@@ -353,7 +354,7 @@ def window_factory(base):
 
 			self.history.append(obs)
 			self.is_nonnoop.append((not info['noop']))
-			info['current_obs'] = obs
+			# info['current_obs'] = obs
 
 			# return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
 			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),)),r,done,info
@@ -415,7 +416,7 @@ default_config = {
 	'end_early': True,
 	'env_kwargs': {},
 	'oracle_size': 6,
-	'reward_type': 'diff_distance',
+	'reward_type': 'distance_to_target',
 	'phi': lambda d: 0,
 	'noise': False,
 }

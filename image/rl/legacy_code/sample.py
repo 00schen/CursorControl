@@ -38,7 +38,7 @@ class Sampler:
 				new_obs,r,done,info = new_obs[0],r[0],done[0],info[0]
 				r += info['diff_distance']
 				done = count >= 200
-				if info["distance_target"] < .025:
+				if info["distance_to_target"] < .025:
 					r += 100
 					eps_data.append((obs,new_obs,action,r,done,info))
 					break
@@ -82,7 +82,7 @@ if __name__ == "__main__":
 	# 		success_rate.append(np.mean([np.any(np.array(sample)>50) for sample in samples[3]]))
 	# 		success_rates.append(success_rate)
 
-	# 		min_distance.append(np.mean([np.amin([info["distance_target"] for info in sample]) for sample in samples[5]]))
+	# 		min_distance.append(np.mean([np.amin([info["distance_to_target"] for info in sample]) for sample in samples[5]]))
 	# 		min_distances.append(min_distance)
 
 	# np.savez_compressed('S.success_rates',**dict(list(zip(envs,success_rates))))

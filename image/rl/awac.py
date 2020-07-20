@@ -11,14 +11,23 @@ from railrl.launchers.arglauncher import run_variants
 from railrl.torch.sac.policies import GaussianPolicy
 from railrl.torch.networks import Clamp
 
-from env import *
+from envs import *
 from utils import *
+import argparse
+from copy import deepcopy,copy
+import os
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--local_dir',default='~/share/image/rl/test',help='dir to save trials')
+parser.add_argument('--env_name',)
+parser.add_argument('--gpu', nargs="*", type=int, default=[0,0,1,1,2,2])
+args, _ = parser.parse_known_args()
 
 if __name__ == "__main__":
 	variant = dict(
 		num_epochs=5001,
-		num_eval_steps_per_epoch=1000,
-		num_trains_per_train_loop=1000,
+		num_eval_steps_per_epoch=200*20,
+		num_trains_per_train_loop=100,
 		num_expl_steps_per_train_loop=200,
 		min_num_steps_before_training=1000,
 		max_path_length=200,
@@ -35,7 +44,7 @@ if __name__ == "__main__":
 		),
 		qf_kwargs=dict(
 			hidden_sizes=[256, 256, 256],
-			output_activation=Clamp(max=0), # rewards are <= 0
+			# output_activation=Clamp(max=0), # rewards are <= 0
 		),
 
 		version="normal",
@@ -70,21 +79,26 @@ if __name__ == "__main__":
 			terminal_transform_kwargs=dict(m=0, b=0),
 		),
 		launcher_config=dict(
-			num_exps_per_instance=1,
-			region='us-west-2',
+			exp_name='test',
+			mode='local',
+			use_gpu=True,
 		),
 
 		path_loader_class=PathAdaptLoader,
 		path_loader_kwargs=dict(
 			obs_key="state_observation",
-			demo_paths=[  # these can be loaded in awac_rl.py per env
-				dict(
-				    path="demos/icml2020/hand/pen_bc5.npy",
-				    obs_dict=False,
-				    is_demo=False,
-				    train_split=0.9,
-				),
-			],
+			demo_paths=[],
+		),
+		env_demo_path=dict(
+			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_demo.npy"),
+			obs_dict=False,
+			is_demo=True,
+		),
+		env_offpolicy_data_path=dict(
+			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_offpolicy.npy"),
+			obs_dict=False,
+			is_demo=False,
+			train_split=0.9,
 		),
 		add_env_demos=True,
 		add_env_offpolicy_data=True,
@@ -93,33 +107,28 @@ if __name__ == "__main__":
 		load_demos=True,
 		pretrain_policy=True,
 		pretrain_rl=True,
+		# parallel=len(args.gpu),
+		parallel=1,
+		gpus=args.gpu,
 	)
-
-	env_config = deepcopy(default_config)
-	s_config = deepcopy(env_config)
-	f_config = deepcopy(env_config)
-	l_config = deepcopy(env_config)
-	r_config = deepcopy(env_config)
-	ls_config = deepcopy(env_config)
-	s_config.update(env_map['ScratchItch'])
-	f_config.update(env_map['Feeding'])
-	l_config.update(env_map['Laptop'])
-	r_config.update(env_map['Reach'])
-	ls_config.update(env_map['LightSwitch'])
-	env_config = r_config
-	env_kwargs = {**env_config,**dict(
+	config = deepcopy(default_config)
+	config.update(env_map[args.env_name])
+	config.update(dict(
 		oracle_size=6,
 		oracle='dd_target',
+		num_obs=10,
 		num_nonnoop=10,
 		input_penalty=2,
 		action_type='trajectory',
-	)}
+		action_penalty=0,
+	))
 	variant.update(dict(
-		env_class=adapt_factory(default_class('Reach'),[window_adapt]),
-		env_kwargs=env_kwargs,
+		env_class=railrl_class(args.env_name,[window_adapt]),
+		env_kwargs={'config':config},
 	))
 
 	search_space = {
+		'seedid': range(len(args.gpu)),
 		'trainer_kwargs.beta': [0.5, ],
 		'trainer_kwargs.clip_score': [0.5, ],
 		'trainer_kwargs.awr_use_mle_for_vf': [True, ],

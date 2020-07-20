@@ -97,10 +97,9 @@ if __name__ == "__main__":
 					path['rewards'].append(r)
 					path['terminals'].append(done)
 					path['agent_infos'].append({})
-					path['env_infos'].append({})
+					path['env_infos'].append(info)
 			
 				# print(f"number of success: {base_env.task_success}")
-				# print(f"final position: {base_env.tool_pos} target position: {base_env.target_pos}")
 				if base_env.task_success > 0:
 					paths.append(path)
 					env.new_target()

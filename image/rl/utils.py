@@ -58,7 +58,7 @@ class NormCheckpointCallback(BaseCallback):
 			self.training_env.save(path)
 		return True
 
-"""pretrain AWAC"""
+"""railrl"""
 from railrl.demos.source.dict_to_mdp_path_loader import DictToMDPPathLoader
 class PathAdaptLoader(DictToMDPPathLoader):
 	def load_path(self, path, replay_buffer, obs_dict=None):
@@ -81,22 +81,63 @@ def window_adapt(self,path):
 		new_path['observations'].append(obs)
 
 		if len(history) == self.history_shape[0] and is_nonnoop[0]:
-				prev_nonnoop.append(self.history[0])
+			prev_nonnoop.append(history[0])
 		history.append(next(obs_iter))
-		is_nonnoop.append(next(info_iter)['noop'])
+		info = next(info_iter)
+		info['adapt'] = False
+		is_nonnoop.append(info['noop'])
 		done = next(done_iter)
 
 		obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),))
-		new_path['new_observations'].append(obs)
-
+		new_path['next_observations'].append(obs)
+	
 	path.update(new_path)
 
 def adapt_factory(base,adapt_funcs):
 	class PathAdapter(base):
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			info['adapt'] = False
+			return obs,r,done,info
 		def adapt_path(self,path):
-			return reduce(lambda value,func:func(value), adapt_funcs, path)
+			if path['env_infos'][0].get('adapt',True):
+				return reduce(lambda value,func:func(self,value), adapt_funcs, path)
+			return path
 	return PathAdapter
 
+from railrl.misc.eval_util import create_stats_ordered_dict, get_stat_in_paths
+def logger_factory(base):
+	class StatsLogger(base):
+		def get_diagnostics(self,paths):
+			statistics = OrderedDict()
+
+			"""success"""
+			success_per_step = get_stat_in_paths(paths, 'env_infos', 'task_success')
+			success_per_ep = [np.count_nonzero(s) > 0 for s in success_per_step]
+			statistics.update(create_stats_ordered_dict('success',success_per_ep,exclude_max_min=True,))	
+			
+			"""distance"""
+			distance_per_step = get_stat_in_paths(paths, 'env_infos', 'distance_to_target')
+			min_distance = [np.amin(s) for s in distance_per_step]
+			init_distance = [s[0] for s in distance_per_step]
+			final_distance = [s[-1] for s in distance_per_step]
+			statistics.update(create_stats_ordered_dict('min_distance',min_distance,))
+			statistics['init_distance'] = np.mean(init_distance)
+			statistics['final_distance'] = np.mean(final_distance)
+
+			"""cos_error"""
+			cos_error_per_step = get_stat_in_paths(paths, 'env_infos', 'cos_error')
+			statistics.update(create_stats_ordered_dict('cos_error',cos_error_per_step,))
+
+			"""noop"""
+			noop_per_step = get_stat_in_paths(paths, 'env_infos', 'noop')
+			statistics.update(create_stats_ordered_dict('noop',noop_per_step,exclude_max_min=True,))
+
+			return statistics
+	return StatsLogger
+
+railrl_class = lambda env_name, adapt_funcs: adapt_factory(logger_factory(default_class(env_name)),adapt_funcs)
+	
 """Miscellaneous"""
 ROLLOUT  = 1
 NORM = 2

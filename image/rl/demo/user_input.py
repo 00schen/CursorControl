@@ -113,9 +113,9 @@ if __name__ == "__main__":
 		obs,r,done,info = obs[0],r[0],done[0],info[0]
 
 		if True:
-			distance.append(info['distance_target'])
+			distance.append(info['distance_to_target'])
 			diff_distance.append(info['diff_distance'])
-			cos.append(info['cos_off_course'])
+			cos.append(info['cos_error'])
 			length.append(norm(info['trajectory']))
 			recommends.append(info['recommend'])
 			observations.append(info['current_obs'])

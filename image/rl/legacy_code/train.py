@@ -81,7 +81,7 @@ if __name__ == "__main__":
 	# 	{'exp_name': '7_1_25', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update({'reward_type':'distance_to_target','phi':lambda d:0,})
 	# 	trial['env_config'].update(action_map['trajectory'])
 	# 	trial.update({'curriculum': True, 'lr': 1e-4})
 
@@ -98,7 +98,7 @@ if __name__ == "__main__":
 	# 	{'exp_name': '7_1_25a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update({'reward_type':'distance_to_target','phi':lambda d:0,})
 	# 	trial['env_config'].update(action_map['trajectory'])
 	# 	trial.update({'curriculum': True, 'lr': 1e-4})
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
 	# 	{'exp_name': '7_1_33', 'seed': 1000, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update({'reward_type':'distance_to_target','phi':lambda d:0,})
 	# 	trial['env_config'].update(action_map['trajectory'])
 	# 	trial.update({'curriculum': True, 'lr': 1e-4})
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
 	# 	{'exp_name': '7_1_33a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'trajectory','env_kwargs': {'num_targets':-1,'target_first':True},}}},
 	# ]
 	# for trial in trial_configs:
-	# 	trial['env_config'].update({'reward_type':'distance_target','phi':lambda d:0,})
+	# 	trial['env_config'].update({'reward_type':'distance_to_target','phi':lambda d:0,})
 	# 	trial['env_config'].update(action_map['trajectory'])
 	# 	trial.update({'curriculum': True, 'lr': 1e-4})
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
 		{'exp_name': '7_1_35a', 'seed': 1001, 'env_config':{**r_config,**{'oracle': 'target',}}},
 	]
 	for trial in trial_configs:
-		trial['env_config'].update({'noise_type':'none','reward_type':'distance_target','phi':lambda d:1/d,'env_kwargs':{'target_first':True},})
+		trial['env_config'].update({'noise_type':'none','reward_type':'distance_to_target','phi':lambda d:1/d,'env_kwargs':{'target_first':True},})
 		trial['env_config'].update(action_map['trajectory'])
 		trial.update({'curriculum': True, 'wrapper': MovingInit, 'lr': 1e-4})
 

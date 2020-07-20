@@ -50,11 +50,11 @@ class CustomCallback(DefaultCallbacks):
 		env = base_env.get_unwrapped()[0]
 		episode.custom_metrics["num_successes"] = env.task_success
 		episode.custom_metrics["success_rate"] = env.task_success > 0
-		if "distance_target" in episode.custom_metrics:
-			episode.custom_metrics["distance_target"] = min(episode.custom_metrics["distance_target"],
+		if "distance_to_target" in episode.custom_metrics:
+			episode.custom_metrics["distance_to_target"] = min(episode.custom_metrics["distance_to_target"],
 														np.linalg.norm(env.target_pos - env.tool_pos))
 		else:
-			episode.custom_metrics["distance_target"] = np.linalg.norm(env.target_pos - env.tool_pos)
+			episode.custom_metrics["distance_to_target"] = np.linalg.norm(env.target_pos - env.tool_pos)
 		# episode.custom_metrics["laptop_count"] = env.contact_laptop_count
 		# episode.custom_metrics["laptop_move"] = env.laptop_move
 
