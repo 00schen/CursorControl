@@ -1,71 +1,89 @@
-import gym
-import time
 import os,sys
 import argparse
-os.environ["TF_CPP_MIN_LOG_LEVEL"]="1"
-import tensorflow as tf
-import torch
-import numpy as np
 from copy import deepcopy
 from types import MethodType
+import torch
+import numpy as np
 import pybullet as p
 
-from stable_baselines3.sac import SAC
-from stable_baselines3.common.cmd_util import make_vec_env
-from stable_baselines3.common.vec_env import VecNormalize
-from stable_baselines3.common.vec_env import VecVideoRecorder
-
-from stable_baselines3.sac.policies import DiscretePolicy
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils import *
 from envs import *
+from video_recorder import *
 dirname = os.path.dirname(os.path.abspath(__file__))
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--env_name',)
+parser.add_argument('--exp_name', default='a-test')
+args, _ = parser.parse_known_args()
+
+def demonstration_factory(base):
+	class DemonstrationEnv(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.target_index = 0
+			self.target_count = 0
+
+		def new_target(self):
+			self.target_index += 1
+			if self.target_index == self.env.num_targets:
+				self.target_index %= self.env.num_targets
+				self.target_count += 1
+		def reset(self):
+			target_index = self.target_index
+			def generate_target(self,index):
+				nonlocal target_index
+				self.__class__.generate_target(self,target_index)
+			self.env.generate_target = MethodType(generate_target,self.env)
+			return super().reset()
+	return DemonstrationEnv
+
 if __name__ == "__main__":
-	env_config = deepcopy(default_config)
-	env_config.update(env_map["LightSwitch"])
-	env_config.update({
-		'end_early': True,
-		'noise': False,
-		'oracle_size': 6,
-		'phi':lambda d: 0,
-		'oracle': 'dd_target',
-		'num_obs': 17,
-		'num_nonnoop': 10,
-		"input_penalty": 2,
-		'action_type': 'disc_target',
-		'action_penalty': 0.266090617689725,
-		# 'step_limit': 10
-	})
+	config = deepcopy(default_config)
+	config.update(env_map[args.env_name])
+	config.update(dict(
+		oracle_size=6,
+		oracle='rad_discrete_traj',
+		num_obs=10,
+		num_nonnoop=10,
+		threshold=.3,
+		input_penalty=.1,
+		action_type='basis_target',
+		action_penalty=0,
+		include_target=True,
+		# target_delay=80,
+		video_config = dict(
+			video_path=os.path.join(dirname,'videos'),
+			video_name='test_lightswitch',
+			video_episodes=8,
+		)
+	))
 
-	env = make_vec_env(lambda: default_class(env_config['env_name'])(env_config))
-	env = VecNormalize.load("norm.800000",env)
-	# env = VecVideoRecorder(env, 'videos/',
-    #                    record_video_trigger=lambda x: x == 0, video_length=1000,
-    #                    name_prefix="light_switch")
-	agent = SAC.load("model.800000")
+	import pkgutil
+	egl = pkgutil.get_loader('eglRenderer')
+	import pybullet_data
 
-	# agent = SAC(DiscretePolicy,env,train_freq=-1,n_episodes_rollout=1,gradient_steps=2,gamma=1.,
-	# 			verbose=1,seed=1000,
-	# 			learning_rate=1e-3,
-	# 			policy_kwargs={'net_arch': [256]*3})
-	# time_steps = int(2e6)
-	# agent.learn(total_timesteps=time_steps)
+	# env = default_class(config['env_name'])(config)
+	env = video_factory(demonstration_factory(default_class(config['env_name'])))(config)
+	agent = torch.load("test27c.pkl",map_location=torch.device("cpu"))['trainer/policy']
 
-	env.render('human')
-	# p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, "light_switch.mp4")
+	# env.render('human')
+	p.setAdditionalSearchPath(pybullet_data.getDataPath())
+	plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+	print("plugin=", plugin)
+	
+	obs = env.reset()
 
-	obs = env.reset()[0]
-
-	# while True:
 	i = 0
-	while i < 10:
-		action = agent.predict(obs)
+	while i < 8:
+		action = agent(torch.tensor(obs).float()).sample().numpy()
 		obs,r,done,info = env.step(action)
-		obs,r,done,info = obs[0],r[0],done[0],info[0]
 		if done:
 			i+=1
+			done = False
+			env.new_target()
+			obs = env.reset()
+			print(env.env.target_index)
+			print("episode",i)
 	env.close()
 
-
+	p.unloadPlugin(plugin)

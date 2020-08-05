@@ -15,8 +15,8 @@ from tensorflow.keras.optimizers import Adam
 import pybullet as p
 import assistive_gym
 from gym import spaces,Env
-from stable_baselines3.sac import SAC
-from stable_baselines3.common.running_mean_std import RunningMeanStd
+# from stable_baselines3.sac import SAC
+# from stable_baselines3.common.running_mean_std import RunningMeanStd
 
 from functools import reduce
 from collections import deque
@@ -42,7 +42,7 @@ class IKPretrain:
 		new_joint_positions = new_joint_positions[:7]
 		action = new_joint_positions - joint_positions
 
-		clip_by_norm = lambda traj,limit: traj/max(1e-8,norm(traj))*np.clip(norm(traj),None,limit)
+		clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
 		action = clip_by_norm(action,.1)
 
 		# p.removeBody(self.new_pos)
@@ -90,7 +90,7 @@ def sparse_factory(env_name):
 					done = False
 					r = 100*info['task_success']
 			else:
-				r = 100*(self.env.task_success > 0)
+				r = 10*(self.env.task_success > 0)
 				if self.env.task_success > 0 or self.timesteps >= self.step_limit:
 					done = True
 					self.success_count.append(self.env.task_success > 0)
@@ -101,6 +101,10 @@ def sparse_factory(env_name):
 				'distance_to_target': info['distance_to_target'],
 				# 'diff_distance': info['diff_distance']
 			}[self.reward_type])
+
+			# info['target_pos'] = self.env.target_pos
+			info['target_index'] = self.env.target_index
+			info['targets'] = self.env.targets
 
 			return obs,r,done,info
 
@@ -152,8 +156,7 @@ def shared_autonomy_factory(base):
 			self.input_penalty = config['input_penalty']
 			self.oracle_size = config['oracle_size']
 			self.action_penalty = config['action_penalty']
-			# self.accuracy = deque([0]*1000,1000)
-			# self.log_loss = deque([1]*20,20)
+			self.action_type = config['action_type']
 			
 			def trajectory(obs,info):
 				recommend = np.zeros(config['oracle_size'])
@@ -182,7 +185,10 @@ def shared_autonomy_factory(base):
 			def rad_discrete_traj(obs,info):
 				"""if the robot is off course, user corrects the most off direction"""
 				recommend = np.zeros(config['oracle_size'])
-				if info['cos_error'] < config['threshold']:
+				# t = np.minimum(info['distance_to_target'],1)
+				# threshold = t*config['threshold'] + (1-t)
+				threshold = config['threshold']
+				if info['cos_error'] < threshold:
 					traj = self.env.target_pos-self.env.tool_pos
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
@@ -226,8 +232,6 @@ def shared_autonomy_factory(base):
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
 				return recommend
-
-			self.poses = [-1,-1]
 			def dd_target(obs,info):
 				# diff_distances = np.array([norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])\
 				# 				- np.array([norm(info['old_tool_pos']-target_pos) for target_pos in self.env.targets])
@@ -238,21 +242,24 @@ def shared_autonomy_factory(base):
 					traj = self.env.target_pos-self.env.tool_pos
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
-
-					# p.removeBody(self.poses[0])
-					# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[255, 10, 10, .5])
-					# self.poses[0] = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
-					# 		basePosition=self.env.target_pos, useMaximalCoordinates=False)
-					# p.removeBody(self.poses[1])
-					# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[255, 10, 10, .5])
-					# self.poses[1] = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
-					# 		basePosition=self.env.targets[np.argmax(diff_distances)], useMaximalCoordinates=False, )
 				return recommend
 			def ded_target(obs,info):
 				recommend = np.zeros(config['oracle_size'])
 				traj = self.env.target_pos-self.env.tool_pos
 				axis = np.argmax(np.abs(traj))
 				recommend[2*axis+(traj[axis]>0)] = 1
+				return recommend
+			def random_traj(obs,info):
+				recommend = np.zeros(config['oracle_size'])
+				abs_traj = np.abs(self.env.target_pos-self.env.tool_pos)
+				indices = np.argsort(abs_traj)
+				if abs_traj[indices[2]] - abs_traj[indices[1]] > config['threshold']\
+					or info['distance_to_target'] < .1:
+					recommend = np.zeros(config['oracle_size'])
+					traj = self.env.target_pos-self.env.tool_pos
+					axis = np.argmax(np.abs(traj))
+					recommend[2*axis+(traj[axis]>0)] = 1
+				return recommend
 			self.determiner = {
 				# 'target': lambda obs,info: self.env.target_pos,
 				# 'trajectory': trajectory,
@@ -260,11 +267,12 @@ def shared_autonomy_factory(base):
 				# 'dist_hot_cold': dist_hot_cold,
 				# 'rad_hot_cold': rad_hot_cold,
 				# 'dist_discrete_traj': dist_discrete_traj,
-				# 'rad_discrete_traj': rad_discrete_traj,
-				# 'user': user,
+				'rad_discrete_traj': rad_discrete_traj,
+				'user': user,
 				# 'user_model': user_model,
-				'dd_target': dd_target,
+				# 'dd_target': dd_target,
 				# 'ded_target': ded_target,
+				# 'random_traj': random_traj,
 			}[config['oracle']]
 
 			# if not config['noise']:
@@ -276,7 +284,7 @@ def shared_autonomy_factory(base):
 			# 		'discrete': lambda: self.env.target_num,
 			# 	}[config['oracle']]
 
-			if config['action_type'] in ['target', 'trajectory', 'disc_target','cat_target']:
+			if config['action_type'] in ['target', 'trajectory', 'disc_target','cat_target','basis_target']:
 				self.pretrain = config['pretrain'](config)
 			joint = lambda action: action
 			target = lambda pred: self.pretrain.predict(self.env,pred)
@@ -284,53 +292,60 @@ def shared_autonomy_factory(base):
 			trajectory = lambda traj: target(self.env.tool_pos+traj)
 			# trajectory = lambda traj: target(self.env.tool_pos+clip_by_norm(traj,config['traj_clip']))
 			def disc_target(f_probs):
-				self.index = rng.choice(self.env.num_targets,p=softmax(f_probs))
-				return target(self.env.targets[self.index])
-			def cat_target(index):
-				self.index = index
+				index = rng.choice(self.env.num_targets,p=softmax(f_probs))
 				return target(self.env.targets[index])
+			def cat_target(index):
+				index = np.argmax(index)
+				return target(self.env.targets[index])
+			
+			def basis_target(index):
+				return target(np.sum(self.env.targets*index.reshape((-1,1)),axis=0))
 			self.translate = {
-				# 'target': target,
+				'target': target,
 				'trajectory': trajectory,
 				# 'joint': joint,
 				# 'disc_target': disc_target,
-				# 'cat_target': cat_target,
+				'cat_target': cat_target,
+				'basis_target': basis_target,
 			}[config['action_type']]
 			self.action_space = {
-				# "target": spaces.Box(-1,1,(3,)),
+				"target": spaces.Box(-1,1,(3,)),
 				"trajectory": spaces.Box(-1,1,(3,)),
 				# "joint": spaces.Box(-1,1,(7,)),
 				# "disc_target": spaces.Box(-100,100,(self.env.num_targets,)),
-				# "cat_target": spaces.Discrete(self.env.num_targets)
+				"cat_target": spaces.Box(0,1,(self.env.num_targets,)),
+				# "cat_target": spaces.Discrete(self.env.num_targets),
+				"basis_target": spaces.Box(0,1,(self.env.num_targets,))
 			}[config['action_type']]
 
 		def step(self,action):
 			t_action = self.translate(action)
-			# self.accuracy.append(self.index==self.env.target_index)
 			obs,r,done,info = super().step(t_action)
 			obs = self.predict(obs,info)
 			r -= self.input_penalty*(not info['noop'])
-			r -= self.action_penalty*cosine(self.env.tool_pos-info['old_tool_pos'],self.coasted_input)
+			# r -= self.action_penalty*cosine(self.env.tool_pos-info['old_tool_pos'],self.coasted_input)
+
+			if self.action_type in ['disc_target','cat_target']:
+				info['accuracy'] = np.argmax(action) == self.env.target_index
+				info['pred_target_dist'] = norm(self.env.targets[np.argmax(action)]-self.env.target_pos)
+			elif self.action_type in ['basis_target']:
+				info['pred_target_dist'] = norm(np.sum(self.env.targets*action.reshape((-1,1)),axis=0)-self.env.target_pos)
+			elif self.action_type in ['target']:
+				info['pred_target_dist'] = norm(action-self.env.target_pos)
 
 			return obs,r,done,info
 
 		def reset(self):
 			obs = super().reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle_size)))
-			self.coasted_input = rng.uniform(-1,1,3)
 			return obs
 
 		def predict(self,obs,info):
 			recommend = self.determiner(obs,info)
 
-			# info['recommend'] = recommend
+			info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
 			self.noop_buffer.append(info['noop'])
-
-			if not info['noop']:
-				self.coasted_input = np.zeros(3)
-				index = np.argmax(recommend)
-				self.coasted_input[index//2] = 2*(index > 0) - 1
 
 			return np.concatenate((obs,recommend))
 
@@ -340,24 +355,28 @@ def window_factory(base):
 	class PrevNnonNoopK(base):
 		def __init__(self,config):
 			super().__init__(config)
+			self.include_target = config['include_target']
 			self.history_shape = (config['num_obs'],config['obs_size']+config['oracle_size'])
 			self.nonnoop_shape = (config['num_nonnoop'],config['obs_size']+config['oracle_size'])
-			# self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)\
-			# 									+np.prod(self.nonnoop_shape)+3*self.env.num_targets,))
-			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
+			if self.include_target:
+				self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)\
+													+np.prod(self.nonnoop_shape)+3*self.env.num_targets,))
+			else:
+				self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
 
 		def step(self,action):
 			obs,r,done,info = super().step(action)
 			if len(self.history) == self.history_shape[0] and self.is_nonnoop[0]:
 				self.prev_nonnoop.append(self.history[0])
-			# self.prev_nonnoop.append(self.history[0])
 
 			self.history.append(obs)
 			self.is_nonnoop.append((not info['noop']))
 			# info['current_obs'] = obs
 
-			# return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
-			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),)),r,done,info
+			if self.include_target:
+				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
+			else:
+				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),)),r,done,info
 
 		def reset(self):
 			obs = super().reset()
@@ -367,9 +386,30 @@ def window_factory(base):
 			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
 			self.history.append(obs)
-			# return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
-			return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
+			if self.include_target:
+				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
+			else:
+				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
 	return PrevNnonNoopK
+
+def new_target_factory(base):
+	class NewTarget(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.num_episodes = 0
+			self.delay = config['target_delay']
+		def reset(self):
+			def set_target(self):
+				self.target_pos = .5*(self.targets[0]+self.targets[-1])
+				return self.target_pos
+			self.num_episodes += 1
+			if self.num_episodes > self.delay:		
+				self.env.set_target = MethodType(set_target,self.env)
+			obs = super().reset()
+			print(self.env.target_pos,self.env.targets)
+			print(self.num_episodes)
+			return obs
+	return NewTarget
 
 class CurriculumScheduler:
 	def __init__(self,config):

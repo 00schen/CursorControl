@@ -18,8 +18,8 @@ from envs import *
 
 # from stable_baselines3.common import buffers
 # buffers.ReplayBuffer = IndexReplayBuffer
+# from stable_baselines3.awac import MlpPolicy, AWAC
 from stable_baselines3.sac import MlpPolicy, SAC
-from stable_baselines3.sac.policies import DiscretePolicy
 from stable_baselines3.common.callbacks import BaseCallback,CallbackList
 from stable_baselines3.common.cmd_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
@@ -51,13 +51,11 @@ def run(config, reporter):
 	model = SAC(MlpPolicy,env,train_freq=-1,n_episodes_rollout=1,gradient_steps=1,gamma=1.,
 				verbose=1,tensorboard_log=logdir,seed=config['seed'],
 				learning_rate=10**config['lr'],
+				# learning_rate=10**config['lr'], beta=config['beta'], ent_coef=0,
 				policy_kwargs={'net_arch': [config['layer_size']]*config['layer_depth']})
 	
-	# base_env = env.envs[0]
-	# pretrain_config = config['pretrain_config']
-	# pretrain_config.update(env_config)
-	# pretrain(pretrain_config,env,model.actor)
-	# env.envs[0] = base_env
+	# awac_path_loader(env,np.load(os.path.join(config['demo_file_path'],config['bc_file']),allow_pickle=True),model.bc_buffer)
+	# awac_path_loader(env,np.load(os.path.join(config['demo_file_path'],config['offpolicy_file']),allow_pickle=True),model.replay_buffer)
 
 	class ReportCallback(BaseCallback):
 		def __init__(self, verbose=0):
@@ -108,6 +106,7 @@ if __name__ == "__main__":
 		# "blank": hp.uniform("blank", 0,1),
 		"num_obs": hp.randint("num_obs",5,21),
 		"action_penalty": hp.uniform("action_penalty",0,5),
+		# "beta": hp.uniform("beta",0,100),
 		# "num_nonnoop": hp.randint("num_nonnoop",5,21),
 		# "layer_size": hp.choice("layer_size",[256,512]),
 		# "layer_depth": hp.choice("layer_depth",[3,4,5]),
@@ -138,27 +137,36 @@ if __name__ == "__main__":
 
 	"""trial configs"""
 	trial = [
-		{'exp_name': '7_16_0', 'seed': 1000, 'env_config':{**ls_config,}},
-		{'exp_name': '7_16_1', 'seed': 1000, 'env_config':{**l_config,}},
+		{'exp_name': '7_20_0a', 'seed': 1000, 'env_config':{**ls_config,**{'oracle':'ded_target',},},
+			'bc_file': "LightSwitch_demo1.npy", 'offpolicy_file': "LightSwitch_offpolicy1.npy"},
+		{'exp_name': '7_20_0b', 'seed': 1000, 'env_config':{**ls_config,**{'oracle':'dd_target',},},
+			'bc_file': "LightSwitch_demo1.npy", 'offpolicy_file': "LightSwitch_offpolicy1.npy"},
+		{'exp_name': '7_20_0c', 'seed': 1000, 'env_config':{**ls_config,**{'oracle':'dd_target',},},
+			'bc_file': "LightSwitch_demo2.npy", 'offpolicy_file': "LightSwitch_offpolicy2.npy"},
 
-		# # use constant radian threshold
-		# {'exp_name': '7_7_3', 'seed': 1000, 'env_config':{**r_config,**{'env_kwargs': {'num_targets': 2,},}}},
+		{'exp_name': '7_20_1a', 'seed': 1000, 'env_config':{**l_config,**{'oracle':'ded_target',},},
+			'bc_file': "Laptop_demo1.npy", 'offpolicy_file': "Laptop_offpolicy1.npy"},
+		{'exp_name': '7_20_1b', 'seed': 1000, 'env_config':{**l_config,**{'oracle':'dd_target',},},
+			'bc_file': "Laptop_demo1.npy", 'offpolicy_file': "Laptop_offpolicy1.npy"},
+		{'exp_name': '7_20_1c', 'seed': 1000, 'env_config':{**l_config,**{'oracle':'dd_target',},},
+			'bc_file': "Laptop_demo2.npy", 'offpolicy_file': "Laptop_offpolicy2.npy"},
+
+		{'exp_name': '7_7_3a', 'seed': 1000, 'env_config':{**r_config,**{'oracle':'ded_target','env_kwargs': {'num_targets': 2,},},},
+			'bc_file': "Reach_demo1.npy", 'offpolicy_file': "Reach_offpolicy1.npy"},
+		{'exp_name': '7_7_3b', 'seed': 1000, 'env_config':{**r_config,**{'oracle':'dd_target','env_kwargs': {'num_targets': 2,},},},
+			'bc_file': "Reach_demo1.npy", 'offpolicy_file': "Reach_offpolicy1.npy"},
+		{'exp_name': '7_7_3c', 'seed': 1000, 'env_config':{**r_config,**{'oracle':'dd_target','env_kwargs': {'num_targets': 2,},},},
+			'bc_file': "Reach_demo2.npy", 'offpolicy_file': "Reach_offpolicy2.npy"},
 	][args.config]
 
 	trial['env_config'].update({
 		'oracle_size': 6,
-		'oracle': 'dd_target',
 		'num_nonnoop': 10,
 		"input_penalty": 2,
-		'action_type': 'disc_target',
+		'action_type': 'trajectory',
 	})
-	# trial['pretrain_config'].update({
-	# 	'gradient_step': 4000,
-	# 	'batch_size': 256,
-	# 	'og_path': os.path.abspath('')
-	# })
 	trial.update({'curriculum': False, 'wrapper': default_class,
-				'layer_size': 256, 'layer_depth': 3})
+				'layer_size': 256, 'layer_depth': 3,'demo_file_path': os.path.join(os.path.abspath(''),'demos')})
 
 	results = tune.run(run, name= trial['exp_name'], local_dir=args.local_dir,
 													 num_samples=100,

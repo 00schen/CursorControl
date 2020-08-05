@@ -45,3 +45,40 @@
 7_11_0: discrete targets, light-switch,feeding,laptop, empirical user, curriculum
 7_12_0: switch to target based control
 7_13_0: dense user input during pretraining. positive examples, mixed, masking obs
+
+test: pretraining, reward penalized
+test1: pretraining, no penalty
+test2: no pretraining
+test3: no examples
+test5: cos traj input, less inputs,
+test6: hyperparam tuning
+test7: dense hyperparam tuning
+test8: no pretraining extended run
+test9: dense input during training
+test10: cocktail user input for examples
+test11: only bc, no examples during online
+test12: no pretraining, with examples
+test13: sweep user threshold
+test14: smaller replay buffer for 250 episodes
+test15: dense input when close to target
+test16: 50-50 replay buffer
+test17: bad test advantage function
+test18: advantage function 
+test19: advantage function, no gradual threshold, only good demos
+test20: reward function, only good demos
+test21b: two target discrete categorical
+test21c: lightswitch
+test21d: laptop
+test22a: two target discrete categorical, no target in obs
+test22b: mid target delay=0
+test22c: mid target delay=80
+test22d: mid target delay=0 shorten pretraining
+test23: fuse targets, third target test
+test24: continuous target
+test26: fused target, two original targets (a: target in obs, b: target not in obs)
+test27: lightswitch (a: fused target-target in obs, b: fused target-target not in obs, c: actual target prediction-target not in obs)
+test28: lightswitch discrete targets, q update using v
+test29: lightswitch dqn policy
+test30: retest policy penalty method on trajectory
+test31: retest advantage function
+test32: dqfd
