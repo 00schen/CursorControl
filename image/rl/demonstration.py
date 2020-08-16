@@ -152,7 +152,7 @@ if __name__ == "__main__":
 
 	# paths = list(sum(samples,[]))
 
-	# np.save(f"demos/{env_name}_{'demo' if args.demo else 'offpolicy'}{1 if args.dense else 3}c", paths)
+	# np.save(f"demos/{env_name}_{'demo' if args.demo else 'offpolicy'}{1 if args.dense else 3}_100", paths)
 	# # np.save(f"demos/{env_name}_offpolicy{1 if args.dense else 3}b", paths)
 
 	paths = Sampler().sample(args.seed,2)

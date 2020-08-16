@@ -16,7 +16,7 @@ def video_factory(base):
 
 			self.video_recorder = None
 
-			video_config = config.pop('video_config')
+			video_config = config['video_config']
 			self.video_path = os.path.abspath(video_config['video_path'])
 			# Create output folder if needed
 			os.makedirs(self.video_path, exist_ok=True)

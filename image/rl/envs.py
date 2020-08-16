@@ -90,7 +90,7 @@ def sparse_factory(env_name):
 					done = False
 					r = 100*info['task_success']
 			else:
-				r = 10*(self.env.task_success > 0)
+				r = (self.env.task_success > 0)
 				if self.env.task_success > 0 or self.timesteps >= self.step_limit:
 					done = True
 					self.success_count.append(self.env.task_success > 0)
@@ -220,10 +220,10 @@ def shared_autonomy_factory(base):
 					print('noop')
 				return recommend
 			def user_model(obs,info):
-				input_probs = np.array([0.06818182, 0.12280702, 0.10769231, 0.10958904, 0.10227273,
-										0.01315789, 0.05      , 0.05154639, 0.07207207, 0.075     ,
-										0.04878049, 0.03030303, 0.03703704, 0.04278075, 0.06285714,
-										0.0430622 , 0.07220217, 0.05031447, 0.03071672, 0.02222222])
+				input_probs = np.array([0.20740741, 0.14893617, 0.38095238, 0.26126126, 0.2815534 ,
+										0.29411765, 0.28436019, 0.26262626, 0.25120773, 0.33050847,
+										0.2398524 , 0.1994382 , 0.22      , 0.17758621, 0.11042945,
+										0.10155317, 0.08389831, 0.07963656, 0.05690704, 0.03887689])
 				bins = np.linspace(-.9,1,20)
 				prob = input_probs[np.min(np.where(bins>info['cos_error']))]
 				recommend = np.zeros(config['oracle_size'])
@@ -269,10 +269,10 @@ def shared_autonomy_factory(base):
 				# 'dist_discrete_traj': dist_discrete_traj,
 				'rad_discrete_traj': rad_discrete_traj,
 				'user': user,
-				# 'user_model': user_model,
+				'user_model': user_model,
 				# 'dd_target': dd_target,
-				# 'ded_target': ded_target,
-				# 'random_traj': random_traj,
+				'ded_target': ded_target,
+				'random_traj': random_traj,
 			}[config['oracle']]
 
 			# if not config['noise']:
@@ -301,26 +301,27 @@ def shared_autonomy_factory(base):
 			def basis_target(index):
 				return target(np.sum(self.env.targets*index.reshape((-1,1)),axis=0))
 			self.translate = {
-				'target': target,
+				# 'target': target,
 				'trajectory': trajectory,
-				# 'joint': joint,
+				'joint': joint,
 				# 'disc_target': disc_target,
 				'cat_target': cat_target,
-				'basis_target': basis_target,
+				# 'basis_target': basis_target,
 			}[config['action_type']]
 			self.action_space = {
-				"target": spaces.Box(-1,1,(3,)),
+				# "target": spaces.Box(-1,1,(3,)),
 				"trajectory": spaces.Box(-1,1,(3,)),
-				# "joint": spaces.Box(-1,1,(7,)),
+				"joint": spaces.Box(-1,1,(7,)),
 				# "disc_target": spaces.Box(-100,100,(self.env.num_targets,)),
 				"cat_target": spaces.Box(0,1,(self.env.num_targets,)),
 				# "cat_target": spaces.Discrete(self.env.num_targets),
-				"basis_target": spaces.Box(0,1,(self.env.num_targets,))
+				# "basis_target": spaces.Box(0,1,(self.env.num_targets,))
 			}[config['action_type']]
 
 		def step(self,action):
 			t_action = self.translate(action)
 			obs,r,done,info = super().step(t_action)
+			info['joint_action'] = t_action
 			obs = self.predict(obs,info)
 			r -= self.input_penalty*(not info['noop'])
 			# r -= self.action_penalty*cosine(self.env.tool_pos-info['old_tool_pos'],self.coasted_input)
@@ -328,6 +329,12 @@ def shared_autonomy_factory(base):
 			if self.action_type in ['disc_target','cat_target']:
 				info['accuracy'] = np.argmax(action) == self.env.target_index
 				info['pred_target_dist'] = norm(self.env.targets[np.argmax(action)]-self.env.target_pos)
+
+				# p.removeBody(self.pred_target)
+				# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.02, rgbaColor=[10, 255, 10, 1])
+				# self.pred_target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
+				# 		basePosition=self.env.targets[np.argmax(action)], useMaximalCoordinates=False)
+
 			elif self.action_type in ['basis_target']:
 				info['pred_target_dist'] = norm(np.sum(self.env.targets*action.reshape((-1,1)),axis=0)-self.env.target_pos)
 			elif self.action_type in ['target']:
@@ -336,6 +343,7 @@ def shared_autonomy_factory(base):
 			return obs,r,done,info
 
 		def reset(self):
+			self.pred_target = -1
 			obs = super().reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle_size)))
 			return obs
@@ -371,7 +379,7 @@ def window_factory(base):
 
 			self.history.append(obs)
 			self.is_nonnoop.append((not info['noop']))
-			# info['current_obs'] = obs
+			info['current_obs'] = obs
 
 			if self.include_target:
 				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
@@ -391,6 +399,49 @@ def window_factory(base):
 			else:
 				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
 	return PrevNnonNoopK
+
+def embedding_factory(base):
+	class Embedding(window_factory(base)):
+		def __init__(self,config):
+			super().__init__(config)
+			self.obs_dim = config['obs_size']+config['oracle_size']
+			self.observation_space = spaces.Box(-np.inf,np.inf,(self.observation_space.dim+self.obs_dim,))
+
+		def step(self,action):
+			concat_obs,r,done,info = super().step(action)
+			current_obs = info['current_obs']
+			pf_hx = self._get_pf_hx(current_obs)
+			obs = np.concatenate((current_obs,concat_obs,*pf_hx))
+			return obs,r,done,info			
+
+		def reset(self):
+			obs = super().reset()
+			current_obs = obs
+			self.pf_hx = (torch.zeros((1,1,self.pf.hidden_size)),torch.zeros((1,1,self.pf.hidden_size)))
+
+			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
+			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
+			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
+			self.history.append(obs)
+			if self.include_target:
+				concat_obs = np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
+			else:
+				concat_obs = np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
+
+			pf_hx = self._get_pf_hx(current_obs)
+			obs = np.concatenate((current_obs,concat_obs,*pf_hx))
+			return obs
+
+		def _get_pf_hx(self,current_obs):
+			current_obs = torch.tensor(current_obs)
+			if next(self.qf1.parameters()).is_cuda:
+				current_obs = current_obs.cuda()
+				pf_hx = (pf_hx[0].cuda(),pf_hx[1].cuda())
+			with torch.no_grad():
+				input_prediction,self.pf_hx = self.pf(current_obs.reshape((1,1,-1)),pf_hx)
+			return np.concatenate((self.pf_hx[0].cpu().numpy(),self.pf_hx[1].cpu().numpy()))
+			
+	return Embedding
 
 def new_target_factory(base):
 	class NewTarget(base):

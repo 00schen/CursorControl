@@ -82,3 +82,10 @@ test29: lightswitch dqn policy
 test30: retest policy penalty method on trajectory
 test31: retest advantage function
 test32: dqfd
+test33: pretrain on 2dqn
+test34: joint control reach, awac
+test35: dqn ~100 demonstrations
+test36: real user model
+test37: gaussian policy not values, no clamp
+test38: boltzmann exploration with penalty prediction
+test39: boltzmann exploration no penalty

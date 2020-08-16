@@ -3,9 +3,7 @@ AWR + SAC from demo experiment
 """
 
 from railrl.demos.source.dict_to_mdp_path_loader import DictToMDPPathLoader
-# from railrl.launchers.experiments.awac.awac_rl import experiment, process_args
-from railrl.launchers.experiments.awac.awac_rl import process_args
-from discrete_experiment import experiment
+from railrl.launchers.experiments.awac.awac_rl import experiment, process_args
 
 import railrl.misc.hyperparameter as hyp
 from railrl.launchers.arglauncher import run_variants
@@ -16,7 +14,6 @@ from railrl.torch.networks import Clamp
 from envs import *
 # from utils import *
 from rail_utils import *
-from dqfd import *
 import argparse
 from copy import deepcopy,copy
 import os
@@ -27,6 +24,7 @@ parser.add_argument('--env_name',)
 parser.add_argument('--gpus', type=int)
 parser.add_argument('--per_gpu', type=int)
 parser.add_argument('--exp_name', default='a-test')
+parser.add_argument('--test', type=int, default=1)
 args, _ = parser.parse_known_args()
 
 if __name__ == "__main__":
@@ -41,53 +39,45 @@ if __name__ == "__main__":
 		algorithm="AWAC",
 		replay_buffer_size=int(6e5),
 		# replay_buffer_class=OnOffReplayBuffer,
-		# replay_buffer_class=DQfDReplayBuffer,
-		# trainer_class=DQfDTrainer,
-		# trainer_class=DiscreteTrainer,
 
-		# policy_class=GaussianPolicy,
-		# policy_class=CategoricalPolicy,
-		# policy_class=ScaledTanhGaussianPolicy,
+		policy_class=GaussianPolicy,
 		policy_kwargs=dict(
-			# hidden_sizes=[256]*4,
-			# action_low=0,
-			# action_high=1,
-			# max_log_std=0,
-			# min_log_std=-6,
+			hidden_sizes=[256]*4,
+			max_log_std=0,
+			min_log_std=-6,
 			# std_architecture="values",
 		),
 		qf_kwargs=dict(
 			hidden_sizes=[256]*3,
-			output_activation=Clamp(max=10), # rewards are <= 10
+			# output_activation=Clamp(max=10), # rewards are <= 10
 		),
 
 		version="normal",
 		collection_mode='batch',
 		trainer_kwargs=dict(
             discount=0.99,
-            # soft_target_tau=5e-3,
+            soft_target_tau=5e-3,
             target_update_period=1,
             # policy_lr=3E-4,
             # qf_lr=3E-4,
             reward_scale=1,
             # alpha=1.0,
-			pretrain_steps=int(5e4),
 
-            # use_automatic_entropy_tuning=False,
-            # q_num_pretrain1_steps=0,
-            # q_num_pretrain2_steps=int(5e4),
-            # policy_weight_decay=1e-4,
-            # train_bc_on_rl_buffer=False,
-            # buffer_policy_sample_actions=False,
+            use_automatic_entropy_tuning=True,
+            q_num_pretrain1_steps=0,
+            q_num_pretrain2_steps=int(5e4),
+            policy_weight_decay=1e-4,
+            train_bc_on_rl_buffer=False,
+            buffer_policy_sample_actions=False,
 
             # reparam_weight=0.0,
 
-            # awr_weight=1.0,
-            # bc_weight=0.0,
-            # compute_bc=False,
-            # awr_sample_actions=False,
-            # awr_min_q=True,
-			# vf_K=10,
+            awr_weight=1.0,
+            bc_weight=0.0,
+            compute_bc=False,
+            awr_sample_actions=False,
+            awr_min_q=True,
+			vf_K=10,
         ),
 		launcher_config=dict(
 			exp_name=args.exp_name,
@@ -112,7 +102,7 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		# pretrain_policy=True,
-		pretrain_rl=True,
+		pretrain_rl=not args.test,
 		# save_video=True,
 		# image_env_kwargs=dict(
 		# 	recompute_reward=False,
@@ -127,8 +117,8 @@ if __name__ == "__main__":
 		num_obs=10,
 		num_nonnoop=10,
 		# threshold=.7,
-		input_penalty=.1,
-		action_type='cat_target',
+		# input_penalty=.1,
+		action_type='joint',
 		action_penalty=0,
 		include_target=True,
 		# target_delay=80,
@@ -140,32 +130,30 @@ if __name__ == "__main__":
 	))
 
 	search_space = {
-		'seedid': [1000,],
-		# 'trainer_kwargs.beta': [10,30,50],
-		# 'trainer_kwargs.reparam_weight': [0,.5,],
-		# 'trainer_kwargs.policy_lr': [1e-3],
-		# 'trainer_kwargs.qf_lr': [1e-3],
+		'seedid': [2000,],
+		'trainer_kwargs.beta': [10,30,50],
+		'trainer_kwargs.reparam_weight': [0,.5,],
+		'trainer_kwargs.policy_lr': [3e-4,1e-3],
+		'trainer_kwargs.qf_lr': [3e-4,1e-3],
+		'trainer_kwargs.q_weight_decay': [0,1e-4,3e-4],
 		# 'trainer_kwargs.penalty': [.01,.1,1],
 		# 'trainer_kwargs.clip_score': [100, ],
-		'dense': [True,],
+		'dense': [False,],
 		# 'trainer_kwargs.awr_use_mle_for_vf': [True,],
 		'env_kwargs.config.threshold': [.1,.3,.5,],
-		'trainer_kwargs.learning_rate': [3e-4,1e-3,3e-3],
-		'trainer_kwargs.soft_target_tau': [3e-4,1e-3,3e-3],
-		# 'env_kwargs.config.input_penalty': [0,.1,.3,.5],
-		'exploration_kwargs.noise': [.1,.3,.5,1,2]
+		'env_kwargs.config.input_penalty': [0,.1,.3,.5],
 		# 'env_kwargs.config.target_delay': [0,30,60],
 		# 'trainer_kwargs.q_num_pretrain2_steps': [int(1e4),int(2e4),int(3e4)],
 	}
 	dense_dicts = [
 		dict(
 		env_demo_path=dict(
-			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_demo2a.npy"),
+			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_demo3c.npy"),
 			obs_dict=False,
 			is_demo=True,
 		),
 		env_offpolicy_data_path=dict(
-			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_offpolicy2a.npy"),
+			path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_offpolicy3c.npy"),
 			obs_dict=False,
 			is_demo=False,
 			train_split=0.9,

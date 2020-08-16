@@ -27,7 +27,7 @@ def window_adapt(self,path):
 	history = deque(np.zeros(self.history_shape),self.history_shape[0])
 	is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 	prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-	if self.action_type in ['target','disc_target','cat_target','basis_target']:
+	if self.action_type in ['target','disc_target','cat_target','basis_target','joint']:
 		new_path = {'observations':[],'next_observations':[],'actions':[]}
 	else:
 		new_path = {'observations':[],'next_observations':[]}
@@ -59,9 +59,11 @@ def window_adapt(self,path):
 			new_path['actions'].append(.99*F.one_hot(torch.tensor([info['target_index']]),len(info['targets'])).float().flatten().numpy())
 		elif self.action_type in ['target']:
 			new_path['actions'].append(info['targets'][info['target_index']])
+		elif self.action_type in ['joint']:
+			new_path['actions'].append(info['joint_action'])
 
 	path.update(new_path)
-	path['rewards'] = np.maximum(np.minimum(path['rewards'],10),-self.input_penalty)
+	path['rewards'] = np.maximum(np.minimum(path['rewards'],1),-self.input_penalty)
 	# path['rewards'] = np.maximum(np.minimum(path['rewards'],100),0)
 
 
@@ -136,66 +138,66 @@ class RecordPathsReplayBuffer(EnvReplayBuffer):
 	def get_snapshot(self):
 		return {'paths': self.paths}
 
-from discrete_policy import *
-from ent_policy import *
-from railrl.torch.distributions import TanhNormal
-class ScaledTanhNormal(TanhNormal):
-	def __init__(self, normal_mean, normal_std, low, high, epsilon=1e-6):
-		super().__init__(normal_mean,normal_std,epsilon=epsilon)
-		self.coef = high-low
-		self.low = low
+# from discrete_policy import *
+# from ent_policy import *
+# from railrl.torch.distributions import TanhNormal
+# class ScaledTanhNormal(TanhNormal):
+# 	def __init__(self, normal_mean, normal_std, low, high, epsilon=1e-6):
+# 		super().__init__(normal_mean,normal_std,epsilon=epsilon)
+# 		self.coef = high-low
+# 		self.low = low
 
-	def sample_n(self, n, return_pre_tanh_value=False):
-		sample,pretanh = super().sample_n(n,return_pre_tanh_value=return_pre_tanh_value)
-		if return_pre_tanh_value:
-			return self.coef*sample-self.low, pretanh
-		else:
-			return self.coef*sample-self.low
+# 	def sample_n(self, n, return_pre_tanh_value=False):
+# 		sample,pretanh = super().sample_n(n,return_pre_tanh_value=return_pre_tanh_value)
+# 		if return_pre_tanh_value:
+# 			return self.coef*sample-self.low, pretanh
+# 		else:
+# 			return self.coef*sample-self.low
 
-	def _log_prob_from_pre_tanh(self, pre_tanh_value):
-		log_prob = super()._log_prob_from_pre_tanh(pre_tanh_value)
-		log_prob -= np.log(self.coef)
-		return log_prob
+# 	def _log_prob_from_pre_tanh(self, pre_tanh_value):
+# 		log_prob = super()._log_prob_from_pre_tanh(pre_tanh_value)
+# 		log_prob -= np.log(self.coef)
+# 		return log_prob
 
-	def rsample_with_pretanh(self):
-		sample,pretanh = super().rsample_with_pretanh()
-		return self.coef*sample-self.low, pretanh
+# 	def rsample_with_pretanh(self):
+# 		sample,pretanh = super().rsample_with_pretanh()
+# 		return self.coef*sample-self.low, pretanh
 
-from railrl.torch.sac.policies.gaussian_policy import TanhGaussianPolicy
-import railrl.torch.pytorch_util as ptu
-LOG_SIG_MAX = 2
-LOG_SIG_MIN = -20
-class ScaledTanhGaussianPolicy(TanhGaussianPolicy):
-	def __init__(
-			self,
-			hidden_sizes,
-			action_low=0,
-			action_high=1,
-			**kwargs
-	):
-		super().__init__(hidden_sizes,**kwargs)
-		self.high = action_high
-		self.low = action_low
+# from railrl.torch.sac.policies.gaussian_policy import TanhGaussianPolicy
+# import railrl.torch.pytorch_util as ptu
+# LOG_SIG_MAX = 2
+# LOG_SIG_MIN = -20
+# class ScaledTanhGaussianPolicy(TanhGaussianPolicy):
+# 	def __init__(
+# 			self,
+# 			hidden_sizes,
+# 			action_low=0,
+# 			action_high=1,
+# 			**kwargs
+# 	):
+# 		super().__init__(hidden_sizes,**kwargs)
+# 		self.high = action_high
+# 		self.low = action_low
 
-	def forward(self, obs):
-		h = obs
-		for i, fc in enumerate(self.fcs):
-			h = self.hidden_activation(fc(h))
-		mean = self.last_fc(h)
-		if self.std is None:
-			log_std = self.last_fc_log_std(h)
-			log_std = torch.clamp(log_std, LOG_SIG_MIN, LOG_SIG_MAX)
-			std = torch.exp(log_std)
-		else:
-			std = torch.from_numpy(np.array([self.std, ])).float().to(
-				ptu.device)
+# 	def forward(self, obs):
+# 		h = obs
+# 		for i, fc in enumerate(self.fcs):
+# 			h = self.hidden_activation(fc(h))
+# 		mean = self.last_fc(h)
+# 		if self.std is None:
+# 			log_std = self.last_fc_log_std(h)
+# 			log_std = torch.clamp(log_std, LOG_SIG_MIN, LOG_SIG_MAX)
+# 			std = torch.exp(log_std)
+# 		else:
+# 			std = torch.from_numpy(np.array([self.std, ])).float().to(
+# 				ptu.device)
 
-		return ScaledTanhNormal(mean, std, self.low, self.high,)
+# 		return ScaledTanhNormal(mean, std, self.low, self.high,)
 
-	def logprob(self, action, mean, std):
-		tanh_normal = ScaledTanhNormal(mean, std, self.low, self.high,)
-		log_prob = tanh_normal.log_prob(
-			action,
-		)
-		log_prob = log_prob.sum(dim=1, keepdim=True)
-		return log_prob
+# 	def logprob(self, action, mean, std):
+# 		tanh_normal = ScaledTanhNormal(mean, std, self.low, self.high,)
+# 		log_prob = tanh_normal.log_prob(
+# 			action,
+# 		)
+# 		log_prob = log_prob.sum(dim=1, keepdim=True)
+# 		return log_prob

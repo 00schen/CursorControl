@@ -10,11 +10,31 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs import *
 from video_recorder import *
 dirname = os.path.dirname(os.path.abspath(__file__))
+from railrl.torch.core import PyTorchModule
+import torch.nn.functional as F
+
+# from discrete_experiment import ArgmaxDiscretePolicy
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name',)
-parser.add_argument('--exp_name', default='a-test')
 args, _ = parser.parse_known_args()
+
+class ArgmaxDiscretePolicy(PyTorchModule):
+	def __init__(self, qf):
+		super().__init__()
+		self.qf = qf
+
+	def get_action(self, obs):
+		if isinstance(obs,np.ndarray):
+			obs = torch.from_numpy(obs).float()
+		if next(self.qf.parameters()).is_cuda:
+			obs = obs.cuda()
+		q_values = self.qf(obs)
+		action = F.one_hot(q_values.argmax(0,keepdim=True),list(q_values.size())[0]).cpu().flatten().detach().numpy()
+		return action, {}
+
+	def reset(self):
+		pass
 
 def demonstration_factory(base):
 	class DemonstrationEnv(base):
@@ -42,12 +62,13 @@ if __name__ == "__main__":
 	config.update(env_map[args.env_name])
 	config.update(dict(
 		oracle_size=6,
-		oracle='rad_discrete_traj',
+		# oracle='rad_discrete_traj',
+		oracle='user',
 		num_obs=10,
 		num_nonnoop=10,
 		threshold=.3,
 		input_penalty=.1,
-		action_type='basis_target',
+		action_type='cat_target',
 		action_penalty=0,
 		include_target=True,
 		# target_delay=80,
@@ -58,32 +79,35 @@ if __name__ == "__main__":
 		)
 	))
 
-	import pkgutil
-	egl = pkgutil.get_loader('eglRenderer')
-	import pybullet_data
+	# import pkgutil
+	# egl = pkgutil.get_loader('eglRenderer')
+	# import pybullet_data
 
-	# env = default_class(config['env_name'])(config)
-	env = video_factory(demonstration_factory(default_class(config['env_name'])))(config)
-	agent = torch.load("test27c.pkl",map_location=torch.device("cpu"))['trainer/policy']
+	env = default_class(config['env_name'])(config)
+	# env = video_factory(demonstration_factory(default_class(config['env_name'])))(config)
+	print(torch.load("params.pkl",map_location=torch.device("cpu")))
+	agent = ArgmaxDiscretePolicy(torch.load("params.pkl",map_location=torch.device("cpu"))['trainer/qf']) 
+	env.seed(45)
 
-	# env.render('human')
-	p.setAdditionalSearchPath(pybullet_data.getDataPath())
-	plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
-	print("plugin=", plugin)
+	# p.setAdditionalSearchPath(pybullet_data.getDataPath())
+	# plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+	# print("plugin=", plugin)
+	env.render('human')
 	
 	obs = env.reset()
 
 	i = 0
-	while i < 8:
-		action = agent(torch.tensor(obs).float()).sample().numpy()
+	while i < config['video_config']['video_episodes']:
+		# action = agent(torch.tensor(obs).float()).sample().numpy()
+		action = agent.get_action(obs)[0]
 		obs,r,done,info = env.step(action)
 		if done:
 			i+=1
 			done = False
-			env.new_target()
+			# env.new_target()
 			obs = env.reset()
 			print(env.env.target_index)
 			print("episode",i)
 	env.close()
 
-	p.unloadPlugin(plugin)
+	# p.unloadPlugin(plugin)
