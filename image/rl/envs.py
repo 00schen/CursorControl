@@ -162,26 +162,14 @@ def shared_autonomy_factory(base):
 				recommend = np.zeros(config['oracle_size'])
 				recommend[0:3] = self.env.target_pos - self.env.tool_pos
 				return recommend
-			# def dist_hot_cold(obs,info):
-			# 	"""User only tells if the robot is moving away from target or very off"""
-			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
-			# 		recommend[0] = 1
-			# 	return recommend
-			# def rad_hot_cold(obs,info):
-			# 	"""User only tells if the robot is off course"""
-			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['cos_error'] < self.threshold:
-			# 		recommend[0] = 1
-			# 	return recommend
-			# def dist_discrete_traj(obs,info):
-			# 	"""User corrects direction robot is most off course"""
-			# 	recommend = np.zeros(config['oracle_size'])
-			# 	if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
-			# 		traj = self.env.target_pos-self.env.tool_pos
-			# 		axis = np.argmax(np.abs(traj))
-			# 		recommend[2*axis+(traj[axis]>0)] = 1
-			# 	return recommend
+			def dist_discrete_traj(obs,info):
+				"""User corrects direction robot is most off course"""
+				recommend = np.zeros(config['oracle_size'])
+				if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
+					traj = self.env.target_pos-self.env.tool_pos
+					axis = np.argmax(np.abs(traj))
+					recommend[2*axis+(traj[axis]>0)] = 1
+				return recommend
 			def rad_discrete_traj(obs,info):
 				"""if the robot is off course, user corrects the most off direction"""
 				recommend = np.zeros(config['oracle_size'])
@@ -194,43 +182,21 @@ def shared_autonomy_factory(base):
 					recommend[2*axis+(traj[axis]>0)] = 1
 				return recommend
 			def user(obs,info):
-				recommend = np.zeros(config['oracle_size'])
-				keys = p.getKeyboardEvents()
-				inputs = {
-					p.B3G_LEFT_ARROW: 	np.array([0,1,0,0,0,0]),
-					p.B3G_RIGHT_ARROW: 	np.array([1,0,0,0,0,0]),
-					ord('e'):		 	np.array([0,0,1,0,0,0]),
-					ord('d'):		 	np.array([0,0,0,1,0,0]),
-					p.B3G_UP_ARROW:		np.array([0,0,0,0,0,1]),
-					p.B3G_DOWN_ARROW:	np.array([0,0,0,0,1,0])
-				}
-				prints = {
-					p.B3G_LEFT_ARROW: 	'left',
-					p.B3G_RIGHT_ARROW: 	'right',
-					ord('e'):		 	'forward',
-					ord('d'):		 	'backward',
-					p.B3G_UP_ARROW:		'up',
-					p.B3G_DOWN_ARROW:	'down'
-				}
-				for key in inputs:
-					if key in keys and keys[key]&p.KEY_WAS_TRIGGERED:
-						recommend = inputs[key]
-						print(prints[key])
-				if not np.count_nonzero(recommend):
-					print('noop')
+				print("function called")
+				recommend = self.get_user_input(obs,info)
 				return recommend
 			def user_model(obs,info):
-				input_probs = np.array([0.20740741, 0.14893617, 0.38095238, 0.26126126, 0.2815534 ,
-										0.29411765, 0.28436019, 0.26262626, 0.25120773, 0.33050847,
-										0.2398524 , 0.1994382 , 0.22      , 0.17758621, 0.11042945,
-										0.10155317, 0.08389831, 0.07963656, 0.05690704, 0.03887689])
-				bins = np.linspace(-.9,1,20)
-				prob = input_probs[np.min(np.where(bins>info['cos_error']))]
+				if self.prev_noop is None or not self.prev_noop:
+					prob = .15*(1-info['cos_error'])
+				else:
+					prob = .6 if info['cos_error'] < .25 else .3
 				recommend = np.zeros(config['oracle_size'])
 				if rng.random() < prob:
 					traj = self.env.target_pos-self.env.tool_pos
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
+
+				self.prev_noop = not np.count_nonzero(recommend)
 				return recommend
 			def dd_target(obs,info):
 				# diff_distances = np.array([norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])\
@@ -267,55 +233,37 @@ def shared_autonomy_factory(base):
 				# 'dist_hot_cold': dist_hot_cold,
 				# 'rad_hot_cold': rad_hot_cold,
 				# 'dist_discrete_traj': dist_discrete_traj,
-				'rad_discrete_traj': rad_discrete_traj,
+				# 'rad_discrete_traj': rad_discrete_traj,
 				'user': user,
 				'user_model': user_model,
 				# 'dd_target': dd_target,
-				'ded_target': ded_target,
-				'random_traj': random_traj,
+				# 'ded_target': ded_target,
+				# 'random_traj': random_traj,
 			}[config['oracle']]
-
-			# if not config['noise']:
-			# 	self.noise = Noise(spaces.Box(-.01,.01,(config['oracle_size'],)),include=())
-			# else:
-			# 	self.noise = {
-			# 		'target': Noise(spaces.Box(-.1,.1,(config['oracle_size'],))),
-			# 		'trajectory': Noise(spaces.Box(-.01,.01,(config['oracle_size'],))),
-			# 		'discrete': lambda: self.env.target_num,
-			# 	}[config['oracle']]
 
 			if config['action_type'] in ['target', 'trajectory', 'disc_target','cat_target','basis_target']:
 				self.pretrain = config['pretrain'](config)
 			joint = lambda action: action
 			target = lambda pred: self.pretrain.predict(self.env,pred)
-			clip_by_norm = lambda traj,limit: traj/max(1e-8,norm(traj))*np.clip(norm(traj),None,limit)
 			trajectory = lambda traj: target(self.env.tool_pos+traj)
-			# trajectory = lambda traj: target(self.env.tool_pos+clip_by_norm(traj,config['traj_clip']))
-			def disc_target(f_probs):
-				index = rng.choice(self.env.num_targets,p=softmax(f_probs))
-				return target(self.env.targets[index])
 			def cat_target(index):
 				index = np.argmax(index)
 				return target(self.env.targets[index])
-			
-			def basis_target(index):
-				return target(np.sum(self.env.targets*index.reshape((-1,1)),axis=0))
+			def disc_traj(index):
+				index = np.argmax(index)
+				traj = 
 			self.translate = {
 				# 'target': target,
 				'trajectory': trajectory,
 				'joint': joint,
-				# 'disc_target': disc_target,
-				'cat_target': cat_target,
-				# 'basis_target': basis_target,
+				# 'cat_target': cat_target,
 			}[config['action_type']]
 			self.action_space = {
 				# "target": spaces.Box(-1,1,(3,)),
 				"trajectory": spaces.Box(-1,1,(3,)),
 				"joint": spaces.Box(-1,1,(7,)),
-				# "disc_target": spaces.Box(-100,100,(self.env.num_targets,)),
-				"cat_target": spaces.Box(0,1,(self.env.num_targets,)),
-				# "cat_target": spaces.Discrete(self.env.num_targets),
-				# "basis_target": spaces.Box(0,1,(self.env.num_targets,))
+				# "cat_target": spaces.Box(0,1,(self.env.num_targets,)),
+				"disc_traj": spaces.Box(0,1,(6,)),
 			}[config['action_type']]
 
 		def step(self,action):
@@ -344,6 +292,7 @@ def shared_autonomy_factory(base):
 
 		def reset(self):
 			self.pred_target = -1
+			self.prev_noop = None
 			obs = super().reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle_size)))
 			return obs
@@ -364,8 +313,9 @@ def window_factory(base):
 		def __init__(self,config):
 			super().__init__(config)
 			self.include_target = config['include_target']
-			self.history_shape = (config['num_obs'],config['obs_size']+config['oracle_size'])
-			self.nonnoop_shape = (config['num_nonnoop'],config['obs_size']+config['oracle_size'])
+			self.current_obs_dim = config['obs_size']+config['oracle_size']
+			self.history_shape = (config['num_obs'],self.current_obs_dim)
+			self.nonnoop_shape = (config['num_nonnoop'],self.current_obs_dim)
 			if self.include_target:
 				self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)\
 													+np.prod(self.nonnoop_shape)+3*self.env.num_targets,))
@@ -374,17 +324,18 @@ def window_factory(base):
 
 		def step(self,action):
 			obs,r,done,info = super().step(action)
+
 			if len(self.history) == self.history_shape[0] and self.is_nonnoop[0]:
 				self.prev_nonnoop.append(self.history[0])
 
-			self.history.append(obs)
-			self.is_nonnoop.append((not info['noop']))
+			self.history.appendleft(obs)
+			self.is_nonnoop.appendleft((not info['noop']))
 			info['current_obs'] = obs
-
+			
 			if self.include_target:
-				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets))),r,done,info
+				return np.concatenate((*self.history,*self.prev_nonnoop,*self.env.targets)),r,done,info
 			else:
-				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),)),r,done,info
+				return np.concatenate((*self.history,*self.prev_nonnoop,)),r,done,info
 
 		def reset(self):
 			obs = super().reset()
@@ -393,55 +344,83 @@ def window_factory(base):
 			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
 			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-			self.history.append(obs)
+			self.history.appendleft(obs)
+
 			if self.include_target:
-				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
+				return np.concatenate((*self.history,*self.prev_nonnoop,*self.env.targets))
 			else:
-				return np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
+				return np.concatenate((*self.history,*self.prev_nonnoop,))
 	return PrevNnonNoopK
 
-def embedding_factory(base):
-	class Embedding(window_factory(base)):
+import pygame as pg
+def feedback_factory(base):
+	SCREEN_SIZE = 250
+	class Feedback(base):
 		def __init__(self,config):
 			super().__init__(config)
-			self.obs_dim = config['obs_size']+config['oracle_size']
-			self.observation_space = spaces.Box(-np.inf,np.inf,(self.observation_space.dim+self.obs_dim,))
+			self.screen = None
 
+		def get_user_input(self,obs,info):
+			recommend = np.zeros(6)
+			keys = p.getKeyboardEvents()
+			inputs = {
+				p.B3G_LEFT_ARROW: 	np.array([0,1,0,0,0,0]),
+				p.B3G_RIGHT_ARROW: 	np.array([1,0,0,0,0,0]),
+				ord('e'):		 	np.array([0,0,1,0,0,0]),
+				ord('d'):		 	np.array([0,0,0,1,0,0]),
+				p.B3G_UP_ARROW:		np.array([0,0,0,0,0,1]),
+				p.B3G_DOWN_ARROW:	np.array([0,0,0,0,1,0])
+			}
+			prints = {
+				p.B3G_LEFT_ARROW: 	'left',
+				p.B3G_RIGHT_ARROW: 	'right',
+				ord('e'):		 	'forward',
+				ord('d'):		 	'backward',
+				p.B3G_UP_ARROW:		'up',
+				p.B3G_DOWN_ARROW:	'down'
+			}
+			for key in inputs:
+				if key in keys and keys[key]&p.KEY_WAS_TRIGGERED:
+					recommend = inputs[key]
+					label = prints[key]
+					print(label)
+			if not np.count_nonzero(recommend):
+				label = 'noop'
+				print('noop')
+
+			if self.screen is not None:
+				self.screen.fill(pg.color.THECOLORS["white"])
+				font = pg.font.Font(None, 24)
+				text = label
+				text = font.render(text, 1, pg.color.THECOLORS["black"])
+				self.screen.blit(text, (125,125))
+			return recommend
+
+		def render(self,mode=None):
+			if mode == 'human':
+				pg.init()
+				self.screen = pg.display.set_mode((SCREEN_SIZE,SCREEN_SIZE)) 
+			return super().render(mode)
+	return Feedback
+
+def sanity_factory(base):
+	class AddTargetIndex(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.observation_space = spaces.Box(-np.inf,np.inf,(self.observation_space.shape[0]+self.env.num_targets,))
 		def step(self,action):
-			concat_obs,r,done,info = super().step(action)
-			current_obs = info['current_obs']
-			pf_hx = self._get_pf_hx(current_obs)
-			obs = np.concatenate((current_obs,concat_obs,*pf_hx))
-			return obs,r,done,info			
-
+			obs,r,done,info = super().step(action)
+			targets = np.zeros(len(self.env.targets))
+			targets[self.env.target_index] = 1
+			obs = np.concatenate((obs,targets))
+			return obs,r,done,info
 		def reset(self):
 			obs = super().reset()
-			current_obs = obs
-			self.pf_hx = (torch.zeros((1,1,self.pf.hidden_size)),torch.zeros((1,1,self.pf.hidden_size)))
-
-			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
-			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
-			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-			self.history.append(obs)
-			if self.include_target:
-				concat_obs = np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),np.ravel(self.env.targets)))
-			else:
-				concat_obs = np.concatenate((np.ravel(self.history),np.ravel(self.prev_nonnoop),))
-
-			pf_hx = self._get_pf_hx(current_obs)
-			obs = np.concatenate((current_obs,concat_obs,*pf_hx))
+			targets = np.zeros(len(self.env.targets))
+			targets[self.env.target_index] = 1
+			obs = np.concatenate((obs,targets))
 			return obs
-
-		def _get_pf_hx(self,current_obs):
-			current_obs = torch.tensor(current_obs)
-			if next(self.qf1.parameters()).is_cuda:
-				current_obs = current_obs.cuda()
-				pf_hx = (pf_hx[0].cuda(),pf_hx[1].cuda())
-			with torch.no_grad():
-				input_prediction,self.pf_hx = self.pf(current_obs.reshape((1,1,-1)),pf_hx)
-			return np.concatenate((self.pf_hx[0].cpu().numpy(),self.pf_hx[1].cpu().numpy()))
-			
-	return Embedding
+	return AddTargetIndex
 
 def new_target_factory(base):
 	class NewTarget(base):
@@ -518,7 +497,7 @@ env_map = {
 	# "Laptop": dict(zip(env_keys,("Laptop",15,IKPretrain))),
 	# "LightSwitch": dict(zip(env_keys,("LightSwitch",15,IKPretrain))),
 	"Laptop": dict(zip(env_keys,("Laptop",18,IKPretrain))),
-	"LightSwitch": dict(zip(env_keys,("LightSwitch",18,IKPretrain))),
+	"LightSwitch": dict(zip(env_keys,("LightSwitch",15,IKPretrain))),
 	"Reach": dict(zip(env_keys,("Reach",14,IKPretrain))),
 	}
 default_class = lambda env_name: reduce(lambda value,func: func(value),

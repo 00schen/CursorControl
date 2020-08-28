@@ -20,6 +20,38 @@ class PathAdaptLoader(DictToMDPPathLoader):
 		replay_buffer.env.adapt_path(path)
 		super().load_path(path, replay_buffer, obs_dict)
 
+def checkoff_adapt(self,path):
+	done_iter = iter(path['terminals'])
+	info_iter = iter(path['env_infos'])
+
+	done = False
+	while not done:
+		info = next(info_iter)
+		info['adapt'] = False
+		info['offline'] = True
+		done = next(done_iter)
+	return path
+
+def switch_adapt(self,path):
+	obs_iter = iter(path['observations']+[path['next_observations'][-1]])
+	done_iter = iter(path['terminals'])
+	new_path = {'observations':[],'next_observations':[]}
+
+	obs = next(obs_iter)
+	obs = np.concatenate((obs[:-10],obs[-7:]))
+	done = False
+	while not done:
+		new_path['observations'].append(obs)
+		
+		done = next(done_iter)
+		obs = next(obs_iter)
+		obs = np.concatenate((obs[:-10],obs[-7:]))
+
+		new_path['next_observations'].append(obs)
+
+	path.update(new_path)
+	return path
+
 def window_adapt(self,path):
 	obs_iter = iter(path['observations']+[path['next_observations'][-1]])
 	done_iter = iter(path['terminals'])
@@ -27,10 +59,7 @@ def window_adapt(self,path):
 	history = deque(np.zeros(self.history_shape),self.history_shape[0])
 	is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 	prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-	if self.action_type in ['target','disc_target','cat_target','basis_target','joint']:
-		new_path = {'observations':[],'next_observations':[],'actions':[]}
-	else:
-		new_path = {'observations':[],'next_observations':[]}
+	new_path = {'observations':[],'next_observations':[]}
 
 	history.append(next(obs_iter))
 	if self.include_target:
@@ -45,8 +74,6 @@ def window_adapt(self,path):
 			prev_nonnoop.append(history[0])
 		history.append(next(obs_iter))
 		info = next(info_iter)
-		info['adapt'] = False
-		info['offline'] = True
 		is_nonnoop.append(info['noop'])
 		done = next(done_iter)
 
@@ -55,17 +82,39 @@ def window_adapt(self,path):
 		else:
 			obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),))
 		new_path['next_observations'].append(obs)
+
+	path.update(new_path)
+	return path
+
+def action_adapt(self,path):
+	done_iter = iter(path['terminals'])
+	info_iter = iter(path['env_infos'])
+	if self.action_type in ['target','disc_target','cat_target','basis_target','joint']:
+		new_path = {'actions':[]}
+	else:
+		return None
+
+	done = False
+	while not done:
+		info = next(info_iter)
+		done = next(done_iter)
+
 		if self.action_type in ['disc_target','cat_target','basis_target']:
-			new_path['actions'].append(.99*F.one_hot(torch.tensor([info['target_index']]),len(info['targets'])).float().flatten().numpy())
+			new_path['actions'].append(1.*F.one_hot(torch.tensor([
+				info.get('target_pred',info['target_index'])
+				]),len(info['targets'])).float().flatten().numpy())
 		elif self.action_type in ['target']:
-			new_path['actions'].append(info['targets'][info['target_index']])
+			new_path['actions'].append(info.get('target_pred',info['targets'][info['target_index']]))
 		elif self.action_type in ['joint']:
 			new_path['actions'].append(info['joint_action'])
 
 	path.update(new_path)
+	return path
+
+def reward_adapt(self,path):
 	path['rewards'] = np.maximum(np.minimum(path['rewards'],1),-self.input_penalty)
 	# path['rewards'] = np.maximum(np.minimum(path['rewards'],100),0)
-
+	return path
 
 def adapt_factory(base,adapt_funcs):
 	class PathAdapter(base):
@@ -93,7 +142,7 @@ def multiworld_factory(base):
 			return self.env.render(width=width,height=height)
 	return multiworld
 
-railrl_class = lambda env_name, adapt_funcs: adapt_factory(default_class(env_name),adapt_funcs)
+railrl_class = lambda env_class, adapt_funcs: adapt_factory(env_class,[checkoff_adapt,action_adapt,reward_adapt,*adapt_funcs])
 
 from railrl.data_management.env_replay_buffer import EnvReplayBuffer
 class OnOffReplayBuffer(EnvReplayBuffer):

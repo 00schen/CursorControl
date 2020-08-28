@@ -89,3 +89,6 @@ test36: real user model
 test37: gaussian policy not values, no clamp
 test38: boltzmann exploration with penalty prediction
 test39: boltzmann exploration no penalty
+test40: first real user test
+test41: second real user test
+test42: lstm tests

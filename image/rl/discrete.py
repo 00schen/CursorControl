@@ -19,14 +19,24 @@ from copy import deepcopy,copy
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--local_dir',default='~/share/image/rl/test',help='dir to save trials')
 parser.add_argument('--env_name',)
 parser.add_argument('--use_gpu', type=int, default=1)
 parser.add_argument('--gpus', type=int)
 parser.add_argument('--per_gpu', type=int)
 parser.add_argument('--exp_name', default='a-test')
-parser.add_argument('--test', type=int, default=1)
+parser.add_argument('--pretrain', type=int, default=0)
 args, _ = parser.parse_known_args()
+
+from torch import sigmoid
+from torch import nn
+class Sigmoid(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.kwargs = kwargs
+        self.__name__ = "Sigmoid"
+
+    def forward(self, x):
+        return sigmoid(x, **self.kwargs)
 
 def process_args(variant):
     if variant.get("debug", False):
@@ -43,25 +53,32 @@ def process_args(variant):
 
 if __name__ == "__main__":
 	variant = dict(
-		num_epochs=50,
+		# num_epochs=250,
 		# num_eval_steps_per_epoch=200*10,
-		num_eval_steps_per_epoch=0,
-		num_trains_per_train_loop=100,
-		num_expl_steps_per_train_loop=200,
+		# num_trains_per_train_loop=100,
+		# num_expl_steps_per_train_loop=200,
+		# min_num_steps_before_training=0,
+
+		num_epochs=121,
+		num_eval_steps_per_epoch=200*10,
+		num_trains_per_train_loop=20,
+		num_expl_steps_per_train_loop=0,
 		min_num_steps_before_training=0,
+
 		max_path_length=200,
-		batch_size=5,
-		# replay_buffer_size=int(5e4),
-		# replay_buffer_class=DQfDReplayBuffer,
-		# trainer_class=DQfDTrainer,
+		batch_size=1024,
+		traj_batch_size=10,
+		balanced_traj_batch_size=100,
+		num_pretrain_loops=0,
+		user_eval_mode=True,
 
 		# replay_buffer_class=BalancedReplayBuffer,
 		trainer_class=DQNPavlovTrainer,
 
 		replay_buffer_kwargs=dict(
-			max_num_traj=250,
+			max_num_traj=750,
 			traj_max=200,
-			subtraj_len=100,
+			subtraj_len=70,
 		),
 
 		twin_q=True,
@@ -69,6 +86,7 @@ if __name__ == "__main__":
 		),
 		qf_kwargs=dict(
 			hidden_sizes=[256]*3,
+			# output_activation=Sigmoid(),
 			# output_activation=Clamp(max=10), # rewards are <= 10
 		),
 		pf_kwargs=dict(
@@ -78,14 +96,14 @@ if __name__ == "__main__":
 		version="normal",
 		collection_mode='batch',
 		trainer_kwargs=dict(
-            discount=0.99,
+            # discount=0.99,
+			# discount=1,
             # soft_target_tau=5e-3,
-            target_update_period=1,
+            # target_update_period=1,
             # policy_lr=3E-4,
             # qf_lr=3E-4,
             reward_scale=1,
             # alpha=1.0,
-			pretrain_steps=int(5e4),
         ),
 		launcher_config=dict(
 			exp_name=args.exp_name,
@@ -109,6 +127,15 @@ if __name__ == "__main__":
 					train_split=0.9,
 				)
 				for i in range(12)
+			# ],
+			]+[
+				dict(
+					path=os.path.join(os.path.abspath(''),f"demos/LightSwitch_user1_10{0 if i < 10 else ''}{i}.npy"),
+					obs_dict=False,
+					is_demo=False,
+					train_split=0.9,
+				)
+				for i in range(5)
 			],
 			# add_demos_to_replay_buffer=False,
 		),
@@ -121,7 +148,8 @@ if __name__ == "__main__":
 		),
 
 		load_demos=True,
-		pretrain_rl=not args.test,
+		pretrain_rl=args.pretrain,
+		file_name = os.path.join('logs',args.exp_name,'runrun_0','id0','params.pkl'),
 	)
 	config = deepcopy(default_config)
 	config.update(env_map[args.env_name])
@@ -129,9 +157,9 @@ if __name__ == "__main__":
 		oracle_size=6,
 		# oracle='user_model',
 		oracle='user',
-		num_obs=10,
-		num_nonnoop=10,
-		# threshold=.7,
+		num_obs=1,
+		num_nonnoop=0,
+		threshold=.3,
 		# input_penalty=.1,
 		input_penalty=0,
 		action_type='cat_target',
@@ -140,8 +168,8 @@ if __name__ == "__main__":
 		# target_delay=80,
 	))
 	variant.update(dict(
-		# env_class=new_target_factory(railrl_class(args.env_name,[window_adapt])),
-		env_class=railrl_class(args.env_name,[window_adapt]),
+		# env_class=railrl_class(sanity_factory(default_class(args.env_name)),[window_adapt,sanity_adapt,]),
+		env_class=railrl_class(feedback_factory(default_class(args.env_name)),[switch_adapt,window_adapt,]),
 		env_kwargs={'config':config},
 	))
 
@@ -149,13 +177,19 @@ if __name__ == "__main__":
 		'seedid': [2000,],
 		'dense': [True,],
 		# 'env_kwargs.config.threshold': [.1,.3,.5,],
-		'trainer_kwargs.learning_rate': [3e-4,1e-3,3e-3],
-		'trainer_kwargs.soft_target_tau': [3e-4,1e-3,3e-3],
-		'policy_kwargs.penalty': [0,.1,.5,1],
-		'policy_kwargs.q_coeff': [0,1],
+		'trainer_kwargs.learning_rate': [3e-4,],
+		'trainer_kwargs.soft_target_tau': [1e-3,],
+		'num_pf_trains_per_train_loop': [1000,],
+		'trainer_kwargs.discount': [1,],
+		'trainer_kwargs.pf_lr': [1e-3,],
+		'trainer_kwargs.pf_decay': [1e-3,],
+		'trainer_kwargs.target_update_period': [10,],
+
+		'policy_kwargs.penalty': [.1,],
+		'policy_kwargs.q_coeff': [1,],
 		# 'env_kwargs.config.input_penalty': [0,.1,.3,.5],
 		# 'exploration_kwargs.epsilon': [.3,.4,.5]
-		'exploration_kwargs.logit_scale': [10,100,1000]
+		'exploration_kwargs.logit_scale': [1000]
 	}
 	# search_space = {
 	# 	'seedid': [45,],
@@ -177,32 +211,33 @@ if __name__ == "__main__":
 	for variant in sweeper.iterate_hyperparameters():
 		variants.append(variant)
 
-	import ray
-	from ray.util import ActorPool
-	from itertools import cycle,count
-	ray.init(temp_dir='/tmp/ray_exp', num_gpus=args.gpus if args.use_gpu else 0)
+	# import ray
+	# from ray.util import ActorPool
+	# from itertools import cycle,count
+	# ray.init(temp_dir='/tmp/ray_exp', num_gpus=args.gpus if args.use_gpu else 0)
 
-	@ray.remote
-	class Iterators:
-		def __init__(self):
-			self.run_id_counter = count(0)
-			# self.gpu_iter = cycle(args.gpus*args.per_gpu)
-		def next(self):
-			return next(self.run_id_counter)
-	iterator = Iterators.options(name="global_iterator").remote()
+	# @ray.remote
+	# class Iterators:
+	# 	def __init__(self):
+	# 		self.run_id_counter = count(0)
+	# 		# self.gpu_iter = cycle(args.gpus*args.per_gpu)
+	# 	def next(self):
+	# 		return next(self.run_id_counter)
+	# iterator = Iterators.options(name="global_iterator").remote()
 	
-	@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.use_gpu else 0)
-	class Runner:
-		def run(self,variant):
-			iterator = ray.get_actor("global_iterator")
-			run_id = ray.get(iterator.next.remote())
-			variant['launcher_config']['gpu_id'] = 0
-			# variant.update(dense_dicts[variant['dense']])
-			run_variants(experiment, [variant], process_args,run_id=run_id)
+	# @ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.use_gpu else 0)
+	# class Runner:
+	# 	def run(self,variant):
+	# 		iterator = ray.get_actor("global_iterator")
+	# 		run_id = ray.get(iterator.next.remote())
+	# 		variant['launcher_config']['gpu_id'] = 0
+	# 		# variant.update(dense_dicts[variant['dense']])
+	# 		run_variants(experiment, [variant], process_args,run_id=run_id)
 
-	runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
-	runner_pool = ActorPool(runners)
-	list(runner_pool.map(lambda a,v: a.run.remote(v), variants))
+	# runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
+	# runner_pool = ActorPool(runners)
+	# list(runner_pool.map(lambda a,v: a.run.remote(v), variants))
 
-	# for variant in variants:
-	# 	run_variants(experiment, [variant], process_args,run_id="run_0")
+	for variant in variants:
+		run_variants(eval_exp, [variant], process_args,run_id="run_1")
+		# run_variants(experiment, [variant], process_args,run_id="run_0")
