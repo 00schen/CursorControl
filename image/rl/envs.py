@@ -88,7 +88,7 @@ def sparse_factory(env_name):
 					self.success_count.append(self.env.task_success > 0)
 				else:
 					done = False
-					r = 100*info['task_success']
+					r = info['task_success']
 			else:
 				r = (self.env.task_success > 0)
 				if self.env.task_success > 0 or self.timesteps >= self.step_limit:
@@ -162,27 +162,7 @@ def shared_autonomy_factory(base):
 				recommend = np.zeros(config['oracle_size'])
 				recommend[0:3] = self.env.target_pos - self.env.tool_pos
 				return recommend
-			def dist_discrete_traj(obs,info):
-				"""User corrects direction robot is most off course"""
-				recommend = np.zeros(config['oracle_size'])
-				if info['diff_distance'] < -.1 or info['distance_to_target'] > .5:
-					traj = self.env.target_pos-self.env.tool_pos
-					axis = np.argmax(np.abs(traj))
-					recommend[2*axis+(traj[axis]>0)] = 1
-				return recommend
-			def rad_discrete_traj(obs,info):
-				"""if the robot is off course, user corrects the most off direction"""
-				recommend = np.zeros(config['oracle_size'])
-				# t = np.minimum(info['distance_to_target'],1)
-				# threshold = t*config['threshold'] + (1-t)
-				threshold = config['threshold']
-				if info['cos_error'] < threshold:
-					traj = self.env.target_pos-self.env.tool_pos
-					axis = np.argmax(np.abs(traj))
-					recommend[2*axis+(traj[axis]>0)] = 1
-				return recommend
 			def user(obs,info):
-				print("function called")
 				recommend = self.get_user_input(obs,info)
 				return recommend
 			def user_model(obs,info):
@@ -195,53 +175,16 @@ def shared_autonomy_factory(base):
 					traj = self.env.target_pos-self.env.tool_pos
 					axis = np.argmax(np.abs(traj))
 					recommend[2*axis+(traj[axis]>0)] = 1
-
 				self.prev_noop = not np.count_nonzero(recommend)
-				return recommend
-			def dd_target(obs,info):
-				# diff_distances = np.array([norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])\
-				# 				- np.array([norm(info['old_tool_pos']-target_pos) for target_pos in self.env.targets])
-				diff_distances = np.array([-norm(self.env.tool_pos-target_pos) for target_pos in self.env.targets])
-				recommend = np.zeros(config['oracle_size'])
-				if self.env.target_index != np.argmax(diff_distances):
-					# traj = self.env.target_pos-self.env.targets[np.argmax(diff_distances)]
-					traj = self.env.target_pos-self.env.tool_pos
-					axis = np.argmax(np.abs(traj))
-					recommend[2*axis+(traj[axis]>0)] = 1
-				return recommend
-			def ded_target(obs,info):
-				recommend = np.zeros(config['oracle_size'])
-				traj = self.env.target_pos-self.env.tool_pos
-				axis = np.argmax(np.abs(traj))
-				recommend[2*axis+(traj[axis]>0)] = 1
-				return recommend
-			def random_traj(obs,info):
-				recommend = np.zeros(config['oracle_size'])
-				abs_traj = np.abs(self.env.target_pos-self.env.tool_pos)
-				indices = np.argsort(abs_traj)
-				if abs_traj[indices[2]] - abs_traj[indices[1]] > config['threshold']\
-					or info['distance_to_target'] < .1:
-					recommend = np.zeros(config['oracle_size'])
-					traj = self.env.target_pos-self.env.tool_pos
-					axis = np.argmax(np.abs(traj))
-					recommend[2*axis+(traj[axis]>0)] = 1
 				return recommend
 			self.determiner = {
 				# 'target': lambda obs,info: self.env.target_pos,
 				# 'trajectory': trajectory,
-				# 'discrete_target': lambda obs,info: self.env.target_num,
-				# 'dist_hot_cold': dist_hot_cold,
-				# 'rad_hot_cold': rad_hot_cold,
-				# 'dist_discrete_traj': dist_discrete_traj,
-				# 'rad_discrete_traj': rad_discrete_traj,
 				'user': user,
 				'user_model': user_model,
-				# 'dd_target': dd_target,
-				# 'ded_target': ded_target,
-				# 'random_traj': random_traj,
 			}[config['oracle']]
 
-			if config['action_type'] in ['target', 'trajectory', 'disc_target','cat_target','basis_target']:
+			if config['action_type'] in ['target', 'trajectory','disc_traj']:
 				self.pretrain = config['pretrain'](config)
 			joint = lambda action: action
 			target = lambda pred: self.pretrain.predict(self.env,pred)
@@ -251,12 +194,21 @@ def shared_autonomy_factory(base):
 				return target(self.env.targets[index])
 			def disc_traj(index):
 				index = np.argmax(index)
-				traj = 
+				traj = [
+					np.array((-1,0,0)),
+					np.array((1,0,0)),
+					np.array((0,-1,0)),
+					np.array((0,1,0)),
+					np.array((0,0,-1)),
+					np.array((0,0,1)),
+				][index]
+				return trajectory(traj)
 			self.translate = {
 				# 'target': target,
 				'trajectory': trajectory,
 				'joint': joint,
 				# 'cat_target': cat_target,
+				'disc_traj': disc_traj,
 			}[config['action_type']]
 			self.action_space = {
 				# "target": spaces.Box(-1,1,(3,)),
@@ -352,6 +304,29 @@ def window_factory(base):
 				return np.concatenate((*self.history,*self.prev_nonnoop,))
 	return PrevNnonNoopK
 
+def cap_factory(base):
+	class CapReward(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.cap = config['cap']
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			r = np.minimum(r,self.cap)
+			return obs,r,done,info
+	return CapReward
+
+def target_factory(base):
+	class Target(base):
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			obs = np.concatenate((obs,self.env.target_pos))
+			return obs,r,done,info
+		def reset(self):
+			obs = super().reset()
+			obs = np.concatenate((obs,self.env.target_pos))
+			return obs
+	return Target
+
 import pygame as pg
 def feedback_factory(base):
 	SCREEN_SIZE = 250
@@ -402,84 +377,6 @@ def feedback_factory(base):
 				self.screen = pg.display.set_mode((SCREEN_SIZE,SCREEN_SIZE)) 
 			return super().render(mode)
 	return Feedback
-
-def sanity_factory(base):
-	class AddTargetIndex(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.observation_space = spaces.Box(-np.inf,np.inf,(self.observation_space.shape[0]+self.env.num_targets,))
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			targets = np.zeros(len(self.env.targets))
-			targets[self.env.target_index] = 1
-			obs = np.concatenate((obs,targets))
-			return obs,r,done,info
-		def reset(self):
-			obs = super().reset()
-			targets = np.zeros(len(self.env.targets))
-			targets[self.env.target_index] = 1
-			obs = np.concatenate((obs,targets))
-			return obs
-	return AddTargetIndex
-
-def new_target_factory(base):
-	class NewTarget(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.num_episodes = 0
-			self.delay = config['target_delay']
-		def reset(self):
-			def set_target(self):
-				self.target_pos = .5*(self.targets[0]+self.targets[-1])
-				return self.target_pos
-			self.num_episodes += 1
-			if self.num_episodes > self.delay:		
-				self.env.set_target = MethodType(set_target,self.env)
-			obs = super().reset()
-			print(self.env.target_pos,self.env.targets)
-			print(self.num_episodes)
-			return obs
-	return NewTarget
-
-class CurriculumScheduler:
-	def __init__(self,config):
-		self.t = config['init_t']
-		self.step_count = 0
-		self.increment = config['curr_inc']
-		self.phase = {
-			'linear': lambda: self.t + self.increment,
-			'concave': lambda: self.t + self.increment**self.step_count,
-			'convex': lambda: self.t + self.increment**(-self.step_count)
-		}[config['curr_phase']]
-	
-	def step(self):
-		self.step_count += 1
-		self.t = min(self.phase(), 1)
-
-	def get_t(self):
-		return self.t if rng.random() < .95 else rng.random()*self.t
-
-def moving_init_factory(base):
-	class MovingInit(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.wait_time = 0
-			config.update({'init_t': .3, 'curr_inc': .03, 'curr_phase': 'linear'})
-			self.scheduler = CurriculumScheduler(config)
-
-		def reset(self):
-			self.wait_time += 1
-			if self.wait_time > 20 and np.mean(self.success_count) > .5:
-				self.wait_time = 0
-				self.scheduler.step()
-			t = self.scheduler.get_t()
-			def init_start_pos(self,og_init_pos):
-				nonlocal t
-				return t*og_init_pos + (1-t)*self.target_pos
-			self.env.init_start_pos = MethodType(init_start_pos,self.env)
-			obs = super().reset()
-			return obs
-	return MovingInit
 
 default_config = {
 	'step_limit': 200,

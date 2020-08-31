@@ -7,8 +7,9 @@ from railrl.data_management.env_replay_buffer import EnvReplayBuffer
 from railrl.envs.env_utils import get_dim
 
 from envs import rng
-import torch
+import torch as th
 import torch.nn.functional as F
+from collections import deque
 
 class PavlovReplayBuffer(EnvReplayBuffer):
 	def __init__(self,max_replay_buffer_size,env,env_info_sizes=None):
@@ -73,16 +74,19 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		subtraj_len,
 		env,
 		pf,
+		num_prev_pred=5, pred_op=lambda x: th.median(x,dim=0),
 	):
 		self.pf = pf
 		self.env = env
-		self._pred_sizes = (7*env.env.num_targets,)
+		# self._pred_sizes = (pf.output_size*(6+1),)
+		self._pred_sizes = (3,)
 		observation_dim, action_dim = get_dim(env.observation_space), get_dim(env.action_space)
-		observation_dim += sum(self._pred_sizes) + 2*self.pf.hidden_size
+		# observation_dim += sum(self._pred_sizes) + 2*self.pf.hidden_size
+		observation_dim += sum(self._pred_sizes)
 		self._observation_dim = observation_dim
 		self._action_dim = action_dim
 		self._max_replay_buffer_size = max_num_traj
-		self._current_obs_dim = self.pf.input_size - action_dim
+		self._current_obs_dim = env.current_obs_dim
 
 		self._observations = np.zeros((max_num_traj, traj_max, observation_dim))
 		# It's a bit memory inefficient to save the observations twice,
@@ -96,8 +100,9 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		# self._terminals[i] = a terminal was received at time i
 		self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		# self._inputs = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		# self._targets = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		self._targets = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		# self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		self._successes = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 
 		self._top = 0
 		self._sample = 0
@@ -108,56 +113,57 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._traj_max = traj_max
 		self.end = (sum(self._pred_sizes)+2*self.pf.hidden_size,sum(self._pred_sizes),)
 
-	# def add_sample(self, observation, action, reward, next_observation,
-	# 			   terminal, env_info, **kwargs):
-	# 	self._observations[self._sample][self._index] = observation
-	# 	self._actions[self._sample][self._index] = action
-	# 	self._rewards[self._sample][self._index] = reward
-	# 	self._terminals[self._sample][self._index] = terminal
-	# 	self._next_obs[self._sample][self._index] = next_observation
-
-	# 	for key in self._env_info_keys:
-	# 		self._env_infos[key][self._sample][self._index] = env_info[key]
-	# 	self._advance()
+		self.num_prev_pred = num_prev_pred
+		self.pred_op = pred_op
 
 	def update_embeddings(self):
-		obs_pf_hx = (torch.zeros((1,self._top,self.pf.hidden_size)),torch.zeros((1,self._top,self.pf.hidden_size)))
-		next_pf_hx = (torch.zeros((1,self._top,self.pf.hidden_size)),torch.zeros((1,self._top,self.pf.hidden_size)))
-		obs_pf_hx1 = (torch.zeros((1,self._top,self.pf.hidden_size)),torch.zeros((1,self._top,self.pf.hidden_size)))
-		next_pf_hx1 = (torch.zeros((1,self._top,self.pf.hidden_size)),torch.zeros((1,self._top,self.pf.hidden_size)))
+		obs_prev_preds = deque(np.zeros((self.num_prev_pred,self._top,self.pf.output_size)),self.num_prev_pred)
+		next_prev_preds = deque(np.zeros((self.num_prev_pred,self._top,self.pf.output_size)),self.num_prev_pred)
+
+		obs_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
+		next_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
 		for i in range(self._traj_max):
-			obs = torch.as_tensor(self._observations[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
-			next_obs = torch.as_tensor(self._next_obs[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
-			action = torch.as_tensor(self._actions[:self._top,[i],:]).transpose(0,1)
+			obs = th.as_tensor(self._observations[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
+			next_obs = th.as_tensor(self._next_obs[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
+			action = th.as_tensor(self._actions[:self._top,[i],:]).transpose(0,1)
 			
 			"""pf embeddings"""
-			# obs_prediction = torch.zeros((1,self._top,self._action_dim))
-			# next_prediction = torch.zeros((1,self._top,self._action_dim))
+			obs_prediction = th.zeros((1,self._top,self._action_dim))
+			next_prediction = th.zeros((1,self._top,self._action_dim))
 			obs_preds,next_preds = [],[]
 			if next(self.pf.parameters()).is_cuda:
-				# obs_prediction = obs_prediction.cuda()
-				# next_prediction = next_prediction.cuda()
+				obs_prediction = obs_prediction.cuda()
+				next_prediction = next_prediction.cuda()
 				obs,next_obs,action = obs.cuda(),next_obs.cuda(),action.cuda()
 				obs_pf_hx = (obs_pf_hx[0].cuda(),obs_pf_hx[1].cuda())
 				next_pf_hx = (next_pf_hx[0].cuda(),next_pf_hx[1].cuda())
-			for j,oh_action in enumerate(1.0*F.one_hot(torch.arange(0,self._action_dim),self._action_dim)):
+			for j,oh_action in enumerate(1.0*F.one_hot(th.arange(0,self._action_dim),self._action_dim)):
 				oh_action = oh_action.repeat(1,self._top,1)
 				if next(self.pf.parameters()).is_cuda:
 					oh_action = oh_action.cuda()
-				obs_pred, _pf_hx = self.pf(torch.cat((obs,oh_action),dim=2).float(),obs_pf_hx)
-				next_pred, _pf_hx = self.pf(torch.cat((next_obs,oh_action),dim=2).float(),next_pf_hx)
+				obs_pred, _pf_hx = self.pf(th.cat((obs,oh_action),dim=2).float(),obs_pf_hx)
+				next_pred, _pf_hx = self.pf(th.cat((next_obs,oh_action),dim=2).float(),next_pf_hx)
 			# 	obs_prediction[...,j],next_prediction[...,j] = obs_pred.squeeze(),next_pred.squeeze()
 				obs_preds.append(obs_pred.squeeze())
 				next_preds.append(next_pred.squeeze())
-			obs_prediction,next_prediction = torch.cat(obs_preds,dim=1),torch.cat(next_preds,dim=1)
 
-			self._observations[:self._top,i,-self.end[0]:-self.end[1]] = torch.cat(obs_pf_hx,dim=2).squeeze().cpu().detach().numpy()
-			self._next_obs[:self._top,i,-self.end[0]:-self.end[1]] = torch.cat(next_pf_hx,dim=2).squeeze().cpu().detach().numpy()
-			self._observations[:self._top,i,-self.end[1]:-self.end[2]] = obs_prediction.squeeze().cpu().detach().numpy()
-			self._next_obs[:self._top,i,-self.end[1]:-self.end[2]] = next_prediction.squeeze().cpu().detach().numpy()
+			obs_prev_pred = self.pred_op(th.tensor(obs_prev_preds))[0]
+			next_prev_pred = self.pred_op(th.tensor(next_prev_preds))[0]
+			if next(self.pf.parameters()).is_cuda:
+				obs_prev_pred,next_prev_pred = obs_prev_pred.cuda(),next_prev_pred.cuda()
+			obs_preds.append(obs_prev_pred)
+			next_preds.append(next_prev_pred)
+			obs_prediction,next_prediction = th.cat(obs_preds,dim=1),th.cat(next_preds,dim=1)
 
-			_pred, obs_pf_hx = self.pf(torch.cat((obs,action),dim=2).float(),obs_pf_hx)
-			_pred, next_pf_hx = self.pf(torch.cat((next_obs,action),dim=2).float(),next_pf_hx)
+			# self._observations[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(obs_pf_hx,dim=2).squeeze().cpu().detach().numpy()
+			# self._next_obs[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(next_pf_hx,dim=2).squeeze().cpu().detach().numpy()
+			self._observations[:self._top,i,-self.end[1]:] = obs_prediction.squeeze().cpu().detach().numpy()
+			self._next_obs[:self._top,i,-self.end[1]:] = next_prediction.squeeze().cpu().detach().numpy()
+
+			obs_pred, obs_pf_hx = self.pf(th.cat((obs,action),dim=2).float(),obs_pf_hx)
+			next_pred, next_pf_hx = self.pf(th.cat((next_obs,action),dim=2).float(),next_pf_hx)
+			obs_prev_preds.append(obs_pred.squeeze().detach().cpu().numpy())
+			next_prev_preds.append(next_pred.squeeze().detach().cpu().numpy())
 
 	def terminate_episode(self):
 		pass
@@ -171,16 +177,19 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		if n_items < self._subtraj_len:
 			return
 
-		self._observations[self._sample,:n_items,:-self.end[0]] = path['observations']
+		# self._observations[self._sample,:n_items,:-self.end[1]] = path['observations']
+		self._observations[self._sample,:n_items] = path['observations']
 		self._actions[self._sample,:n_items] = path['actions']
 		self._rewards[self._sample,:n_items] = path['rewards']
 		self._terminals[self._sample,:n_items] = path['terminals']
-		self._next_obs[self._sample,:n_items,:-self.end[0]] = path['next_observations']
+		# self._next_obs[self._sample,:n_items,:-self.end[1]] = path['next_observations']
+		self._next_obs[self._sample,:n_items] = path['next_observations']
 
 		# self._inputs[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
-		# self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
-		self._recommends[self._sample,:n_items] = np.array([np.argmax(env_info['recommend']) if np.count_nonzero(env_info['recommend']) else 6\
-															for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
+		self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
+		# self._recommends[self._sample,:n_items] = np.array([np.argmax(env_info['recommend']) if np.count_nonzero(env_info['recommend']) else 6\
+		# 													for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
+		self._successes[self._sample,:n_items] = np.array([env_info['task_success'] for env_info in path['env_infos']])[:,np.newaxis]
 
 		# if not path['env_infos'][0].get('offline',False):
 		self._valid_start_indices.extend([(self._sample,start_index) for start_index in range(n_items-self._subtraj_len+1)])
@@ -201,8 +210,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			terminals=self.get_subtrajectories(self._terminals,start_indices),
 			next_observations=self.get_subtrajectories(self._next_obs,start_indices),
 			# inputs=self.get_subtrajectories(self._inputs,start_indices),
-			recommends=self.get_subtrajectories(self._recommends,start_indices),
-			# targets=self.get_subtrajectories(self._targets,start_indices),
+			# recommends=self.get_subtrajectories(self._recommends,start_indices),
+			targets=self.get_subtrajectories(self._targets,start_indices),
 		)
 		return batch
 
@@ -214,7 +223,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			observations=self._observations[sample_indices,traj_indices,:],
 			actions=self._actions[sample_indices,traj_indices,:],
 			rewards=self._rewards[sample_indices,traj_indices,:],
-			terminals=self._terminals[sample_indices,traj_indices,:],
+			# terminals=self._terminals[sample_indices,traj_indices,:],
+			successes=self._successes[sample_indices,traj_indices,:],
 			next_observations=self._next_obs[sample_indices,traj_indices,:],
 			# inputs=self._inputs[sample_indices,traj_indices,:],
 		)
@@ -245,6 +255,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			terminals = self._terminals[:self._top],
 			next_obs = self._next_obs[:self._top],
 			# inputs = self._inputs[:self._top],
+			successes = self._successes[:self._top],
 
 			observation_dim = self._observation_dim,
 			action_dim = self._action_dim,
@@ -281,4 +292,5 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._actions[:self._top] = d["actions"]
 		self._rewards[:self._top] = d["rewards"]
 		self._terminals[:self._top] = d["terminals"]
+		self._successes[:self._top] = d["successes"]
 		# self._inputs[:self._top] = d['inputs']
