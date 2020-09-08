@@ -92,3 +92,6 @@ test39: boltzmann exploration no penalty
 test40: first real user test
 test41: second real user test
 test42: lstm tests
+test48: smoothing lower level actions
+test49: baseline give q function target
+test50: only use predictor in environment, not q training

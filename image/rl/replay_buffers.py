@@ -11,61 +11,6 @@ import torch as th
 import torch.nn.functional as F
 from collections import deque
 
-class PavlovReplayBuffer(EnvReplayBuffer):
-	def __init__(self,max_replay_buffer_size,env,env_info_sizes=None):
-		super().__init__(max_replay_buffer_size,env,env_info_sizes)
-		self._inputs = np.zeros((max_replay_buffer_size, 1))
-
-	def add_sample(self, observation, action, reward, terminal, next_observation, **kwargs):
-		self._inputs[self._top] = not kwargs['env_info'].get('noop',True)
-		super().add_sample(observation, action, reward, terminal, next_observation, **kwargs)
-
-	def random_batch(self, batch_size):
-		indices = rng.randint(0, self._size, batch_size)
-		batch = dict(
-			observations=self._observations[indices],
-			actions=self._actions[indices],
-			rewards=self._rewards[indices],
-			terminals=self._terminals[indices],
-			next_observations=self._next_obs[indices],
-			inputs=self._inputs[indices],
-		)
-		for key in self._env_info_keys:
-			assert key not in batch.keys()
-			batch[key] = self._env_infos[key][indices]
-		return batch
-
-class BalancedReplayBuffer(PavlovReplayBuffer):
-	def __init__(self,max_replay_buffer_size,env,env_info_sizes=None):
-		super().__init__(max_replay_buffer_size,env,env_info_sizes)
-		self.noop_replay_buffer = PavlovReplayBuffer(max_replay_buffer_size,env,env_info_sizes)
-
-	def add_sample(self, observation, action, reward, terminal, next_observation, **kwargs):
-		if kwargs['env_info'].get('noop',True):
-			self.noop_replay_buffer.add_sample(observation, action, reward, terminal, next_observation, **kwargs)
-		else:
-			super().add_sample(observation, action, reward, terminal, next_observation, **kwargs)
-
-	def random_batch(self, batch_size):
-		if self._size >= batch_size//2:
-			input_batch = super().random_batch(batch_size//2)
-			noop_batch = self.noop_replay_buffer.random_batch(batch_size-batch_size//2)
-		else:
-			input_batch = super().random_batch(self._size)
-			noop_batch = self.noop_replay_buffer.random_batch(batch_size-self._size)
-		batch = dict(
-			observations=np.concatenate((input_batch['observations'],noop_batch['observations'])),
-			actions=np.concatenate((input_batch['actions'],noop_batch['actions'])),
-			rewards=np.concatenate((input_batch['rewards'],noop_batch['rewards'])),
-			terminals=np.concatenate((input_batch['terminals'],noop_batch['terminals'])),
-			next_observations=np.concatenate((input_batch['next_observations'],noop_batch['next_observations'])),
-			inputs=np.concatenate((input_batch['inputs'],noop_batch['inputs'])),
-		)
-		return batch
-
-	def num_steps_can_sample(self):
-		return super().num_steps_can_sample() + self.noop_replay_buffer.num_steps_can_sample()
-
 class PavlovSubtrajReplayBuffer(ReplayBuffer):
 	def __init__(
 		self,
@@ -78,11 +23,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 	):
 		self.pf = pf
 		self.env = env
-		# self._pred_sizes = (pf.output_size*(6+1),)
-		self._pred_sizes = (3,)
 		observation_dim, action_dim = get_dim(env.observation_space), get_dim(env.action_space)
-		# observation_dim += sum(self._pred_sizes) + 2*self.pf.hidden_size
-		observation_dim += sum(self._pred_sizes)
+		observation_dim += env.num_targets
 		self._observation_dim = observation_dim
 		self._action_dim = action_dim
 		self._max_replay_buffer_size = max_num_traj
@@ -100,18 +42,20 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		# self._terminals[i] = a terminal was received at time i
 		self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		# self._inputs = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		self._targets = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		self._targets = np.zeros((max_num_traj, traj_max, 3))
 		# self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		self._successes = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		self._lengths = np.zeros((max_num_traj, 1), dtype='int32')
 
 		self._top = 0
 		self._sample = 0
 		self._index = 0
 		self._valid_start_indices = []
+		self._val_valid_start_indices = []
+		self._add_counter = 0
 		self._valid_indices = []
 		self._subtraj_len = subtraj_len
 		self._traj_max = traj_max
-		self.end = (sum(self._pred_sizes)+2*self.pf.hidden_size,sum(self._pred_sizes),)
 
 		self.num_prev_pred = num_prev_pred
 		self.pred_op = pred_op
@@ -174,25 +118,28 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 
 	def add_path(self, path):
 		n_items = len(path["observations"])
-		if n_items < self._subtraj_len:
-			return
 
-		# self._observations[self._sample,:n_items,:-self.end[1]] = path['observations']
 		self._observations[self._sample,:n_items] = path['observations']
 		self._actions[self._sample,:n_items] = path['actions']
 		self._rewards[self._sample,:n_items] = path['rewards']
 		self._terminals[self._sample,:n_items] = path['terminals']
-		# self._next_obs[self._sample,:n_items,:-self.end[1]] = path['next_observations']
 		self._next_obs[self._sample,:n_items] = path['next_observations']
+		self._lengths[self._sample] = n_items
 
 		# self._inputs[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
-		self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
+		self._targets[self._sample,:n_items] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
+		# self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
 		# self._recommends[self._sample,:n_items] = np.array([np.argmax(env_info['recommend']) if np.count_nonzero(env_info['recommend']) else 6\
 		# 													for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
 		self._successes[self._sample,:n_items] = np.array([env_info['task_success'] for env_info in path['env_infos']])[:,np.newaxis]
 
-		# if not path['env_infos'][0].get('offline',False):
-		self._valid_start_indices.extend([(self._sample,start_index) for start_index in range(n_items-self._subtraj_len+1)])
+
+		if self._add_counter % 10 != 0:
+			self._valid_start_indices.append(self._sample)
+		else:
+			self._val_valid_start_indices.append(self._sample)
+		# self._valid_start_indices.append(self._sample)
+		self._add_counter += 1
 
 		self._valid_indices.extend([(self._sample,start_index) for start_index in range(n_items)])
 		self._sample = (self._sample + 1) % self._max_replay_buffer_size
@@ -204,14 +151,33 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			num_traj,
 		)]
 		batch = dict(
-			observations=self.get_subtrajectories(self._observations,start_indices),
-			actions=self.get_subtrajectories(self._actions,start_indices),
-			rewards=self.get_subtrajectories(self._rewards,start_indices),
-			terminals=self.get_subtrajectories(self._terminals,start_indices),
-			next_observations=self.get_subtrajectories(self._next_obs,start_indices),
-			# inputs=self.get_subtrajectories(self._inputs,start_indices),
-			# recommends=self.get_subtrajectories(self._recommends,start_indices),
-			targets=self.get_subtrajectories(self._targets,start_indices),
+			observations=self._observations[start_indices],
+			actions=self._actions[start_indices],
+			rewards=self._rewards[start_indices],
+			terminals=self._terminals[start_indices],
+			next_observations=self._next_obs[start_indices],
+			# inputs=self._inputs[start_indices],
+			# recommends=self._recommends[start_indices],
+			targets=self._targets[start_indices],
+			lengths=self._lengths[start_indices],
+		)
+		return batch
+
+	def val_random_traj_batch(self,num_traj):
+		start_indices = np.array(self._val_valid_start_indices)[rng.choice(
+			len(self._val_valid_start_indices),
+			num_traj,
+		)]
+		batch = dict(
+			observations=self._observations[start_indices],
+			actions=self._actions[start_indices],
+			rewards=self._rewards[start_indices],
+			terminals=self._terminals[start_indices],
+			next_observations=self._next_obs[start_indices],
+			# inputs=self._inputs[start_indices],
+			# recommends=self._recommends[start_indices],
+			targets=self._targets[start_indices],
+			lengths=self._lengths[start_indices],
 		)
 		return batch
 
@@ -228,13 +194,6 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			next_observations=self._next_obs[sample_indices,traj_indices,:],
 			# inputs=self._inputs[sample_indices,traj_indices,:],
 		)
-		return batch
-
-	def get_subtrajectories(self,array,start_indices):
-		batch = np.zeros((len(start_indices),self._subtraj_len,array.shape[-1]))
-		for i in range(len(batch)):
-			index = start_indices[i]
-			batch[i] = array[index[0],index[1]:index[1]+self._subtraj_len,:]
 		return batch
 
 	def num_steps_can_sample(self):

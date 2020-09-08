@@ -33,12 +33,17 @@ def checkoff_adapt(self,path):
 	return path
 
 def target_adapt(self,path):
-	obs_iter = iter(path['observations']+[path['next_observations'][-1]])
+	obs_iter = iter(list(path['observations'])+[path['next_observations'][-1]])
 	done_iter = iter(path['terminals'])
 	info_iter = iter(path['env_infos'])
 	new_path = {'observations':[],'next_observations':[]}
 
+	points = [np.array([-10,1,0]),np.array([10,2,1]),np.array([3,-10,2]),np.array([4,10,3])]
+
 	obs = np.concatenate((next(obs_iter),path['env_infos'][0]['targets'][path['env_infos'][0]['target_index']]))
+	# obs = path['env_infos'][0]['targets'][path['env_infos'][0]['target_index']]
+	# obs = np.array([path['env_infos'][0]['target_index']])
+	# obs = points[path['env_infos'][0]['target_index']] + .1*rng.random(3)
 	done = False
 	while not done:
 		new_path['observations'].append(obs)
@@ -47,6 +52,9 @@ def target_adapt(self,path):
 		done = next(done_iter)
 
 		obs = np.concatenate((next(obs_iter),info['targets'][info['target_index']]))
+		# obs = info['targets'][info['target_index']]
+		# obs = points[info['target_index']] + .1*rng.random(3)
+		# obs = np.array([info['target_index']])
 		new_path['next_observations'].append(obs)
 
 	path.update(new_path)
@@ -77,7 +85,7 @@ def switch_adapt(self,path):
 	return path
 
 def window_adapt(self,path):
-	obs_iter = iter(path['observations']+[path['next_observations'][-1]])
+	obs_iter = iter(list(path['observations'])+[path['next_observations'][-1]])
 	done_iter = iter(path['terminals'])
 	info_iter = iter(path['env_infos'])
 	history = deque(np.zeros(self.history_shape),self.history_shape[0])
@@ -86,10 +94,7 @@ def window_adapt(self,path):
 	new_path = {'observations':[],'next_observations':[]}
 
 	history.append(next(obs_iter))
-	if self.include_target:
-		obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),np.ravel(path['env_infos'][0]['targets'])))
-	else:
-		obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),))
+	obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 	done = False
 	while not done:
 		new_path['observations'].append(obs)
@@ -100,11 +105,7 @@ def window_adapt(self,path):
 		info = next(info_iter)
 		is_nonnoop.append(info['noop'])
 		done = next(done_iter)
-
-		if self.include_target:
-			obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),np.ravel(info['targets'])))
-		else:
-			obs = np.concatenate((np.ravel(history),np.ravel(prev_nonnoop),))
+		obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 		new_path['next_observations'].append(obs)
 
 	path.update(new_path)
@@ -113,7 +114,7 @@ def window_adapt(self,path):
 def action_adapt(self,path):
 	done_iter = iter(path['terminals'])
 	info_iter = iter(path['env_infos'])
-	action_iter = iter(path['actions'])
+	ainfo_iter = iter(path['agent_infos'])
 	if self.action_type in ['target','disc_target','cat_target','basis_target','joint','disc_traj']:
 		new_path = {'actions':[]}
 	else:
@@ -122,23 +123,18 @@ def action_adapt(self,path):
 	done = False
 	while not done:
 		info = next(info_iter)
+		ainfo = next(ainfo_iter)
 		done = next(done_iter)
-		action = next(action_iter)
 
-		if self.action_type in ['disc_target','cat_target','basis_target']:
-			new_path['actions'].append(1.*F.one_hot(torch.tensor([
-				info.get('target_pred',info['target_index'])
-				]),len(info['targets'])).float().flatten().numpy())
-		elif self.action_type in ['target']:
+		if self.action_type in ['target']:
 			new_path['actions'].append(info.get('target_pred',info['targets'][info['target_index']]))
 		elif self.action_type in ['joint']:
 			new_path['actions'].append(info['joint_action'])
 		elif self.action_type in ['disc_traj']:
-			traj = np.zeros(6)
-			index = np.argmax(np.abs(action))
-			index = index*2 + action[index] > 0
-			traj[index] = 1
-			new_path['actions'].append(traj)
+			action = np.zeros(6)
+			index = ainfo['action_index']
+			action[index] = 1
+			new_path['actions'].append(action)
 
 	path.update(new_path)
 	return path

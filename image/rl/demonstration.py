@@ -9,90 +9,20 @@ from types import MethodType
 import pybullet as p
 from types import SimpleNamespace
 
-import ray
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs import *
 dirname = os.path.dirname(os.path.abspath(__file__))
+
+from discrete_experiment import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',type=int,help='dir to save trials')
 parser.add_argument('--env_name',help='dir to save trials')
 args, _ = parser.parse_known_args()
 
-def demonstration_factory(base):
-	class DemonstrationEnv(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.target_index = 0
-			self.target_count = 0
-			self.target_max = config['target_max']
 
-		def new_target(self):
-			self.target_index += 1
-			if self.target_index == self.env.num_targets:
-				self.target_index %= self.env.num_targets
-				self.target_count += 1
-		def reset(self):
-			target_index = self.target_index
-			def generate_target(self,index):
-				nonlocal target_index
-				self.__class__.generate_target(self,target_index)
-			self.env.generate_target = MethodType(generate_target,self.env)
-			return super().reset()
-	return DemonstrationEnv
-
-class FollowerAgent:
-	def __init__(self):
-		self.trajectory = np.array([0,0,0])
-		self.action_count = 0
-	def predict(self,info):
-		recommend = info['recommend']
-		if np.count_nonzero(recommend):
-			index = np.argmax(recommend)
-			self.trajectory = {
-				0: np.array([-1,0,0]),
-				1: np.array([1,0,0]),
-				2: np.array([0,-1,0]),
-				3: np.array([0,1,0]),
-				4: np.array([0,0,-1]),
-				5: np.array([0,0,1]),
-			}[index]
-			# self.action_count = 0
-		# self.action_count += 1
-		# if self.action_count >= 10:
-		# 	self.trajectory = np.array([0,0,0])
-		tool_pos = info['current_observation'][:3]
-		target_index = min(range(len(info['targets'])),key=lambda i: norm(tool_pos+self.trajectory-info['targets'][i]))
-		return self.trajectory*1.0, target_index
-
-class EpsilonAgent:
-	def __init__(self,epsilon=.25):
-		self.epsilon = epsilon
-		self.action_index = 0
-	def predict(self,info):
-		target = info['targets'][info['target_index']]
-		tool_pos = info['current_observation'][:3]
-		real_traj = target - tool_pos
-
-		real_index = np.argmax(np.abs(real_traj))
-		real_index = real_index*2 + real_traj[real_index] > 0
-
-		if self.action_index == real_index:
-			self.action_index = rng.choice(6)
-		else:
-			self.action_index = self.action_index if rng.random() > self.epsilon else rng.choice(6)
-
-		trajectory = traj = [
-					np.array((-1,0,0)),
-					np.array((1,0,0)),
-					np.array((0,-1,0)),
-					np.array((0,1,0)),
-					np.array((0,0,-1)),
-					np.array((0,0,1)),
-				][self.action_index]
-		
-		return trajectory, self.action_index
+# import ray
 
 if __name__ == "__main__":
 	env_name = args.env_name
@@ -104,38 +34,43 @@ if __name__ == "__main__":
 		def sample(self,seed,count):
 			env_config = deepcopy(default_config)
 			env_config.update(env_map[env_name])
-			env_config.update({
-				'oracle_size': 6,
-				'oracle': 'user_model',
-				'num_nonnoop': 10,
-				'num_obs': 10,
-				"input_penalty": 2,
-				'action_type': 'trajectory',
-				# 'action_type': 'target',
-				'threshold': .15,
-				'action_penalty': 0,
-				# 'env_kwargs': {'num_targets': 4},
-				"target_max": count,
-				'step_limit': 200,
-			})
+			env_config.update(dict(
+				oracle_size=6,
+				oracle='user_model',
+				num_obs=5,
+				num_nonnoop=5,
+				threshold=.3,
+				input_penalty=.01,
+				action_type='trajectory',
+				action_penalty=0,
+				include_target=False,
+				cap=0,
+				step_limit=200,
+				target_max=10,
+				action_clip=.05,
+			))
 
-			env = wrapper(env_config['env_name'])(env_config)
+			env = feedback_factory(wrapper(env_config['env_name']))(env_config)
 			env.seed(seed)
 			base_env = env.env
-			# env.render('human')
+			env.render('human')
 
 			paths = []
-			round_paths = deque([],5)
-			task_success = deque([],5)
+			fail_paths = deque([],1)
+			success_paths = deque([],1)
 			while env.target_count < env.target_max:
 				obs = env.reset()
+				# policy.reset()
+
 				user_input = np.zeros(3)
 				path = {'observations':[],'actions':[],'next_observations':[],'rewards':[],'terminals':[],'agent_infos':[],'env_infos':[]}
 				print(base_env.target_index, env.target_count)
 
 				# if rng.random() > .5:
+				# p_0 = rng.random()*.6+.2
+				p_0 = 1
 				agents = [FollowerAgent(),EpsilonAgent(epsilon=1/10)]
-				p=[.8,.2]
+				p=[p_0,1-p_0]
 				agent = SimpleNamespace(predict=lambda info: rng.choice([agent.predict(info) for agent in agents],p=p))
 				# else:
 				# 	agents = [FollowerAgent(),EpsilonAgent(epsilon=1/10),ClosestAgent()]
@@ -146,10 +81,15 @@ if __name__ == "__main__":
 				info = {'recommend': np.zeros(6), 'targets': base_env.targets, 'target_index': base_env.target_index, 'current_observation': obs}
 				while not done:
 					action,info['action_index'] = agent.predict(info)
+					# action = agent.predict(obs)
 
 					path['observations'].append(obs)
 					path['actions'].append(action)
-
+					
+					# action_index = np.zeros(6)
+					# action_index[info['action_index']] = 1
+					# obs,r,done,info = env.step(action_index)
+					print(info['recommend'],action)
 					obs,r,done,info = env.step(action)
 					info['current_observation'] = obs
 
@@ -159,27 +99,30 @@ if __name__ == "__main__":
 					path['agent_infos'].append({})
 					path['env_infos'].append(info)
 			
-				round_paths.append(path)
-				task_success.append(base_env.task_success)
-				if np.mean(task_success) > 0 and len(round_paths) > 4:
+				if base_env.task_success:
+					success_paths.append(path)
+				else:
+					fail_paths.append(path)
+				if len(success_paths) == 1 and len(fail_paths) == 1:
 					# paths.append(path)
-					paths.extend(round_paths)
+					paths.extend(success_paths)
+					paths.extend(fail_paths)
 					env.new_target()
-					round_paths = deque([],5)
-					task_success = deque([],5)
+					fail_paths = deque([],1)
+					success_paths = deque([],1)
 
 			return paths
 
-	ray.init(temp_dir='/tmp/ray_exp')
-	num_workers = 10
-	count = 100//num_workers
+	# ray.init(temp_dir='/tmp/ray_exp')
+	# num_workers = 10
+	# count = 120//num_workers
 
-	samplers = [Sampler.remote() for i in range(num_workers)]
-	samples = [samplers[i].sample.remote(args.seed+i,count) for i in range(num_workers)]
-	samples = [ray.get(sample) for sample in samples]
+	# samplers = [Sampler.remote() for i in range(num_workers)]
+	# samples = [samplers[i].sample.remote(args.seed+i,count) for i in range(num_workers)]
+	# samples = [ray.get(sample) for sample in samples]
 
-	paths = list(sum(samples,[]))
+	# paths = list(sum(samples,[]))
 
-	np.save(os.path.join("demos",f"{env_name}_user_model_{args.seed}"), paths)
+	# np.save(os.path.join("demos",f"{env_name}_user_model_{args.seed}"), paths)
 
-	# paths = Sampler().sample(args.seed,100)
+	paths = Sampler().sample(args.seed,100)
