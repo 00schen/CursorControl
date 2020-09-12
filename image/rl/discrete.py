@@ -25,26 +25,26 @@ args, _ = parser.parse_known_args()
 from torch import sigmoid
 from torch import nn
 class Sigmoid(nn.Module):
-    def __init__(self, **kwargs):
-        super().__init__()
-        self.kwargs = kwargs
-        self.__name__ = "Sigmoid"
+	def __init__(self, **kwargs):
+		super().__init__()
+		self.kwargs = kwargs
+		self.__name__ = "Sigmoid"
 
-    def forward(self, x):
-        return sigmoid(x, **self.kwargs)
+	def forward(self, x):
+		return sigmoid(x, **self.kwargs)
 
 def process_args(variant):
-    if variant.get("debug", False):
-        variant['max_path_length'] = 50
-        variant['batch_size'] = 5
-        variant['num_epochs'] = 5
-        variant['num_eval_steps_per_epoch'] = 100
-        variant['num_expl_steps_per_train_loop'] = 100
-        variant['num_trains_per_train_loop'] = 10
-        variant['min_num_steps_before_training'] = 100
-        variant['trainer_kwargs']['bc_num_pretrain_steps'] = min(10, variant['trainer_kwargs'].get('bc_num_pretrain_steps', 0))
-        variant['trainer_kwargs']['q_num_pretrain1_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain1_steps', 0))
-        variant['trainer_kwargs']['q_num_pretrain2_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain2_steps', 0))
+	if variant.get("debug", False):
+		variant['max_path_length'] = 50
+		variant['batch_size'] = 5
+		variant['num_epochs'] = 5
+		variant['num_eval_steps_per_epoch'] = 100
+		variant['num_expl_steps_per_train_loop'] = 100
+		variant['num_trains_per_train_loop'] = 10
+		variant['min_num_steps_before_training'] = 100
+		variant['trainer_kwargs']['bc_num_pretrain_steps'] = min(10, variant['trainer_kwargs'].get('bc_num_pretrain_steps', 0))
+		variant['trainer_kwargs']['q_num_pretrain1_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain1_steps', 0))
+		variant['trainer_kwargs']['q_num_pretrain2_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain2_steps', 0))
 
 if __name__ == "__main__":
 	path_length = 200
@@ -86,15 +86,15 @@ if __name__ == "__main__":
 		version="normal",
 		collection_mode='batch',
 		trainer_kwargs=dict(
-            # discount=0.99,
+			# discount=0.99,
 			# discount=1,
-            # soft_target_tau=5e-3,
-            # target_update_period=1,
-            # policy_lr=3E-4,
-            # qf_lr=3E-4,
-            reward_scale=1,
-            # alpha=1.0,
-        ),
+			# soft_target_tau=5e-3,
+			# target_update_period=1,
+			# policy_lr=3E-4,
+			# qf_lr=3E-4,
+			reward_scale=1,
+			# alpha=1.0,
+		),
 		launcher_config=dict(
 			exp_name=args.exp_name,
 			mode='here_no_doodad',
@@ -211,15 +211,17 @@ if __name__ == "__main__":
 				return next(self.run_id_counter)
 		iterator = Iterators.options(name="global_iterator").remote()
 		
-		if args.job in ['exp','eval']:
+		if args.job in ['exp','eval','pf_exp']:
 			@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.use_gpu else 0)
 			class Runner:
 				def run(self,variant):
 					iterator = ray.get_actor("global_iterator")
 					run_id = ray.get(iterator.next.remote())
 					variant['launcher_config']['gpu_id'] = 0
-					# run_variants(experiment, [variant], process_args,run_id=run_id)
-					run_variants(pf_exp, [variant], process_args,run_id=run_id)
+					if args.job in ['exp']:
+						run_variants(experiment, [variant], process_args,run_id=run_id)
+					elif args.job in ['pf_exp']:
+						run_variants(pf_exp, [variant], process_args,run_id=run_id)
 					# run_variants(eval_exp, [variant], process_args,run_id="evaluation")
 			runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
 			runner_pool = ActorPool(runners)
@@ -242,10 +244,13 @@ if __name__ == "__main__":
 
 			np.save(os.path.join("demos",variant['demo_kwargs']['save_name']), paths)
 	else:
-		if args.job in ['exp','eval']:
+		if args.job in ['exp']:
 			for variant in variants:
-				run_variants(eval_exp, [variant], process_args,run_id="evaluation")
-				# run_variants(experiment, [variant], process_args,run_id="run_0")
+				run_variants(experiment, [variant], process_args,run_id="run_0")
+		if args.job in ['eval']:
+			variant = variants[0]
+			variant['render'] = True
+			run_variants(eval_exp, [variant], process_args,run_id="evaluation")
 		elif args.job in ['demo']:
 			variant = variants[0]
 			variant['render'] = True
