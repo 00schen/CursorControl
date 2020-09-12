@@ -80,8 +80,8 @@ class ArgmaxDiscretePolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		# obs, concat_obs = obs[:self.obs_dim], obs[:-3]
-		obs, concat_obs = obs[:self.obs_dim], obs
+		obs, concat_obs = obs[-self.obs_dim:], obs[3:]
+		# obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
 			input_predictions = []
 			for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
@@ -95,7 +95,7 @@ class ArgmaxDiscretePolicy(PyTorchModule):
 
 			# Uses t-1 hidden state with current input prediction
 			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),input_prediction,))
-			concat_obs = th.cat((concat_obs,input_prediction,)).float()
+			concat_obs = th.cat((input_prediction,concat_obs,)).float()
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
 
 			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
@@ -127,8 +127,8 @@ class BoltzmannPolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		# obs, concat_obs = obs[:self.obs_dim], obs[:-3]
-		obs, concat_obs = obs[:self.obs_dim], obs
+		obs, concat_obs = obs[-self.obs_dim:], obs[3:]
+		# obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
 			input_predictions = []
 			for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
@@ -142,11 +142,11 @@ class BoltzmannPolicy(PyTorchModule):
 
 			# Uses t-1 hidden state with current input prediction
 			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),input_prediction,))
-			concat_obs = th.cat((concat_obs,input_prediction,)).float()
+			concat_obs = th.cat((input_prediction,concat_obs,)).float()
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
 
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
-			# _pred, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
+			_pred, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
 		return action.cpu().numpy(), {}
 
 	def reset(self):
@@ -161,7 +161,7 @@ class HybridAgent:
 	def get_action(self,obs):
 		recommend = obs[-6:]
 		action,info = self.policy.get_action(obs)
-		if np.nonzero_count(recommend):
+		if np.count_nonzero(recommend):
 			return recommend,info
 		else:
 			return action, info
@@ -218,8 +218,8 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 					for _ in range(self.num_pf_trains_per_train_loop):
 						train_data = self.replay_buffer.random_traj_batch(self.traj_batch_size)
 						self.trainer.train_pf(train_data)
-					with th.no_grad():
-						self.replay_buffer.update_embeddings()
+					# with th.no_grad():
+					# 	self.replay_buffer.update_embeddings()
 				for _ in range(self.num_trains_per_train_loop):
 					train_data = self.replay_buffer.random_batch(self.batch_size)
 					self.trainer.train(train_data)
@@ -258,9 +258,9 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 
 		rewards = batch['rewards'].transpose(0,1)
 		terminals = batch['terminals'].transpose(0,1)
-		obs = batch['observations'][:,:,:self.obs_dim].transpose(0,1)
+		obs = batch['observations'][:,:,-self.obs_dim:].transpose(0,1)
 		actions = batch['actions'].transpose(0,1)
-		next_obs = batch['next_observations'][:,:,:self.obs_dim].transpose(0,1)
+		next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
 		targets = batch['targets'].transpose(0,1)
 		lengths = batch['lengths']
 
@@ -278,20 +278,19 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		# pf_accuracy = th.eq(input_pred.clone().detach().max(2,keepdim=True)[1],inputs).float().mean()
 		# pf_loss1 = -th.gather(input_pred.clone().detach(),2,inputs.long()).log().mean()
 
-		# target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
-		target_pred, _pf_hx = self.pf(obs)
-		pf_loss = (target_pred-targets).pow(2).sum(dim=-1)
-		# pf_loss = CrossEntropyLoss(reduction='none')\
-			# (target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
+		target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
+		pf_loss_grid = (target_pred-targets).pow(2).sum(dim=-1)
+		# pf_loss_grid = CrossEntropyLoss(reduction='none')\
+		# 	(target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
 		# pf_accuracy = th.eq(target_pred.clone().detach().max(2,keepdim=True)[1],targets).float().squeeze()
 
 		row_vector = th.arange(0, obs.size()[0], 1)
 		if next(self.qf1.parameters()).is_cuda:
 			row_vector = row_vector.cuda()
 		mask = (row_vector < lengths).transpose(0,1)
-		pf_loss = pf_loss.masked_select(mask).mean()
+		pf_loss = pf_loss_grid.masked_select(mask).mean()
 		# pf_accuracy = pf_accuracy.masked_select(mask).mean()
-		pf_accuracy = pf_loss.pow(.5)
+		pf_accuracy = pf_loss_grid.masked_select(mask).pow(.5).mean()
 
 		"""
 		Update Prediction network
@@ -312,9 +311,9 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 
 		rewards = batch['rewards'].transpose(0,1)
 		terminals = batch['terminals'].transpose(0,1)
-		obs = batch['observations'][:,:,:self.obs_dim].transpose(0,1)
+		obs = batch['observations'][:,:,-self.obs_dim:].transpose(0,1)
 		actions = batch['actions'].transpose(0,1)
-		next_obs = batch['next_observations'][:,:,:self.obs_dim].transpose(0,1)
+		next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
 		targets = batch['targets'].transpose(0,1)
 		lengths = batch['lengths']
 
@@ -333,27 +332,30 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		# pf_loss1 = -th.gather(input_pred.clone().detach(),2,inputs.long()).log().mean()
 
 		with th.no_grad():
-			# target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
-			target_pred, _pf_hx = self.pf(obs)
-			pf_loss = (target_pred-targets).pow(2).sum(dim=-1)
-			# pf_loss = CrossEntropyLoss(reduction='none')\
-			# (target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
+			target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
+			pf_loss_grid = (target_pred-targets).pow(2).sum(dim=-1)
+			# pf_loss_grid = CrossEntropyLoss(reduction='none')\
+			# 	(target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
 			# pf_accuracy = th.eq(target_pred.clone().detach().max(2,keepdim=True)[1],targets).float().squeeze()
 
 			row_vector = th.arange(0, obs.size()[0], 1)
 			if next(self.qf1.parameters()).is_cuda:
 				row_vector = row_vector.cuda()
 			mask = (row_vector < lengths).transpose(0,1)
-			pf_loss = pf_loss.masked_select(mask).mean()
-			# pf_accuracy = pf_accuracy.masked_select(mask).mean()
-			pf_accuracy = pf_loss.pow(.5)
+			pf_loss = pf_loss_grid.masked_select(mask).mean()
+			# pf_accuracy_mean = pf_accuracy.masked_select(mask).mean()
+			# pf_accuracy_std = pf_accuracy.masked_select(mask).std()
+			pf_accuracy_mean = pf_loss_grid.masked_select(mask).pow(.5).mean()
+			pf_accuracy_std = pf_loss_grid.masked_select(mask).pow(.5).std()
+
 
 		"""
 		Save some statistics for eval using just one batch.
 		"""
 		# self.eval_statistics['PF Loss'] = np.mean(ptu.get_numpy(pf_loss1))
 		self.eval_statistics['Validation PF Loss'] = np.mean(ptu.get_numpy(pf_loss))
-		self.eval_statistics['Validation PF Accuracy'] = np.mean(ptu.get_numpy(pf_accuracy))
+		self.eval_statistics['Validation PF Accuracy Mean'] = np.mean(ptu.get_numpy(pf_accuracy_mean))
+		self.eval_statistics['Validation PF Accuracy Std'] = np.mean(ptu.get_numpy(pf_accuracy_std))
 
 	def train_from_torch(self, batch):
 		rewards = batch['rewards']
@@ -527,10 +529,11 @@ def eval_exp(variant):
 		eval_policy,
 	)
 
-	# eval_env.render('human')
+	if variant.get('render',False):
+		eval_env.render('human')
 	eval_collected_paths = eval_path_collector.collect_new_paths(
-		variant['max_path_length'],
-		variant['num_eval_steps_per_epoch'],
+		variant['algorithm_args']['max_path_length'],
+		variant['algorithm_args']['num_eval_steps_per_epoch'],
 		discard_incomplete_paths=True,
 	)
 
@@ -647,7 +650,8 @@ def pf_exp(variant):
 
 	pf_kwargs = variant.get("pf_kwargs", {})
 	pf = LSTM(
-		input_size=current_obs_dim,
+		input_size=current_obs_dim+action_dim,
+		# output_size=eval_env.env.num_targets,
 		output_size=3,
 		# output_activation=th.sigmoid,
 		**pf_kwargs
@@ -661,9 +665,8 @@ def pf_exp(variant):
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
 	replay_buffer_kwargs['env'] = expl_env
 	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
+		obs_dim=current_obs_dim,
 		pf=pf,
-		num_prev_pred=variant.get('num_prev_pred',5),
-		pred_op=variant.get('pred_op',lambda x: th.median(dim=0)),
 		**replay_buffer_kwargs,
 	)
 
@@ -692,14 +695,22 @@ def pf_exp(variant):
 
 	for net in trainer.networks:
 		net.to(ptu.device)
-	for _ in range(20):
-		for _i in trange(variant['algorithm_args']['num_pf_trains_per_train_loop']):
+	# for _ in range(20):
+	for _ in range(1):
+		for _i in range(variant['algorithm_args']['num_pf_trains_per_train_loop']):
 			train_data = replay_buffer.random_traj_batch(variant['algorithm_args']['traj_batch_size'])
 			trainer.train_pf(train_data)
 			val_data = replay_buffer.val_random_traj_batch(variant['algorithm_args']['traj_batch_size'])
 			trainer.val_pf(val_data)
 		logger.record_dict(trainer.get_diagnostics())
 		logger.dump_tabular(with_prefix=True, with_timestamp=False)
+
+	predictions = [pf(th.cat((obs[:length[0],np.newaxis,-current_obs_dim:].float(),
+								action[:length[0],np.newaxis,:].float()),dim=2))[0].squeeze().cpu().detach().numpy()
+	 for obs,action,length in zip(th.tensor(replay_buffer._observations[:replay_buffer._top]).cuda(),
+	 						th.tensor(replay_buffer._actions[:replay_buffer._top]).cuda(),
+							replay_buffer._lengths[:replay_buffer._top])]
+	np.save(os.path.join(variant['save_path'],'predictions_1000'), predictions)
 
 def experiment(variant):
 	env_class = variant.get('env_class', None)
@@ -720,14 +731,15 @@ def experiment(variant):
 
 	pf_kwargs = variant.get("pf_kwargs", {})
 	pf = LSTM(
-		input_size=current_obs_dim,
-		output_size=expl_env.env.num_targets,
+		input_size=current_obs_dim+action_dim,
+		# output_size=expl_env.env.num_targets,
+		output_size=3,
 		# output_activation=th.sigmoid,
 		**pf_kwargs
 	)
 	obs_dim = expl_env.observation_space.low.size
 	# obs_dim += 2*pf.hidden_size + expl_env.env.num_targets
-	obs_dim += expl_env.env.num_targets
+	# obs_dim += expl_env.env.num_targets
 	qf_kwargs = variant.get("qf_kwargs", {})
 	qf1 = Mlp(
 		input_size=obs_dim,
@@ -788,9 +800,8 @@ def experiment(variant):
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
 	replay_buffer_kwargs['env'] = expl_env
 	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
+		obs_dim=obs_dim,
 		pf=pf,
-		num_prev_pred=variant.get('num_prev_pred',5),
-		pred_op=variant.get('pred_op',lambda x: th.median(dim=0)),
 		**replay_buffer_kwargs,
 	)
 

@@ -1,7 +1,3 @@
-"""
-AWR + SAC from demo experiment
-"""
-
 from discrete_experiment import *
 
 import railrl.misc.hyperparameter as hyp
@@ -132,7 +128,7 @@ if __name__ == "__main__":
 			# 	for i in range(5)
 			# ],
 			demo_paths=[dict(
-					path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1001.npy"),
+					path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1000.npy"),
 					obs_dict=False,
 					is_demo=False,
 					train_split=0.9,

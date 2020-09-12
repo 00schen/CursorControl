@@ -3,11 +3,24 @@ import pybullet as p
 from numpy.linalg import norm
 from envs import rng
 
+# class Trajectory:
+# 	def __init__(self,env):
+# 		self.env = env
+# 	def __call__(self,target_pos):
+# 		return self.env.target
+
+"""Oracle Agents"""
+# class Oracle:
+# 	def __init__(self,env):
+# 		self.env = env
+# 		self.director = 
+# 	def reset(self):
+# 		pass
+
 class Agent:
 	def reset(self):
 		pass
 
-"""Oracle Agents"""
 class TrajectoryAgent(Agent):
 	def __init__(self,env):
 		self.env = env
@@ -101,16 +114,17 @@ class UserModelAgent:
 		self.size = 6
 	def get_action(self,obs,info=None):
 		if self.prev_noop:
-			prob = .4*(1-info['cos_error'])
+			prob = .5*(1-info['cos_error'])
 		else:
 			prob = .8 if info['cos_error'] < .25 else .3
 		# prob=1
 		action = np.zeros(self.size)
 		if rng.random() < prob:
-			# traj = self.env.target_pos-self.env.tool_pos
-			# axis = np.argmax(np.abs(traj))
-			# action[2*axis+(traj[axis]>0)] = 1
-			action[:3] = self.env.target_pos-self.env.tool_pos
+			traj = self.env.target_pos-self.env.tool_pos
+			axis = np.argmax(np.abs(traj))
+			action[2*axis+(traj[axis]>0)] = 1
+
+			# action[:3] = self.env.target_pos-self.env.tool_pos
 		self.prev_noop = not np.count_nonzero(action)
 		return action, {}
 	def reset(self):
@@ -123,10 +137,10 @@ class FollowerAgent:
 	def get_action(self,obs,info=None):
 		recommend = obs[-6:]
 		if np.count_nonzero(recommend):
-			# index = np.argmax(recommend)
-			traj = recommend[:3]
-			axis = np.argmax(np.abs(traj))
-			index = 2*axis+(traj[axis]>0)
+			index = np.argmax(recommend)
+			# traj = recommend[:3]
+			# axis = np.argmax(np.abs(traj))
+			# index = 2*axis+(traj[axis]>0)
 			self.trajectory = {
 				0: np.array([-1,0,0]),
 				1: np.array([1,0,0]),
@@ -136,13 +150,12 @@ class FollowerAgent:
 				5: np.array([0,0,1]),
 			}[index]
 			self.action_index = index
-			# self.action_count = 0
-		action = np.zeros(6)
-		action[self.action_index] = 1
-		# self.action_count += 1
-		# if self.action_count >= 10:
-		# 	self.trajectory = np.array([0,0,0])
-		# self.trajectory = self.env.target_pos - self.env.tool_pos
+		# action = np.zeros(6)
+		# action[self.action_index] = 1
+
+
+		action = self.env.target_pos-self.env.tool_pos
+
 		return action, {"action_index": self.action_index, "trajectory": self.trajectory}
 	def reset(self):
 		self.trajectory = np.array([0,0,0])
@@ -171,6 +184,8 @@ class EpsilonAgent:
 					np.array((0,0,-1)),
 					np.array((0,0,1)),
 				][self.action_index]
+
+		action = rng.random(3)
 		return action, {"action_index": self.action_index, "trajectory": trajectory}
 	def reset(self):
 		self.action_index = 0
@@ -182,11 +197,10 @@ class DemonstrationAgent:
 	def get_action(self,obs,info=None):
 		p = [self.p,1-self.p]
 		actions = [agent.get_action(obs) for agent in self.agents]
-		# action,agent_info = rng.choice([agent.get_action(obs) for agent in self.agents],p=p)
 		action,agent_info = rng.choice(actions,p=p)
 		return action,agent_info
 	def reset(self):
-		self.p = rng.random()*(1-self.lower_p) + self.lower_p
-		# self.p = 1
+		# self.p = rng.random()*(1-self.lower_p) + self.lower_p
+		self.p = 1
 		for agent in self.agents:
 			agent.reset()

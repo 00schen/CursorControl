@@ -185,6 +185,7 @@ def window_factory(base):
 			self.current_obs_dim = np.prod(self.env.observation_space.shape)+self.oracle.size
 			self.history_shape = (config['num_obs'],self.current_obs_dim)
 			self.nonnoop_shape = (config['num_nonnoop'],self.current_obs_dim)
+			# self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape)+self.env.num_targets*3,))
 			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
 
 		def step(self,action):
@@ -193,10 +194,11 @@ def window_factory(base):
 			if len(self.history) == self.history_shape[0] and self.is_nonnoop[0]:
 				self.prev_nonnoop.append(self.history[0])
 
-			self.history.appendleft(obs)
-			self.is_nonnoop.appendleft((not info['noop']))
+			self.history.append(obs)
+			self.is_nonnoop.append((not info['noop']))
 			info['current_obs'] = obs
 
+			# return np.concatenate((*self.env.targets,*self.prev_nonnoop,*self.history,)),r,done,info
 			return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
 
 		def reset(self):
@@ -206,8 +208,9 @@ def window_factory(base):
 			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
 			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-			self.history.appendleft(obs)
+			self.history.append(obs)
 
+			# return np.concatenate((*self.env.targets,*self.prev_nonnoop,*self.history,))
 			return np.concatenate((*self.prev_nonnoop,*self.history,))
 	return PrevNnonNoopK
 
@@ -229,31 +232,34 @@ def target_factory(base):
 			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.observation_space.shape)+3,))
 		def step(self,action):
 			obs,r,done,info = super().step(action)
-			obs = np.concatenate((obs,self.env.target_pos))
+			obs = np.concatenate((self.env.target_pos,obs,))
 			return obs,r,done,info
 		def reset(self):
 			obs = super().reset()
-			obs = np.concatenate((obs,self.env.target_pos))
+			obs = np.concatenate((self.env.target_pos,obs,))
 			return obs
 	return Target
 
 def metric_factory(base):
-	def __init__(self,config):
-		super().__init__(config)
-		self.success_count = deque([],20)
-		self.success_dist = .2
-	def step(self,action):
-		obs,r,done,info = super().step(action)
-		if done:
-			self.success_count.append(info['task_success'])
-		info['success_dist'] = self.success_dist
-		return obs,r,done,info
-	def reset(self):
-		if np.mean(self.success_count) > .5:
-			self.success_dist = np.max(.025,self.success_dist*.95)
-		self.env.success_dist = self.success_dist
-		obs = super().reset()
-		return obs
+	class Metric(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.success_count = deque([0]*20,20)
+			self.success_dist = .2
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			if done:
+				self.success_count.append(info['task_success'])
+			info['success_dist'] = self.success_dist
+			return obs,r,done,info
+		def reset(self):
+			if np.mean(self.success_count) > .5:
+				self.success_dist = max(.025,self.success_dist*.95)
+				self.success_count = deque([0]*20,20)
+			self.env.success_dist = self.success_dist
+			obs = super().reset()
+			return obs
+	return Metric
 
 # import pygame as pg
 # def feedback_factory(base):

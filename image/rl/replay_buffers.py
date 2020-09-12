@@ -16,15 +16,14 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self,
 		max_num_traj,
 		traj_max,
-		subtraj_len,
 		env,
+		obs_dim,
 		pf,
-		num_prev_pred=5, pred_op=lambda x: th.median(x,dim=0),
 	):
 		self.pf = pf
 		self.env = env
-		observation_dim, action_dim = get_dim(env.observation_space), get_dim(env.action_space)
-		observation_dim += env.num_targets
+		action_dim = get_dim(env.action_space)
+		observation_dim = obs_dim
 		self._observation_dim = observation_dim
 		self._action_dim = action_dim
 		self._max_replay_buffer_size = max_num_traj
@@ -42,7 +41,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		# self._terminals[i] = a terminal was received at time i
 		self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		# self._inputs = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		self._targets = np.zeros((max_num_traj, traj_max, 3))
+		self._targets = np.zeros((max_num_traj, traj_max, 3),)
 		# self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		self._successes = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		self._lengths = np.zeros((max_num_traj, 1), dtype='int32')
@@ -54,15 +53,11 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._val_valid_start_indices = []
 		self._add_counter = 0
 		self._valid_indices = []
-		self._subtraj_len = subtraj_len
 		self._traj_max = traj_max
 
-		self.num_prev_pred = num_prev_pred
-		self.pred_op = pred_op
-
 	def update_embeddings(self):
-		obs_prev_preds = deque(np.zeros((self.num_prev_pred,self._top,self.pf.output_size)),self.num_prev_pred)
-		next_prev_preds = deque(np.zeros((self.num_prev_pred,self._top,self.pf.output_size)),self.num_prev_pred)
+		obs_prev_preds = deque(np.zeros((self._traj_max,self._top,self.pf.output_size)),self._traj_max)
+		next_prev_preds = deque(np.zeros((self._traj_max,self._top,self.pf.output_size)),self._traj_max,)
 
 		obs_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
 		next_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
@@ -90,14 +85,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			# 	obs_prediction[...,j],next_prediction[...,j] = obs_pred.squeeze(),next_pred.squeeze()
 				obs_preds.append(obs_pred.squeeze())
 				next_preds.append(next_pred.squeeze())
-
-			obs_prev_pred = self.pred_op(th.tensor(obs_prev_preds))[0]
-			next_prev_pred = self.pred_op(th.tensor(next_prev_preds))[0]
-			if next(self.pf.parameters()).is_cuda:
-				obs_prev_pred,next_prev_pred = obs_prev_pred.cuda(),next_prev_pred.cuda()
-			obs_preds.append(obs_prev_pred)
-			next_preds.append(next_prev_pred)
-			obs_prediction,next_prediction = th.cat(obs_preds,dim=1),th.cat(next_preds,dim=1)
+			obs_prev_preds.append(th.mean(obs_preds))
+			
 
 			# self._observations[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(obs_pf_hx,dim=2).squeeze().cpu().detach().numpy()
 			# self._next_obs[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(next_pf_hx,dim=2).squeeze().cpu().detach().numpy()
@@ -119,19 +108,22 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 	def add_path(self, path):
 		n_items = len(path["observations"])
 
-		self._observations[self._sample,:n_items] = path['observations']
-		self._actions[self._sample,:n_items] = path['actions']
-		self._rewards[self._sample,:n_items] = path['rewards']
-		self._terminals[self._sample,:n_items] = path['terminals']
-		self._next_obs[self._sample,:n_items] = path['next_observations']
+		self._observations[self._sample,:n_items,:] = path['observations']
+		self._actions[self._sample,:n_items,:] = path['actions']
+		self._rewards[self._sample,:n_items,:] = path['rewards']
+		self._terminals[self._sample,:n_items,:] = path['terminals']
+		self._next_obs[self._sample,:n_items,:] = path['next_observations']
 		self._lengths[self._sample] = n_items
 
+		# self._observations[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
+		# self._next_obs[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
+		
 		# self._inputs[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
-		self._targets[self._sample,:n_items] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
+		self._targets[self._sample,:n_items,:] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
 		# self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
 		# self._recommends[self._sample,:n_items] = np.array([np.argmax(env_info['recommend']) if np.count_nonzero(env_info['recommend']) else 6\
 		# 													for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
-		self._successes[self._sample,:n_items] = np.array([env_info['task_success'] for env_info in path['env_infos']])[:,np.newaxis]
+		self._successes[self._sample,:n_items,:] = np.array([env_info['task_success'] for env_info in path['env_infos']])[:,np.newaxis]
 
 
 		if self._add_counter % 10 != 0:
@@ -221,7 +213,6 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			current_obs_dim = self._current_obs_dim,
 			pred_dim = self._pred_sizes,
 			max_replay_buffer_size = self._max_replay_buffer_size,
-			subtraj_len=self._subtraj_len,
 			traj_max=self._traj_max,
 
 			top = self._top,
@@ -237,7 +228,6 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._current_obs_dim = d['current_obs_dim']
 		self._pred_sizes = d['pred_dim']
 		self._max_replay_buffer_size = d["max_replay_buffer_size"]
-		self._subtraj_len = d['subtraj_len']
 		self._traj_max = d['traj_max']
 
 		self._top = d['top']

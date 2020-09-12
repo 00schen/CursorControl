@@ -38,12 +38,9 @@ def target_adapt(self,path):
 	info_iter = iter(path['env_infos'])
 	new_path = {'observations':[],'next_observations':[]}
 
-	points = [np.array([-10,1,0]),np.array([10,2,1]),np.array([3,-10,2]),np.array([4,10,3])]
-
-	obs = np.concatenate((next(obs_iter),path['env_infos'][0]['targets'][path['env_infos'][0]['target_index']]))
+	obs = np.concatenate((path['env_infos'][0]['targets'][path['env_infos'][0]['target_index']],next(obs_iter),))
 	# obs = path['env_infos'][0]['targets'][path['env_infos'][0]['target_index']]
 	# obs = np.array([path['env_infos'][0]['target_index']])
-	# obs = points[path['env_infos'][0]['target_index']] + .1*rng.random(3)
 	done = False
 	while not done:
 		new_path['observations'].append(obs)
@@ -51,9 +48,8 @@ def target_adapt(self,path):
 		info = next(info_iter)
 		done = next(done_iter)
 
-		obs = np.concatenate((next(obs_iter),info['targets'][info['target_index']]))
+		obs = np.concatenate((info['targets'][info['target_index']],next(obs_iter),))
 		# obs = info['targets'][info['target_index']]
-		# obs = points[info['target_index']] + .1*rng.random(3)
 		# obs = np.array([info['target_index']])
 		new_path['next_observations'].append(obs)
 
@@ -94,6 +90,7 @@ def window_adapt(self,path):
 	new_path = {'observations':[],'next_observations':[]}
 
 	history.append(next(obs_iter))
+	# obs = np.concatenate((*path['env_infos'][0]['targets'],np.ravel(prev_nonnoop),np.ravel(history),))
 	obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 	done = False
 	while not done:
@@ -105,6 +102,7 @@ def window_adapt(self,path):
 		info = next(info_iter)
 		is_nonnoop.append(info['noop'])
 		done = next(done_iter)
+		# obs = np.concatenate((*info['targets'],np.ravel(prev_nonnoop),np.ravel(history),))
 		obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 		new_path['next_observations'].append(obs)
 
@@ -118,7 +116,8 @@ def action_adapt(self,path):
 	if self.action_type in ['target','disc_target','cat_target','basis_target','joint','disc_traj']:
 		new_path = {'actions':[]}
 	else:
-		return None
+		print("wrong action type")
+		error
 
 	done = False
 	while not done:
