@@ -200,7 +200,7 @@ class DemonstrationAgent:
 		action,agent_info = rng.choice(actions,p=p)
 		return action,agent_info
 	def reset(self):
-		# self.p = rng.random()*(1-self.lower_p) + self.lower_p
-		self.p = 1
+		self.p = rng.random()*(1-self.lower_p) + self.lower_p
+		# self.p = 1
 		for agent in self.agents:
 			agent.reset()

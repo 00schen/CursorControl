@@ -160,7 +160,7 @@ if __name__ == "__main__":
 		oracle=UserModelAgent,
 		num_obs=5,
 		num_nonnoop=5,
-		action_type='disc_traj',
+		action_type='trajectory',
 		cap=0,
 		step_limit=path_length,
 		action_clip=.1,
