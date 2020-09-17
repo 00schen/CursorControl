@@ -261,6 +261,17 @@ def metric_factory(base):
 			return obs
 	return Metric
 
+def shaping_factory(base):
+	class Shaping(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.shaping = config['shaping']
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			r = self.shaping*((info['task_success'] - 1) + 50*info['diff_distance'])
+			return obs,r,done,info
+	return Shaping
+
 # import pygame as pg
 # def feedback_factory(base):
 # 	SCREEN_SIZE = 250

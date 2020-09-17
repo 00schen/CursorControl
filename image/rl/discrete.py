@@ -47,28 +47,27 @@ def process_args(variant):
 		variant['trainer_kwargs']['q_num_pretrain2_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain2_steps', 0))
 
 if __name__ == "__main__":
-	path_length = 200
+	path_length = 250
 	variant = dict(
 		algorithm_args=dict(
-			num_epochs=2000,
-			# num_eval_steps_per_epoch=2*path_length,
-			num_eval_steps_per_epoch=path_length,
+			num_epochs=500,
+			num_eval_steps_per_epoch=3*path_length,
+			# num_eval_steps_per_epoch=path_length,
 			num_trains_per_train_loop=10,
 			num_expl_steps_per_train_loop=path_length,
 			min_num_steps_before_training=0,
-			pf_train_frequency=1,
+			pf_train_frequency=100,
 
 			traj_batch_size=10,	
 			batch_size=1024,
-			max_path_length=path_length//3,
+			max_path_length=path_length,
 		),
 
 		trainer_class=DQNPavlovTrainer,
 
 		replay_buffer_kwargs=dict(
-			max_num_traj=1000,
+			max_num_traj=5000,
 			traj_max=path_length,
-			subtraj_len=path_length,
 		),
 
 		twin_q=True,
@@ -127,12 +126,13 @@ if __name__ == "__main__":
 			# 	)
 			# 	for i in range(5)
 			# ],
-			demo_paths=[dict(
-					path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1000.npy"),
-					obs_dict=False,
-					is_demo=False,
-					train_split=0.9,
-				)],
+
+			# demo_paths=[dict(
+			# 		path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1003.npy"),
+			# 		obs_dict=False,
+			# 		is_demo=False,
+			# 		train_split=1,
+			# 	)],
 			# add_demos_to_replay_buffer=False,
 		),
 		# add_env_demos=True,
@@ -144,13 +144,13 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		pretrain_rl=args.pretrain,
-		save_path = os.path.join('logs',args.exp_name,'run14','id0',),
+		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch2','run0','id0',),
 
 		demo_kwargs=dict(
-			total_paths_per_target=100,
-			fails_per_success=1,
+			total_paths_per_target=200 if args.env_name != 'Feeding' else 500,
+			fails_per_success=0,
 			path_length=path_length,
-			save_name=f"{args.env_name}_usermodel_1000"
+			save_name=f"{args.env_name}_usermodel_1003"
 		)
 	)
 	from agents import *
@@ -160,33 +160,38 @@ if __name__ == "__main__":
 		oracle=UserModelAgent,
 		num_obs=5,
 		num_nonnoop=5,
-		action_type='trajectory',
+		action_type='disc_traj',
 		cap=0,
 		step_limit=path_length,
 		action_clip=.1,
 		env_kwargs=dict(success_dist=.05),
 	))
-	wrapper_class = railrl_class(wrapper([window_factory,target_factory,metric_factory],default_class),[cap_adapt,window_adapt,target_adapt,])
+	wrapper_class = railrl_class(wrapper([window_factory,target_factory,shaping_factory],default_class),
+					[cap_adapt,window_adapt,target_adapt,shaping_adapt])
+	# wrapper_class = railrl_class(wrapper([window_factory,target_factory,metric_factory,shaping_factory],default_class),
+					# [cap_adapt,window_adapt,target_adapt,shaping_adapt])
 	variant.update(dict(
 		env_class=wrapper_class if args.job != 'demo' else default_class,
 		env_kwargs={'config':config},
 	))
 
 	search_space = {
-		'seedid': [2000,2001],
-		'env_kwargs.config.input_penalty': [1],
-		# 'trainer_kwargs.learning_rate': [1e-4,3e-4,1e-3],
-		# 'trainer_kwargs.soft_target_tau': [1e-3,3e-3,5e-3,],
+		'seedid': [2000],
+		'env_kwargs.config.input_penalty': [0],
+		'env_kwargs.config.shaping': [10],
 		'trainer_kwargs.learning_rate': [1e-4,],
-		'trainer_kwargs.soft_target_tau': [1e-3,],
-		'algorithm_args.num_pf_trains_per_train_loop': [10000,],
+		'trainer_kwargs.soft_target_tau': [1e-4,1e-3,],
+		'trainer_kwargs.learning_rate': [1e-4,],
+		'trainer_kwargs.target_update_period': [10,100,],
+
+		'algorithm_args.num_pf_trains_per_train_loop': [int(1),],
 		'pf_kwargs.num_layers': [1],
-		'trainer_kwargs.discount': [.99,],
+		'trainer_kwargs.discount': [.995,1],
 		'trainer_kwargs.pf_lr': [3e-4,],
 		'trainer_kwargs.pf_decay': [0,],
-		'trainer_kwargs.target_update_period': [10,],
+		'pf_kwargs.use_random': [False,],
 
-		'exploration_kwargs.logit_scale': [100]
+		'exploration_kwargs.logit_scale': [1,1000]
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

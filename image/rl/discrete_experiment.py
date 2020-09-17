@@ -1,6 +1,7 @@
 import torch as th
 import numpy as np
 import os
+from numpy.linalg import norm
 
 from railrl.samplers.data_collector import MdpPathCollector
 from railrl.torch.torch_rl_algorithm import (
@@ -24,6 +25,7 @@ from railrl.torch.core import PyTorchModule
 import torch.nn.functional as F
 from railrl.torch.distributions import OneHotCategorical as TorchOneHot
 from railrl.torch.distributions import Distribution
+from railrl.torch.distributions import MultivariateDiagonalNormal as Normal
 import torch.optim as optim
 from torch.nn import CrossEntropyLoss
 from railrl.pythonplusplus import identity
@@ -37,11 +39,12 @@ class LSTM(PyTorchModule):
 	def __init__(self, input_size, output_size, output_activation=identity, **kwargs):
 		super().__init__()
 		hidden_size = kwargs.pop('hidden_size',256)
+		self.use_random = kwargs.pop('use_random',False)
 		self.embed_fc1 = Linear(input_size,hidden_size)
 		self.embed_fc2 = Linear(hidden_size,hidden_size)
 		self.embed_fc3 = Linear(hidden_size,hidden_size)
 		self.lstm = PytorchLSTM(hidden_size, hidden_size, **kwargs)
-		self.last_fc = Linear(hidden_size, output_size)
+		self.last_fc = Linear(hidden_size, output_size*2)
 		self.output_activation = output_activation
 		self.input_size = input_size
 		self.hidden_size = self.lstm.hidden_size
@@ -56,7 +59,14 @@ class LSTM(PyTorchModule):
 			out,out_hx = self.lstm.forward(embedding,hx)
 		else:
 			out,out_hx = self.lstm.forward(embedding)
-		return self.output_activation(self.last_fc(out)),out_hx
+		params = self.output_activation(self.last_fc(out))
+		mean,std = params[...,:self.output_size],th.exp(params[...,self.output_size:])
+		dist = Normal(mean,std)
+		if self.use_random:
+			output = dist.mean
+		else:
+			output = dist.rsample()
+		return output,out_hx
 
 class OneHotCategorical(Distribution,TorchOneHot):
 	def rsample_and_logprob(self):
@@ -80,34 +90,35 @@ class ArgmaxDiscretePolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		obs, concat_obs = obs[-self.obs_dim:], obs[3:]
-		# obs, concat_obs = obs[-self.obs_dim:], obs
+		# obs, concat_obs = obs[-self.obs_dim:], obs[3:]
+		obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
-			input_predictions = []
-			for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
-				if next(self.qf1.parameters()).is_cuda:
-					oh_action = oh_action.cuda()
-				single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
-				input_predictions.append(single_prediction.squeeze())
-			input_prediction = th.mean(th.stack(input_predictions),dim=0)
-			if next(self.qf1.parameters()).is_cuda:
-				input_prediction = input_prediction.cuda()
+			# input_predictions = []
+			# for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
+			# 	if next(self.qf1.parameters()).is_cuda:
+			# 		oh_action = oh_action.cuda()
+			# 	single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
+			# 	input_predictions.append(single_prediction.squeeze())
+			# input_prediction = th.mean(th.stack(input_predictions),dim=0)
+			# if next(self.qf1.parameters()).is_cuda:
+			# 	input_prediction = input_prediction.cuda()
 
 			# Uses t-1 hidden state with current input prediction
 			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),input_prediction,))
-			concat_obs = th.cat((input_prediction,concat_obs,)).float()
+			# concat_obs = th.cat((input_prediction,concat_obs,)).float()
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
 
 			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
-			prediction, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
-		return action.cpu().numpy(), {'prediction': prediction.squeeze().cpu().detach().numpy(), }
-		# return action.cpu().numpy(), {}
+			# prediction, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
+		# return action.cpu().numpy(), {'pred_dist': norm(prediction.squeeze().cpu().detach().numpy()-self.env.env.target_pos), }
+		return action.cpu().numpy(), {}
 
 	def reset(self):
-		if next(self.qf1.parameters()).is_cuda:
-			self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
-		else:
-			self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
+		pass
+		# if next(self.qf1.parameters()).is_cuda:
+		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
+		# else:
+		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
 
 class BoltzmannPolicy(PyTorchModule):
 	def __init__(self, qf1, qf2, pf, obs_dim, env, logit_scale=100):
@@ -127,33 +138,34 @@ class BoltzmannPolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		obs, concat_obs = obs[-self.obs_dim:], obs[3:]
-		# obs, concat_obs = obs[-self.obs_dim:], obs
+		# obs, concat_obs = obs[-self.obs_dim:], obs[3:]
+		obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
 			input_predictions = []
-			for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
-				if next(self.qf1.parameters()).is_cuda:
-					oh_action = oh_action.cuda()
-				single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
-				input_predictions.append(single_prediction.squeeze())
-			input_prediction = th.mean(th.stack(input_predictions),dim=0)
-			if next(self.qf1.parameters()).is_cuda:
-				input_prediction = input_prediction.cuda()
+			# for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
+			# 	if next(self.qf1.parameters()).is_cuda:
+			# 		oh_action = oh_action.cuda()
+			# 	single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
+			# 	input_predictions.append(single_prediction.squeeze())
+			# input_prediction = th.mean(th.stack(input_predictions),dim=0)
+			# if next(self.qf1.parameters()).is_cuda:
+			# 	input_prediction = input_prediction.cuda()
 
 			# Uses t-1 hidden state with current input prediction
 			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),input_prediction,))
-			concat_obs = th.cat((input_prediction,concat_obs,)).float()
+			# concat_obs = th.cat((input_prediction,concat_obs,)).float()
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
 
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
-			_pred, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
+			# _pred, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
 		return action.cpu().numpy(), {}
 
 	def reset(self):
-		if next(self.qf1.parameters()).is_cuda:
-			self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
-		else:
-			self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
+		pass
+		# if next(self.qf1.parameters()).is_cuda:
+		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
+		# else:
+		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
 
 class HybridAgent:
 	def __init__(self, policy):
@@ -213,13 +225,13 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 				timer.stop_timer('replay buffer data storing')
 
 				timer.start_timer('training', unique=False)
-				if self.epoch % self.pf_train_frequency == 0:
-					self.trainer.reset_pf()
-					for _ in range(self.num_pf_trains_per_train_loop):
-						train_data = self.replay_buffer.random_traj_batch(self.traj_batch_size)
-						self.trainer.train_pf(train_data)
-					# with th.no_grad():
-					# 	self.replay_buffer.update_embeddings()
+				# if self.epoch % self.pf_train_frequency == 0:
+				# 	self.trainer.reset_pf()
+				# 	for _ in range(self.num_pf_trains_per_train_loop):
+				# 		train_data = self.replay_buffer.random_traj_batch(self.traj_batch_size)
+				# 		self.trainer.train_pf(train_data)
+				# 	# with th.no_grad():
+				# 	# 	self.replay_buffer.update_embeddings()
 				for _ in range(self.num_trains_per_train_loop):
 					train_data = self.replay_buffer.random_batch(self.batch_size)
 					self.trainer.train(train_data)
@@ -240,12 +252,12 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			lr=self.learning_rate,
 		)
 		self.pf = pf
-		self.pf_lr = pf_lr
-		self.pf_optimizer = optim.Adam(
-			self.pf.parameters(),
-			weight_decay=pf_decay,
-			lr=pf_lr,
-		)
+		# self.pf_lr = pf_lr
+		# self.pf_optimizer = optim.Adam(
+		# 	self.pf.parameters(),
+		# 	weight_decay=pf_decay,
+		# 	lr=pf_lr,
+		# )
 		self.obs_dim = obs_dim
 		self.action_dim = qf1.output_size
 
@@ -426,7 +438,7 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			self.target_qf1,
 			self.qf2,
 			self.target_qf2,
-			self.pf,
+			# self.pf,
 		]
 		return nets
 
@@ -436,7 +448,7 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			target_qf1 = self.target_qf1,
 			qf2 = self.qf2,
 			target_qf2 = self.target_qf2,
-			pf = self.pf,
+			# pf = self.pf,
 		)
 
 from types import MethodType
@@ -464,8 +476,9 @@ def demonstration_factory(base):
 			return super().reset()
 	return DemonstrationEnv
 from agents import DemonstrationAgent
+from envs import default_class
 def collect_demonstrations(variant):
-	env_class = variant.get('env_class', None)
+	env_class = default_class
 	env_kwargs = variant.get('env_kwargs', {})
 	env_class = demonstration_factory(env_class)
 	env = make(None, env_class, env_kwargs, False)
@@ -473,7 +486,7 @@ def collect_demonstrations(variant):
 
 	path_collector = MdpPathCollector(
 		env,
-		DemonstrationAgent(env,lower_p=.2),
+		DemonstrationAgent(env,lower_p=.8),
 	)
 
 	if variant.get('render',False):
@@ -505,7 +518,8 @@ def eval_exp(variant):
 	env_class = variant.get('env_class', None)
 	env_kwargs = variant.get('env_kwargs', {})
 	eval_env = make(None, env_class, env_kwargs, False)
-	eval_env.seed(variant['seedid'])
+	# eval_env.seed(variant['seedid'])
+	eval_env.seed(1999)
 	current_obs_dim = eval_env.current_obs_dim
 
 	file_name = os.path.join(variant['save_path'],'params.pkl')
@@ -631,8 +645,9 @@ def resume_exp(variant):
 
 from railrl.core import logger
 from tqdm import trange
+from rail_utils import *
 def pf_exp(variant):
-	env_class = variant.get('env_class', None)
+	env_class = railrl_class(wrapper([],default_class),[cap_adapt])
 	env_kwargs = variant.get('env_kwargs', {})
 	eval_env = make(None, env_class, env_kwargs, False)
 	expl_env = make(None, env_class, env_kwargs, False)
@@ -705,6 +720,7 @@ def pf_exp(variant):
 		logger.record_dict(trainer.get_diagnostics())
 		logger.dump_tabular(with_prefix=True, with_timestamp=False)
 
+	print(replay_buffer._top)
 	predictions = [pf(th.cat((obs[:length[0],np.newaxis,-current_obs_dim:].float(),
 								action[:length[0],np.newaxis,:].float()),dim=2))[0].squeeze().cpu().detach().numpy()
 	 for obs,action,length in zip(th.tensor(replay_buffer._observations[:replay_buffer._top]).cuda(),
@@ -729,14 +745,14 @@ def experiment(variant):
 	action_dim = eval_env.action_space.low.size
 	current_obs_dim = expl_env.current_obs_dim
 
-	pf_kwargs = variant.get("pf_kwargs", {})
-	pf = LSTM(
-		input_size=current_obs_dim+action_dim,
-		# output_size=expl_env.env.num_targets,
-		output_size=3,
-		# output_activation=th.sigmoid,
-		**pf_kwargs
-	)
+	# pf_kwargs = variant.get("pf_kwargs", {})
+	# pf = LSTM(
+	# 	input_size=current_obs_dim+action_dim,
+	# 	# output_size=expl_env.env.num_targets,
+	# 	output_size=3,
+	# 	# output_activation=th.sigmoid,
+	# 	**pf_kwargs
+	# )
 	obs_dim = expl_env.observation_space.low.size
 	# obs_dim += 2*pf.hidden_size + expl_env.env.num_targets
 	# obs_dim += expl_env.env.num_targets
@@ -770,7 +786,8 @@ def experiment(variant):
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		pf=pf,
+		# pf=pf,
+		pf=None,
 		obs_dim=current_obs_dim,
 		env=eval_env,
 		**policy_kwargs,
@@ -789,7 +806,8 @@ def experiment(variant):
 		if exploration_strategy is None:
 			pass
 		elif exploration_strategy == 'boltzmann':
-			expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,
+			# expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,
+			expl_policy = BoltzmannPolicy(qf1,qf2,None,current_obs_dim,
 										logit_scale=exploration_kwargs['logit_scale'],
 										env=expl_env,
 										**policy_kwargs)
@@ -801,7 +819,8 @@ def experiment(variant):
 	replay_buffer_kwargs['env'] = expl_env
 	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
 		obs_dim=obs_dim,
-		pf=pf,
+		# pf=pf,
+		pf=None,
 		**replay_buffer_kwargs,
 	)
 
@@ -812,7 +831,8 @@ def experiment(variant):
 			target_qf1=target_qf1,
 			qf2=qf2,
 			target_qf2=target_qf2,
-			pf=pf,
+			# pf=pf,
+			pf=None,
 			obs_dim=current_obs_dim,
 			**variant['trainer_kwargs']
 		)

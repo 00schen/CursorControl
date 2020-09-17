@@ -109,15 +109,16 @@ class MouseAgent:
 			self.og_mouse_pos = np.array([mouse_event[1],mouse_event[2]])
 
 class UserModelAgent:
-	def __init__(self,env):
+	def __init__(self,env,threshold=.5):
 		self.env = env
 		self.size = 6
+		self.threshold = threshold
 	def get_action(self,obs,info=None):
-		if self.prev_noop:
-			prob = .5*(1-info['cos_error'])
-		else:
-			prob = .8 if info['cos_error'] < .25 else .3
-		# prob=1
+		# if self.prev_noop:
+		# 	prob = .5*(1-info['cos_error'])
+		# else:
+		# 	prob = .8 if info['cos_error'] < .25 else .3
+		prob = info['cos_error'] < self.threshold
 		action = np.zeros(self.size)
 		if rng.random() < prob:
 			traj = self.env.target_pos-self.env.tool_pos

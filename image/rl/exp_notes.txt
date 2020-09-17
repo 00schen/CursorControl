@@ -95,3 +95,10 @@ test42: lstm tests
 test48: smoothing lower level actions
 test49: baseline give q function target
 test50: only use predictor in environment, not q training
+test52: no noise on targets
+test53: noise on targets, tune exploration, more successes in demos a:switch b:laptop
+test54: same as test53 but hard boundary user input
+*_1000: 50-50 fail and successes
+*_1001: 100 successes
+*_1002: hard boundary user input
+*_1003: 400 time steps

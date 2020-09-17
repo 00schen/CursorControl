@@ -32,6 +32,20 @@ def checkoff_adapt(self,path):
 		done = next(done_iter)
 	return path
 
+def shaping_adapt(self,path):
+	done_iter = iter(path['terminals'])
+	info_iter = iter(path['env_infos'])
+	new_path = {'rewards':[],}
+
+	done = False
+	while not done:
+		info = next(info_iter)
+		done = next(done_iter)
+		new_path['rewards'].append(.1*(info['task_success']-1)+info['diff_distance'])
+
+	path.update(new_path)
+	return path
+
 def target_adapt(self,path):
 	obs_iter = iter(list(path['observations'])+[path['next_observations'][-1]])
 	done_iter = iter(path['terminals'])
