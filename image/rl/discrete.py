@@ -144,7 +144,7 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		pretrain_rl=args.pretrain,
-		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch2','run0','id0',),
+		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch1','run1','id0',),
 
 		demo_kwargs=dict(
 			total_paths_per_target=200 if args.env_name != 'Feeding' else 500,

@@ -107,6 +107,7 @@ class ArgmaxDiscretePolicy(PyTorchModule):
 			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),input_prediction,))
 			# concat_obs = th.cat((input_prediction,concat_obs,)).float()
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
+			print(q_values)
 
 			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
 			# prediction, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
@@ -173,6 +174,7 @@ class HybridAgent:
 	def get_action(self,obs):
 		recommend = obs[-6:]
 		action,info = self.policy.get_action(obs)
+		print(recommend)
 		if np.count_nonzero(recommend):
 			return recommend,info
 		else:
@@ -523,20 +525,23 @@ def eval_exp(variant):
 	current_obs_dim = eval_env.current_obs_dim
 
 	file_name = os.path.join(variant['save_path'],'params.pkl')
+	print(th.load(file_name,map_location=th.device("cpu")))
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
 	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
-	pf = th.load(file_name,map_location=th.device("cpu"))['trainer/pf']
+	# pf = th.load(file_name,map_location=th.device("cpu"))['trainer/pf']
 
 	policy_kwargs = variant['policy_kwargs']
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		pf=pf,
+		# pf=pf,
+		pf=None,
 		obs_dim=current_obs_dim,
 		env=eval_env,
 		**policy_kwargs,
 	)
 
+	# eval_policy = HybridAgent(policy)
 	eval_policy = policy
 	eval_path_collector = MdpPathCollector(
 		eval_env,
@@ -794,6 +799,7 @@ def experiment(variant):
 	)
 
 	eval_policy = HybridAgent(policy)
+	eval_policy = policy
 	eval_path_collector = MdpPathCollector(
 		eval_env,
 		eval_policy,
@@ -811,7 +817,8 @@ def experiment(variant):
 										logit_scale=exploration_kwargs['logit_scale'],
 										env=expl_env,
 										**policy_kwargs)
-			expl_policy = HybridAgent(expl_policy)
+			# expl_policy = HybridAgent(expl_policy)
+			expl_policy = expl_policy
 		else:
 			error
 
