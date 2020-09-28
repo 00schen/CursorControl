@@ -19,6 +19,7 @@ class IKAgent:
 		self.new_pos = -1
 		self.tool_pos = -1
 		self.action_clip = config['action_clip']
+		# self.noise_sd = config['exploration_sd']
 
 	def predict(self,env,pred):
 		joint_states = p.getJointStates(env.robot, jointIndices=env.robot_left_arm_joint_indices, physicsClientId=env.id)
@@ -30,6 +31,7 @@ class IKAgent:
 		new_joint_positions = np.array(p.calculateInverseKinematics(env.robot, 13, new_pos, physicsClientId=env.id))
 		new_joint_positions = new_joint_positions[:7]
 		action = new_joint_positions - joint_positions
+		# action = rng.normal(action,self.noise_sd)
 
 		clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
 		action = clip_by_norm(action,self.action_clip)
@@ -135,7 +137,7 @@ def shared_autonomy_factory(base):
 					np.array((0,-1,0)),
 					np.array((0,1,0)),
 					np.array((0,0,-1)),
-					np.array((0,0,1)),
+					np.array((0,0,1)),					
 				][index]
 				return trajectory(traj)
 			self.translate = {
@@ -272,6 +274,18 @@ def shaping_factory(base):
 			return obs,r,done,info
 	return Shaping
 
+def init_factory(base):
+	class InitPos(base):
+		def __init__(self,config):
+			super().__init__(config)
+		def reset(self):
+			def init_start_pos(self,og_init_pos):
+				return og_init_pos + rng.uniform(-1, 1, size=3)
+			self.env.init_start_pos = MethodType(init_start_pos,self.env)
+			obs = super().reset()
+			return obs
+	return InitPos
+
 # import pygame as pg
 # def feedback_factory(base):
 # 	SCREEN_SIZE = 250
@@ -302,4 +316,4 @@ default_config = {
 	'noise': False,
 }
 wrapper = lambda factories,base_factory: reduce(lambda value,func: func(value), factories, base_factory)
-default_class = wrapper([cap_factory,shared_autonomy_factory],sparse_factory(None))
+default_class = wrapper([shared_autonomy_factory,],sparse_factory(None))

@@ -40,8 +40,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._rewards = np.zeros((max_num_traj, traj_max, 1))
 		# self._terminals[i] = a terminal was received at time i
 		self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		# self._inputs = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
-		self._targets = np.zeros((max_num_traj, traj_max, 3),)
+		# self._nonnoops = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		# self._targets = np.zeros((max_num_traj, traj_max, 3),)
 		# self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		self._successes = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		self._lengths = np.zeros((max_num_traj, 1), dtype='int32')
@@ -49,54 +49,50 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._top = 0
 		self._sample = 0
 		self._index = 0
-		self._valid_start_indices = []
-		self._val_valid_start_indices = []
+		self._valid_start_indices = set()
+		self._val_valid_start_indices = set()
 		self._add_counter = 0
-		self._valid_indices = []
+		self._valid_indices = set()
 		self._traj_max = traj_max
 
 	def update_embeddings(self):
-		obs_prev_preds = deque(np.zeros((self._traj_max,self._top,self.pf.output_size)),self._traj_max)
-		next_prev_preds = deque(np.zeros((self._traj_max,self._top,self.pf.output_size)),self._traj_max,)
-
-		obs_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
-		next_pf_hx = (th.zeros((1,self._top,self.pf.hidden_size)),th.zeros((1,self._top,self.pf.hidden_size)))
+		obs_pf_hx = (th.zeros((2,self._top,self.pf.hidden_size)),th.zeros((2,self._top,self.pf.hidden_size)))
+		next_pf_hx = (th.zeros((2,self._top,self.pf.hidden_size)),th.zeros((2,self._top,self.pf.hidden_size)))
 		for i in range(self._traj_max):
 			obs = th.as_tensor(self._observations[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
 			next_obs = th.as_tensor(self._next_obs[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
 			action = th.as_tensor(self._actions[:self._top,[i],:]).transpose(0,1)
 			
 			"""pf embeddings"""
-			obs_prediction = th.zeros((1,self._top,self._action_dim))
-			next_prediction = th.zeros((1,self._top,self._action_dim))
-			obs_preds,next_preds = [],[]
-			if next(self.pf.parameters()).is_cuda:
-				obs_prediction = obs_prediction.cuda()
-				next_prediction = next_prediction.cuda()
-				obs,next_obs,action = obs.cuda(),next_obs.cuda(),action.cuda()
-				obs_pf_hx = (obs_pf_hx[0].cuda(),obs_pf_hx[1].cuda())
-				next_pf_hx = (next_pf_hx[0].cuda(),next_pf_hx[1].cuda())
-			for j,oh_action in enumerate(1.0*F.one_hot(th.arange(0,self._action_dim),self._action_dim)):
-				oh_action = oh_action.repeat(1,self._top,1)
-				if next(self.pf.parameters()).is_cuda:
-					oh_action = oh_action.cuda()
-				obs_pred, _pf_hx = self.pf(th.cat((obs,oh_action),dim=2).float(),obs_pf_hx)
-				next_pred, _pf_hx = self.pf(th.cat((next_obs,oh_action),dim=2).float(),next_pf_hx)
-			# 	obs_prediction[...,j],next_prediction[...,j] = obs_pred.squeeze(),next_pred.squeeze()
-				obs_preds.append(obs_pred.squeeze())
-				next_preds.append(next_pred.squeeze())
-			obs_prev_preds.append(th.mean(obs_preds))
+			# obs_prediction = th.zeros((1,self._top,self._action_dim))
+			# next_prediction = th.zeros((1,self._top,self._action_dim))
+			# obs_preds,next_preds = [],[]
+			# if next(self.pf.parameters()).is_cuda:
+			# 	obs_prediction = obs_prediction.cuda()
+			# 	next_prediction = next_prediction.cuda()
+			# 	obs,next_obs,action = obs.cuda(),next_obs.cuda(),action.cuda()
+			# 	obs_pf_hx = (obs_pf_hx[0].cuda(),obs_pf_hx[1].cuda())
+			# 	next_pf_hx = (next_pf_hx[0].cuda(),next_pf_hx[1].cuda())
+			# for j,oh_action in enumerate(1.0*F.one_hot(th.arange(0,self._action_dim),self._action_dim)):
+			# 	oh_action = oh_action.repeat(1,self._top,1)
+			# 	if next(self.pf.parameters()).is_cuda:
+			# 		oh_action = oh_action.cuda()
+			# 	obs_pred, _pf_hx = self.pf(th.cat((obs,oh_action),dim=2).float(),obs_pf_hx)
+			# 	next_pred, _pf_hx = self.pf(th.cat((next_obs,oh_action),dim=2).float(),next_pf_hx)
+			# # 	obs_prediction[...,j],next_prediction[...,j] = obs_pred.squeeze(),next_pred.squeeze()
+			# 	obs_preds.append(obs_pred.squeeze())
+			# 	next_preds.append(next_pred.squeeze())
 			
 
 			# self._observations[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(obs_pf_hx,dim=2).squeeze().cpu().detach().numpy()
 			# self._next_obs[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(next_pf_hx,dim=2).squeeze().cpu().detach().numpy()
-			self._observations[:self._top,i,-self.end[1]:] = obs_prediction.squeeze().cpu().detach().numpy()
-			self._next_obs[:self._top,i,-self.end[1]:] = next_prediction.squeeze().cpu().detach().numpy()
+			# self._observations[:self._top,i,-self.end[1]:] = obs_prediction.squeeze().cpu().detach().numpy()
+			# self._next_obs[:self._top,i,-self.end[1]:] = next_prediction.squeeze().cpu().detach().numpy()
 
-			obs_pred, obs_pf_hx = self.pf(th.cat((obs,action),dim=2).float(),obs_pf_hx)
-			next_pred, next_pf_hx = self.pf(th.cat((next_obs,action),dim=2).float(),next_pf_hx)
-			obs_prev_preds.append(obs_pred.squeeze().detach().cpu().numpy())
-			next_prev_preds.append(next_pred.squeeze().detach().cpu().numpy())
+			_pred, obs_pf_hx = self.pf(th.cat((obs,action),dim=2).float(),obs_pf_hx)
+			_pred, next_pf_hx = self.pf(th.cat((next_obs,action),dim=2).float(),next_pf_hx)
+			self._observations[:self._top,i,-self.pf.hidden_size:] = obs_pf_hx[0][0,...].squeeze().cpu().detach().numpy()
+			self._next_obs[:self._top,i,-self.pf.hidden_size:] = next_pf_hx[0][0,...].squeeze().cpu().detach().numpy()
 
 	def terminate_episode(self):
 		pass
@@ -109,36 +105,40 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		n_items = len(path["observations"])
 
 		self._observations[self._sample,:n_items,:] = path['observations']
+		# self._observations[self._sample,:n_items,:-self.pf.hidden_size] = path['observations']
 		self._actions[self._sample,:n_items,:] = path['actions']
 		self._rewards[self._sample,:n_items,:] = path['rewards']
 		self._terminals[self._sample,:n_items,:] = path['terminals']
 		self._next_obs[self._sample,:n_items,:] = path['next_observations']
+		# self._next_obs[self._sample,:n_items,:-self.pf.hidden_size] = path['next_observations']
 		self._lengths[self._sample] = n_items
+		print(path['rewards'][-5:])
 
 		# self._observations[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
 		# self._next_obs[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
 		
-		# self._inputs[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
-		self._targets[self._sample,:n_items,:] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
+		# self._nonnoops[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
+		# self._targets[self._sample,:n_items,:] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
 		# self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
 		# self._recommends[self._sample,:n_items] = np.array([np.argmax(env_info['recommend']) if np.count_nonzero(env_info['recommend']) else 6\
-		# 													for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
+															# for env_info in path['env_infos'][1:]]+[6])[:,np.newaxis]
 		self._successes[self._sample,:n_items,:] = np.array([env_info['task_success'] for env_info in path['env_infos']])[:,np.newaxis]
 
 
-		if self._add_counter % 10 != 0:
-			self._valid_start_indices.append(self._sample)
-		else:
-			self._val_valid_start_indices.append(self._sample)
-		# self._valid_start_indices.append(self._sample)
+		# if self._add_counter % 10 != 0:
+		# 	self._valid_start_indices.add(self._sample)
+		# else:
+		# 	self._val_valid_start_indices.add(self._sample)
+		# if 1 in self._successes[self._sample,:n_items,:]:
+		self._valid_start_indices.add(self._sample)
 		self._add_counter += 1
 
-		self._valid_indices.extend([(self._sample,start_index) for start_index in range(n_items)])
+		self._valid_indices.update([(self._sample,start_index) for start_index in range(n_items)])
 		self._sample = (self._sample + 1) % self._max_replay_buffer_size
 		self._top = min(self._top+1,self._max_replay_buffer_size)
 
 	def random_traj_batch(self,num_traj):
-		start_indices = np.array(self._valid_start_indices)[rng.choice(
+		start_indices = np.array(list(self._valid_start_indices))[rng.choice(
 			len(self._valid_start_indices),
 			num_traj,
 		)]
@@ -148,15 +148,15 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			rewards=self._rewards[start_indices],
 			terminals=self._terminals[start_indices],
 			next_observations=self._next_obs[start_indices],
-			# inputs=self._inputs[start_indices],
-			# recommends=self._recommends[start_indices],
-			targets=self._targets[start_indices],
+			nonnoops=self._nonnoops[start_indices],
+			recommends=self._recommends[start_indices],
+			# targets=self._targets[start_indices],
 			lengths=self._lengths[start_indices],
 		)
 		return batch
 
 	def val_random_traj_batch(self,num_traj):
-		start_indices = np.array(self._val_valid_start_indices)[rng.choice(
+		start_indices = np.array(list(self._val_valid_start_indices))[rng.choice(
 			len(self._val_valid_start_indices),
 			num_traj,
 		)]
@@ -166,16 +166,16 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			rewards=self._rewards[start_indices],
 			terminals=self._terminals[start_indices],
 			next_observations=self._next_obs[start_indices],
-			# inputs=self._inputs[start_indices],
-			# recommends=self._recommends[start_indices],
-			targets=self._targets[start_indices],
+			nonnoops=self._nonnoops[start_indices],
+			recommends=self._recommends[start_indices],
+			# targets=self._targets[start_indices],
 			lengths=self._lengths[start_indices],
 		)
 		return batch
 
 	def random_batch(self,batch_size):
 		indices = rng.choice(len(self._valid_indices),batch_size)
-		index_pairs = np.array(self._valid_indices)
+		index_pairs = np.array(list(self._valid_indices))
 		sample_indices,traj_indices = index_pairs[indices,0],index_pairs[indices,1]
 		batch = dict(
 			observations=self._observations[sample_indices,traj_indices,:],
@@ -184,7 +184,6 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			# terminals=self._terminals[sample_indices,traj_indices,:],
 			successes=self._successes[sample_indices,traj_indices,:],
 			next_observations=self._next_obs[sample_indices,traj_indices,:],
-			# inputs=self._inputs[sample_indices,traj_indices,:],
 		)
 		return batch
 

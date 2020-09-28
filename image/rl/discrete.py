@@ -16,8 +16,10 @@ parser.add_argument('--env_name',)
 parser.add_argument('--job',)
 parser.add_argument('--exp_name', default='a-test')
 parser.add_argument('--pretrain', type=int, default=0)
-parser.add_argument('--use_ray', type=int, default=1)
-parser.add_argument('--use_gpu', type=int, default=1)
+parser.add_argument('--no_render', action='store_false')
+parser.add_argument('--dump_tabular', action='store_true')
+parser.add_argument('--use_ray', action='store_true')
+parser.add_argument('--use_gpu', action='store_true')
 parser.add_argument('--gpus', type=int)
 parser.add_argument('--per_gpu', type=int)
 args, _ = parser.parse_known_args()
@@ -47,13 +49,14 @@ def process_args(variant):
 		variant['trainer_kwargs']['q_num_pretrain2_steps'] = min(10, variant['trainer_kwargs'].get('q_num_pretrain2_steps', 0))
 
 if __name__ == "__main__":
-	path_length = 250
+	path_length = 200
 	variant = dict(
 		algorithm_args=dict(
-			num_epochs=500,
-			num_eval_steps_per_epoch=3*path_length,
-			# num_eval_steps_per_epoch=path_length,
-			num_trains_per_train_loop=10,
+			num_epochs=1000,
+			num_eval_steps_per_epoch=path_length,
+			# num_eval_steps_per_epoch=0,
+			num_trains_per_train_loop=100,
+			# num_trains_per_train_loop=0,
 			num_expl_steps_per_train_loop=path_length,
 			min_num_steps_before_training=0,
 			pf_train_frequency=100,
@@ -76,7 +79,7 @@ if __name__ == "__main__":
 		qf_kwargs=dict(
 			hidden_sizes=[512]*3,
 			# output_activation=Sigmoid(),
-			# output_activation=Clamp(max=0), # rewards are <= 0
+			output_activation=Clamp(max=0), # rewards are <= 0
 		),
 		pf_kwargs=dict(
 			hidden_size=128,
@@ -127,12 +130,12 @@ if __name__ == "__main__":
 			# 	for i in range(5)
 			# ],
 
-			# demo_paths=[dict(
-			# 		path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1003.npy"),
-			# 		obs_dict=False,
-			# 		is_demo=False,
-			# 		train_split=1,
-			# 	)],
+			demo_paths=[dict(
+					path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1002.npy"),
+					obs_dict=False,
+					is_demo=False,
+					train_split=1,
+				)],
 			# add_demos_to_replay_buffer=False,
 		),
 		# add_env_demos=True,
@@ -144,13 +147,13 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		pretrain_rl=args.pretrain,
-		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch1','run1','id0',),
+		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch23','run3','id0',),
 
 		demo_kwargs=dict(
-			total_paths_per_target=200 if args.env_name != 'Feeding' else 500,
+			total_paths=500,
 			fails_per_success=0,
 			path_length=path_length,
-			save_name=f"{args.env_name}_usermodel_1003"
+			save_name=f"{args.env_name}_usermodel_1002"
 		)
 	)
 	from agents import *
@@ -158,40 +161,46 @@ if __name__ == "__main__":
 	config.update(dict(
 		env_name=args.env_name,
 		oracle=UserModelAgent,
-		num_obs=5,
-		num_nonnoop=5,
+		# num_obs=1,
+		# num_nonnoop=10,
 		action_type='disc_traj',
 		cap=0,
 		step_limit=path_length,
 		action_clip=.1,
 		env_kwargs=dict(success_dist=.05),
 	))
-	wrapper_class = railrl_class(wrapper([window_factory,target_factory,shaping_factory],default_class),
-					[cap_adapt,window_adapt,target_adapt,shaping_adapt])
+	wrapper_class = railrl_class(wrapper([window_factory,cap_factory],default_class),
+					[window_adapt,cap_adapt,])
+	# wrapper_class = railrl_class(wrapper([shared_autonomy_factory,window_factory,target_factory,shaping_factory],sparse_factory(None)),
+	# 				[window_adapt,target_adapt,shaping_adapt])
 	# wrapper_class = railrl_class(wrapper([window_factory,target_factory,metric_factory,shaping_factory],default_class),
 					# [cap_adapt,window_adapt,target_adapt,shaping_adapt])
 	variant.update(dict(
-		env_class=wrapper_class if args.job != 'demo' else default_class,
+		env_class=wrapper_class if args.job != 'demo' else init_factory(default_class),
 		env_kwargs={'config':config},
 	))
 
 	search_space = {
 		'seedid': [2000],
-		'env_kwargs.config.input_penalty': [0],
-		'env_kwargs.config.shaping': [10],
+		'env_kwargs.config.input_penalty': [1],
+		# 'env_kwargs.config.shaping': [0],
 		'trainer_kwargs.learning_rate': [1e-4,],
-		'trainer_kwargs.soft_target_tau': [1e-4,1e-3,],
-		'trainer_kwargs.learning_rate': [1e-4,],
-		'trainer_kwargs.target_update_period': [10,100,],
+		# 'trainer_kwargs.soft_target_tau': [1e-3,3e-3,5e-3,7e-3],
+		'trainer_kwargs.soft_target_tau': [.0001,.0003,.0005,.001],
+		'trainer_kwargs.target_update_period': [100,],
+		'trainer_kwargs.discount': [1,],
+		'path_loader_kwargs.add_demos_to_replay_buffer': [True,False],
 
 		'algorithm_args.num_pf_trains_per_train_loop': [int(1),],
 		'pf_kwargs.num_layers': [1],
-		'trainer_kwargs.discount': [.995,1],
 		'trainer_kwargs.pf_lr': [3e-4,],
 		'trainer_kwargs.pf_decay': [0,],
 		'pf_kwargs.use_random': [False,],
 
-		'exploration_kwargs.logit_scale': [1,1000]
+		# 'env_kwargs.config.exploration_sd': [1e-6]
+		'env_kwargs.config.num_obs': [10],
+		'env_kwargs.config.num_nonnoop': [10,],
+		'exploration_kwargs.logit_scale': [int(3e2)]
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -239,7 +248,8 @@ if __name__ == "__main__":
 				def sample(self,variant):
 					return collect_demonstrations(variant)
 			num_workers = 10
-			variant['demo_kwargs']['paths_per_target'] = variant['demo_kwargs']['total_paths_per_target']//num_workers
+			variant['demo_kwargs']['num_paths'] = variant['demo_kwargs']['total_paths']//num_workers
+			variant['env_kwargs']['config']['action_type'] = 'trajectory'
 
 			samplers = [Sampler.remote() for i in range(num_workers)]
 			samples = [samplers[i].sample.remote(variant) for i in range(num_workers)]
@@ -250,14 +260,18 @@ if __name__ == "__main__":
 			np.save(os.path.join("demos",variant['demo_kwargs']['save_name']), paths)
 	else:
 		if args.job in ['exp']:
-			for variant in variants:
-				run_variants(experiment, [variant], process_args,run_id="run_0")
+			variant = variants[0]
+			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
+			variant['render'] = args.no_render
+			variant['algorithm_args']['dump_tabular'] = args.dump_tabular
+			run_variants(experiment, [variant], process_args,run_id="run_0")
 		if args.job in ['eval']:
 			variant = variants[0]
-			variant['render'] = True
+			variant['render'] = args.no_render
 			run_variants(eval_exp, [variant], process_args,run_id="evaluation")
 		elif args.job in ['demo']:
 			variant = variants[0]
-			variant['render'] = True
-			variant['demo_kwargs']['paths_per_target'] = variant['demo_kwargs']['total_paths_per_target']
+			variant['render'] = args.no_render
+			variant['demo_kwargs']['num_paths'] = variant['demo_kwargs']['total_paths']
+			variant['env_kwargs']['config']['action_type'] = 'trajectory'
 			collect_demonstrations(variant)

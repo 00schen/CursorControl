@@ -114,11 +114,12 @@ class UserModelAgent:
 		self.size = 6
 		self.threshold = threshold
 	def get_action(self,obs,info=None):
-		# if self.prev_noop:
-		# 	prob = .5*(1-info['cos_error'])
-		# else:
-		# 	prob = .8 if info['cos_error'] < .25 else .3
-		prob = info['cos_error'] < self.threshold
+		if self.prev_noop:
+			prob = info['cos_error'] < self.threshold
+		else:
+			prob = info['cos_error'] < self.threshold
+		# prob = info['cos_error'] < self.threshold
+		# prob = 0
 		action = np.zeros(self.size)
 		if rng.random() < prob:
 			traj = self.env.target_pos-self.env.tool_pos
@@ -157,7 +158,7 @@ class FollowerAgent:
 
 		action = self.env.target_pos-self.env.tool_pos
 
-		return action, {"action_index": self.action_index, "trajectory": self.trajectory}
+		return self.trajectory, {"action_index": self.action_index, "trajectory": self.trajectory}
 	def reset(self):
 		self.trajectory = np.array([0,0,0])
 		self.action_count = 0
@@ -187,21 +188,22 @@ class EpsilonAgent:
 				][self.action_index]
 
 		action = rng.random(3)
-		return action, {"action_index": self.action_index, "trajectory": trajectory}
+		return trajectory, {"action_index": self.action_index, "trajectory": trajectory}
 	def reset(self):
 		self.action_index = 0
 
 class DemonstrationAgent:
-	def __init__(self,env,lower_p=.5):
+	def __init__(self,env,lower_p=.5,upper_p=1):
 		self.agents = [FollowerAgent(env.env),EpsilonAgent(env.env,epsilon=1/10)]
 		self.lower_p = lower_p
+		self.upper_p = upper_p
 	def get_action(self,obs,info=None):
 		p = [self.p,1-self.p]
 		actions = [agent.get_action(obs) for agent in self.agents]
 		action,agent_info = rng.choice(actions,p=p)
 		return action,agent_info
 	def reset(self):
-		self.p = rng.random()*(1-self.lower_p) + self.lower_p
+		self.p = rng.random()*(self.upper_p-self.lower_p) + self.lower_p
 		# self.p = 1
 		for agent in self.agents:
 			agent.reset()

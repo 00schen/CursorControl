@@ -151,7 +151,7 @@ class BoltzmannPolicy(PyTorchModule):
 			# 	input_prediction = input_prediction.cuda()
 
 			# Uses t-1 hidden state with current input prediction
-			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),))
+			concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),))
 			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
 
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
@@ -181,26 +181,10 @@ class HybridAgent:
 
 class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 	def __init__(self, num_pf_trains_per_train_loop, pf_train_frequency, traj_batch_size, *args, **kwargs):
-		self.dump_tabular = kwargs.pop('dump_tabular',True)
 		super().__init__(*args,**kwargs)
 		self.num_pf_trains_per_train_loop = num_pf_trains_per_train_loop
 		self.pf_train_frequency = pf_train_frequency
 		self.traj_batch_size = traj_batch_size
-
-	def train(self):
-		timer.return_global_times = True
-		for _ in range(self.num_epochs):
-			self._begin_epoch()
-			timer.start_timer('saving')
-			logger.save_itr_params(self.epoch, self._get_snapshot())
-			timer.stop_timer('saving')
-			log_dict, _ = self._train()
-			logger.record_dict(log_dict)
-			if self.dump_tabular:
-				logger.dump_tabular(with_prefix=True, with_timestamp=False)
-			self._end_epoch()
-		logger.save_itr_params(self.epoch, self._get_snapshot())
-
 
 	def _train(self):
 		done = (self.epoch == self.num_epochs)
@@ -385,8 +369,6 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		actions = batch['actions']
 		concat_obs = batch['observations']
 		concat_next_obs = batch['next_observations']
-		print(rewards.mean())
-		print(self.discount)
 
 		"""
 		Q loss
@@ -408,8 +390,6 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(self.qf2(concat_obs) * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)
-		print(y_target[:10])
-		print(y1_pred[:10])
 
 		"""
 		Update Q networks
@@ -489,8 +469,9 @@ def demonstration_factory(base):
 			return super().reset()
 	return DemonstrationEnv
 from agents import DemonstrationAgent
+from envs import default_class
 def collect_demonstrations(variant):
-	env_class = variant['env_class']
+	env_class = default_class
 	env_kwargs = variant.get('env_kwargs', {})
 	env_class = demonstration_factory(env_class)
 	env = make(None, env_class, env_kwargs, False)
@@ -498,7 +479,7 @@ def collect_demonstrations(variant):
 
 	path_collector = MdpPathCollector(
 		env,
-		DemonstrationAgent(env,lower_p=.8,upper_p=1),
+		DemonstrationAgent(env,lower_p=.8),
 	)
 
 	if variant.get('render',False):
@@ -507,12 +488,12 @@ def collect_demonstrations(variant):
 	paths = []
 	for env_i in env:
 		print(env.target_index)
-		fail_paths = deque([],demo_kwargs['fails_per_success']*demo_kwargs['num_paths']//env.env.num_targets)
-		success_paths = deque([],demo_kwargs['num_paths']//env.env.num_targets)
+		fail_paths = deque([],demo_kwargs['fails_per_success']*demo_kwargs['paths_per_target'])
+		success_paths = deque([],demo_kwargs['paths_per_target'])
 		while len(fail_paths) < fail_paths.maxlen or len(success_paths) < success_paths.maxlen:
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
-				demo_kwargs['path_length']*4,
+				demo_kwargs['path_length']*demo_kwargs['paths_per_target'],
 				discard_incomplete_paths=True,
 			)
 			for path in collected_paths:
@@ -761,16 +742,17 @@ def experiment(variant):
 	action_dim = eval_env.action_space.low.size
 	current_obs_dim = expl_env.current_obs_dim
 
-	# pf_kwargs = variant.get("pf_kwargs", {})
-	# pf = LSTM(
-	# 	input_size=current_obs_dim+action_dim,
-	# 	# output_size=expl_env.env.num_targets,
-	# 	output_size=3,
-	# 	# output_activation=th.sigmoid,
-	# 	**pf_kwargs
-	# )
+	pf_kwargs = variant.get("pf_kwargs", {})
+	pf = LSTM(
+		input_size=current_obs_dim+action_dim,
+		# output_size=expl_env.env.num_targets,
+		output_size=3,
+		# output_activation=th.sigmoid,
+		**pf_kwargs
+	)
 	obs_dim = expl_env.observation_space.low.size
-	# obs_dim += pf.hidden_size
+	obs_dim += pf.hidden_size
+	# obs_dim += expl_env.env.num_targets
 	qf_kwargs = variant.get("qf_kwargs", {})
 	qf1 = Mlp(
 		input_size=obs_dim,
@@ -801,8 +783,8 @@ def experiment(variant):
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		# pf=pf,
-		pf=None,
+		pf=pf,
+		# pf=None,
 		obs_dim=current_obs_dim,
 		env=eval_env,
 		**policy_kwargs,
@@ -822,8 +804,7 @@ def experiment(variant):
 		if exploration_strategy is None:
 			pass
 		elif exploration_strategy == 'boltzmann':
-			# expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,
-			expl_policy = BoltzmannPolicy(qf1,qf2,None,current_obs_dim,
+			expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,
 										logit_scale=exploration_kwargs['logit_scale'],
 										env=expl_env,
 										**policy_kwargs)
@@ -836,8 +817,8 @@ def experiment(variant):
 	replay_buffer_kwargs['env'] = expl_env
 	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
 		obs_dim=obs_dim,
-		# pf=pf,
-		pf=None,
+		pf=pf,
+		# pf=None,
 		**replay_buffer_kwargs,
 	)
 
@@ -848,8 +829,8 @@ def experiment(variant):
 			target_qf1=target_qf1,
 			qf2=qf2,
 			target_qf2=target_qf2,
-			# pf=pf,
-			pf=None,
+			pf=pf,
+			# pf=None,
 			obs_dim=current_obs_dim,
 			**variant['trainer_kwargs']
 		)

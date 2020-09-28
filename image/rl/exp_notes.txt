@@ -102,3 +102,6 @@ test54: same as test53 but hard boundary user input
 *_1001: 100 successes
 *_1002: hard boundary user input
 *_1003: 400 time steps
+debug-lightswitch13: multiple targets, user input, still diff-distance reward
+debug-lightswitch19: no shaping, only input penalty
+debug-lightswitch23: stack observations no target position

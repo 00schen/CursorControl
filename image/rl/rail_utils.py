@@ -41,7 +41,7 @@ def shaping_adapt(self,path):
 	while not done:
 		info = next(info_iter)
 		done = next(done_iter)
-		new_path['rewards'].append(.1*(info['task_success']-1)+info['diff_distance'])
+		new_path['rewards'].append(self.shaping*((info['task_success'] - 1) + 50*info['diff_distance']))
 
 	path.update(new_path)
 	return path
