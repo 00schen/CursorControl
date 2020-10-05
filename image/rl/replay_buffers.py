@@ -11,6 +11,17 @@ import torch as th
 import torch.nn.functional as F
 from collections import deque
 
+class PavlovReplayBuffer(SimpleReplayBuffer):
+	def __init__(self,max_replay_buffer_size,observation_dim,action_dim,):
+		super().__init__(max_replay_buffer_size,observation_dim,action_dim,{})
+		
+	def add_sample(self, observation, action, reward, next_observation,terminal, env_info, **kwargs):
+		self._observations[self._top] = observation
+		self._actions[self._top] = action
+		self._rewards[self._top] = reward
+		self._terminals[self._top] = env_info['task_success']
+		self._next_obs[self._top] = next_observation
+
 class PavlovSubtrajReplayBuffer(ReplayBuffer):
 	def __init__(
 		self,
@@ -62,7 +73,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			obs = th.as_tensor(self._observations[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
 			next_obs = th.as_tensor(self._next_obs[:self._top,[i],:self._current_obs_dim]).transpose(0,1)
 			action = th.as_tensor(self._actions[:self._top,[i],:]).transpose(0,1)
-			
+
 			"""pf embeddings"""
 			# obs_prediction = th.zeros((1,self._top,self._action_dim))
 			# next_prediction = th.zeros((1,self._top,self._action_dim))
@@ -82,7 +93,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			# # 	obs_prediction[...,j],next_prediction[...,j] = obs_pred.squeeze(),next_pred.squeeze()
 			# 	obs_preds.append(obs_pred.squeeze())
 			# 	next_preds.append(next_pred.squeeze())
-			
+
 
 			# self._observations[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(obs_pf_hx,dim=2).squeeze().cpu().detach().numpy()
 			# self._next_obs[:self._top,i,-self.end[0]:-self.end[1]] = th.cat(next_pf_hx,dim=2).squeeze().cpu().detach().numpy()
@@ -116,7 +127,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 
 		# self._observations[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
 		# self._next_obs[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
-		
+
 		# self._nonnoops[self._sample,:n_items] = np.array([not env_info['noop'] for env_info in path['env_infos'][1:]]+[False])[:,np.newaxis]
 		# self._targets[self._sample,:n_items,:] = np.array([env_info['targets'][env_info['target_index']] for env_info in path['env_infos']])
 		# self._targets[self._sample,:n_items] = np.array([env_info['target_index'] for env_info in path['env_infos']])[:,np.newaxis]
@@ -234,7 +245,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		self._index = d['index']
 		self._valid_start_indices = d['valid_start_indices']
 		self._valid_indices = d['valid_indices']
-		
+
 		self._observations[:self._top] = d["observations"]
 		self._next_obs[:self._top] = d["next_obs"]
 		self._actions[:self._top] = d["actions"]

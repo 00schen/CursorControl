@@ -10,8 +10,6 @@ from railrl.torch.torch_rl_algorithm import (
 
 from railrl.torch.networks import Mlp
 from railrl.torch.dqn.double_dqn import DoubleDQNTrainer
-from torch.nn import LSTM as PytorchLSTM
-from torch.nn import Linear, PReLU
 
 from railrl.demos.source.mdp_path_loader import MDPPathLoader
 
@@ -35,39 +33,6 @@ from railrl.core.timer import timer
 
 from replay_buffers import *
 
-class LSTM(PyTorchModule):
-	def __init__(self, input_size, output_size, output_activation=identity, **kwargs):
-		super().__init__()
-		hidden_size = kwargs.pop('hidden_size',256)
-		self.use_random = kwargs.pop('use_random',False)
-		self.embed_fc1 = Linear(input_size,hidden_size)
-		self.embed_fc2 = Linear(hidden_size,hidden_size)
-		self.embed_fc3 = Linear(hidden_size,hidden_size)
-		self.lstm = PytorchLSTM(hidden_size, hidden_size, **kwargs)
-		self.last_fc = Linear(hidden_size, output_size*2)
-		self.output_activation = output_activation
-		self.input_size = input_size
-		self.hidden_size = self.lstm.hidden_size
-		self.output_size = output_size
-
-	def forward(self, inputs, hx=None):
-		embedding = F.leaky_relu(self.embed_fc1(inputs))
-		embedding = F.leaky_relu(self.embed_fc2(embedding))
-		embedding = F.leaky_relu(self.embed_fc3(embedding))
-
-		if hx is not None:
-			out,out_hx = self.lstm.forward(embedding,hx)
-		else:
-			out,out_hx = self.lstm.forward(embedding)
-		params = self.output_activation(self.last_fc(out))
-		mean,std = params[...,:self.output_size],th.exp(params[...,self.output_size:])
-		dist = Normal(mean,std)
-		if self.use_random:
-			output = dist.mean
-		else:
-			output = dist.rsample()
-		return output,out_hx
-
 class OneHotCategorical(Distribution,TorchOneHot):
 	def rsample_and_logprob(self):
 		s = self.sample()
@@ -75,14 +40,11 @@ class OneHotCategorical(Distribution,TorchOneHot):
 		return s, log_p
 
 class ArgmaxDiscretePolicy(PyTorchModule):
-	def __init__(self, qf1, qf2, pf, obs_dim, env):
+	def __init__(self, qf1, qf2):
 		super().__init__()
 		self.qf1 = qf1
 		self.qf2 = qf2
-		self.pf = pf
-		self.obs_dim = obs_dim
 		self.action_dim = qf1.output_size
-		self.env = env
 
 	def get_action(self, obs):
 		if isinstance(obs,np.ndarray):
@@ -90,46 +52,20 @@ class ArgmaxDiscretePolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		# obs, concat_obs = obs[-self.obs_dim:], obs[3:]
-		obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
-			# input_predictions = []
-			# for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
-			# 	if next(self.qf1.parameters()).is_cuda:
-			# 		oh_action = oh_action.cuda()
-			# 	single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
-			# 	input_predictions.append(single_prediction.squeeze())
-			# input_prediction = th.mean(th.stack(input_predictions),dim=0)
-			# if next(self.qf1.parameters()).is_cuda:
-			# 	input_prediction = input_prediction.cuda()
-
-			# Uses t-1 hidden state with current input prediction
-			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze()))
-			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
-
+			q_values = th.min(self.qf1(obs),self.qf2(obs))
 			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
-			# prediction, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
-		# return action.cpu().numpy(), {'pred_dist': norm(prediction.squeeze().cpu().detach().numpy()-self.env.env.target_pos), }
 		return action.cpu().numpy(), {}
 
 	def reset(self):
 		pass
-		# if next(self.qf1.parameters()).is_cuda:
-		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
-		# else:
-		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
 
 class BoltzmannPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2, pf, obs_dim, env, logit_scale=100):
+	def __init__(self, qf1, qf2, logit_scale=100):
 		super().__init__()
 		self.qf1 = qf1
 		self.qf2 = qf2
-		self.pf = pf
-
 		self.logit_scale = logit_scale
-		self.obs_dim = obs_dim
-		self.action_dim = qf1.output_size
-		self.env = env
 
 	def get_action(self, obs):
 		if isinstance(obs,np.ndarray):
@@ -137,33 +73,14 @@ class BoltzmannPolicy(PyTorchModule):
 		if next(self.qf1.parameters()).is_cuda:
 			obs = obs.cuda()
 
-		# obs, concat_obs = obs[-self.obs_dim:], obs[3:]
-		obs, concat_obs = obs[-self.obs_dim:], obs
 		with th.no_grad():
-			input_predictions = []
-			# for i,oh_action in enumerate(F.one_hot(th.arange(0,self.action_dim),self.action_dim)):
-			# 	if next(self.qf1.parameters()).is_cuda:
-			# 		oh_action = oh_action.cuda()
-			# 	single_prediction,pf_hx = self.pf(th.cat((obs,oh_action)).reshape((1,1,-1)),self.pf_hx)
-			# 	input_predictions.append(single_prediction.squeeze())
-			# input_prediction = th.mean(th.stack(input_predictions),dim=0)
-			# if next(self.qf1.parameters()).is_cuda:
-			# 	input_prediction = input_prediction.cuda()
-
-			# Uses t-1 hidden state with current input prediction
-			# concat_obs = th.cat((concat_obs,self.pf_hx[0].squeeze(),self.pf_hx[1].squeeze(),))
-			q_values = th.min(self.qf1(concat_obs),self.qf2(concat_obs))
+			q_values = th.min(self.qf1(obs),self.qf2(obs))
 
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
-			# _pred, self.pf_hx = self.pf(th.cat((obs,action)).reshape((1,1,-1)),self.pf_hx)
 		return action.cpu().numpy(), {}
 
 	def reset(self):
 		pass
-		# if next(self.qf1.parameters()).is_cuda:
-		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)).cuda(),th.zeros((1,1,self.pf.hidden_size)).cuda())
-		# else:
-		# 	self.pf_hx = (th.zeros((1,1,self.pf.hidden_size)),th.zeros((1,1,self.pf.hidden_size)))
 
 class HybridAgent:
 	def __init__(self, policy):
@@ -180,12 +97,9 @@ class HybridAgent:
 		self.policy.reset()
 
 class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
-	def __init__(self, num_pf_trains_per_train_loop, pf_train_frequency, traj_batch_size, *args, **kwargs):
+	def __init__(self, *args, **kwargs):
 		self.dump_tabular = kwargs.pop('dump_tabular',True)
 		super().__init__(*args,**kwargs)
-		self.num_pf_trains_per_train_loop = num_pf_trains_per_train_loop
-		self.pf_train_frequency = pf_train_frequency
-		self.traj_batch_size = traj_batch_size
 
 	def train(self):
 		timer.return_global_times = True
@@ -241,13 +155,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 				timer.stop_timer('replay buffer data storing')
 
 				timer.start_timer('training', unique=False)
-				# if self.epoch % self.pf_train_frequency == 0:
-				# 	self.trainer.reset_pf()
-				# 	for _ in range(self.num_pf_trains_per_train_loop):
-				# 		train_data = self.replay_buffer.random_traj_batch(self.traj_batch_size)
-				# 		self.trainer.train_pf(train_data)
-				# 	with th.no_grad():
-				# 		self.replay_buffer.update_embeddings()
 				for _ in range(self.num_trains_per_train_loop):
 					train_data = self.replay_buffer.random_batch(self.batch_size)
 					self.trainer.train(train_data)
@@ -256,7 +163,7 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 		return log_stats, False
 
 class DQNPavlovTrainer(DoubleDQNTrainer):
-	def __init__(self,qf1,target_qf1,qf2,target_qf2,pf,obs_dim,pf_lr=3e-4,pf_decay=1e-4,**kwargs):
+	def __init__(self,qf1,target_qf1,qf2,target_qf2,**kwargs):
 		super().__init__(qf1,target_qf1,**kwargs)
 		self.qf1 = qf1
 		self.target_qf1 = target_qf1
@@ -267,126 +174,13 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			self.qf2.parameters(),
 			lr=self.learning_rate,
 		)
-		self.pf = pf
-		self.pf_lr = pf_lr
-		# self.pf_optimizer = optim.Adam(
-		# 	self.pf.parameters(),
-		# 	weight_decay=pf_decay,
-		# 	lr=pf_lr,
-		# )
-		self.obs_dim = obs_dim
-		self.action_dim = qf1.output_size
-
-	def reset_pf(self):
-		for name, module in self.pf.named_children():
-			module.reset_parameters()
-
-	def train_pf(self, batch):
-		batch = np_to_pytorch_batch(batch)
-
-		rewards = batch['rewards'].transpose(0,1)
-		# terminals = batch['terminals'].transpose(0,1)
-		obs = batch['observations'][:,:,-self.obs_dim:].transpose(0,1)
-		actions = batch['actions'].transpose(0,1)
-		# next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
-		# targets = batch['targets'].transpose(0,1)
-		nonnoops = batch['nonnoops']
-		lengths = batch['lengths']
-
-		"""
-		Prediction loss
-		"""
-		nonnoop_pred, _pf_hx = self.pf(th.cat((obs,actions),dim=2))
-		pf_loss_grid = CrossEntropyLoss(weight=th.tensor([nonnoops.mean(),1-nonnoops.mean()]),reduction='none')(nonnoop_pred,nonnoops.long())
-		pf_accuracy = th.eq(nonnoop_pred.clone().detach().max(2,keepdim=True)[1],nonnoops).float().mean()
-
-		# target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
-		# pf_loss_grid = (target_pred-targets).pow(2).sum(dim=-1)
-		# pf_loss_grid = CrossEntropyLoss(reduction='none')\
-		# 	(target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
-		# pf_accuracy = th.eq(target_pred.clone().detach().max(2,keepdim=True)[1],targets).float().squeeze()
-
-		row_vector = th.arange(0, obs.size()[0], 1)
-		if next(self.qf1.parameters()).is_cuda:
-			row_vector = row_vector.cuda()
-		mask = (row_vector < lengths).transpose(0,1)
-		pf_loss = pf_loss_grid.masked_select(mask).mean()
-		# pf_accuracy = pf_accuracy.masked_select(mask).mean()
-		pf_accuracy = pf_loss_grid.masked_select(mask).pow(.5).mean()
-
-		"""
-		Update Prediction network
-		"""
-		self.pf_optimizer.zero_grad()
-		pf_loss.backward()
-		self.pf_optimizer.step()
-
-		"""
-		Save some statistics for eval using just one batch.
-		"""
-		self.eval_statistics['Training PF Loss'] = np.mean(ptu.get_numpy(pf_loss))
-		self.eval_statistics['PF Accuracy'] = np.mean(ptu.get_numpy(pf_accuracy))
-
-	def val_pf(self, batch):
-		batch = np_to_pytorch_batch(batch)
-
-		rewards = batch['rewards'].transpose(0,1)
-		terminals = batch['terminals'].transpose(0,1)
-		obs = batch['observations'][:,:,-self.obs_dim:].transpose(0,1)
-		actions = batch['actions'].transpose(0,1)
-		next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
-		targets = batch['targets'].transpose(0,1)
-		lengths = batch['lengths']
-
-		"""
-		Prediction loss
-		"""
-		# input_pred, _pf_hx = self.pf(th.cat((obs,actions),dim=2))
-		# input_pred = th.cat((1.-input_pred,input_pred),dim=2)
-		# # input_pred = th.clamp(input_pred,min=1e-9,max=1-1e-9)
-		# if next(self.qf1.parameters()).is_cuda:
-		# 	weights = th.tensor([.2,.8]).cuda()
-		# else:
-		# 	weights = th.tensor([.2,.8])
-		# pf_loss = -th.gather(input_pred.log()*weights,2,inputs.long()).mean()*2
-		# pf_accuracy = th.eq(input_pred.clone().detach().max(2,keepdim=True)[1],inputs).float().mean()
-		# pf_loss1 = -th.gather(input_pred.clone().detach(),2,inputs.long()).log().mean()
-
-		with th.no_grad():
-			target_pred, _pf_hx = self.pf(th.cat((obs,actions,),dim=2))
-			pf_loss_grid = (target_pred-targets).pow(2).sum(dim=-1)
-			# pf_loss_grid = CrossEntropyLoss(reduction='none')\
-			# 	(target_pred.reshape((-1,list(target_pred.size())[-1])),targets.flatten().long()).reshape(list(target_pred.size())[:-1])
-			# pf_accuracy = th.eq(target_pred.clone().detach().max(2,keepdim=True)[1],targets).float().squeeze()
-
-			row_vector = th.arange(0, obs.size()[0], 1)
-			if next(self.qf1.parameters()).is_cuda:
-				row_vector = row_vector.cuda()
-			mask = (row_vector < lengths).transpose(0,1)
-			pf_loss = pf_loss_grid.masked_select(mask).mean()
-			# pf_accuracy_mean = pf_accuracy.masked_select(mask).mean()
-			# pf_accuracy_std = pf_accuracy.masked_select(mask).std()
-			pf_accuracy_mean = pf_loss_grid.masked_select(mask).pow(.5).mean()
-			pf_accuracy_std = pf_loss_grid.masked_select(mask).pow(.5).std()
-
-
-		"""
-		Save some statistics for eval using just one batch.
-		"""
-		# self.eval_statistics['PF Loss'] = np.mean(ptu.get_numpy(pf_loss1))
-		self.eval_statistics['Validation PF Loss'] = np.mean(ptu.get_numpy(pf_loss))
-		self.eval_statistics['Validation PF Accuracy Mean'] = np.mean(ptu.get_numpy(pf_accuracy_mean))
-		self.eval_statistics['Validation PF Accuracy Std'] = np.mean(ptu.get_numpy(pf_accuracy_std))
 
 	def train_from_torch(self, batch):
 		rewards = batch['rewards']
-		# terminals = batch['terminals']
-		successes = batch['successes']
+		terminals = batch['terminals']
 		actions = batch['actions']
 		concat_obs = batch['observations']
 		concat_next_obs = batch['next_observations']
-		# print(rewards.mean(),rewards[:5])
-		# print(self.discount)
 
 		"""
 		Q loss
@@ -401,15 +195,13 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 											1, best_action_idxs
 										)
 								)
-		y_target = rewards + (1. - successes) * self.discount * target_q_values
+		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
 		y1_pred = th.sum(self.qf1(concat_obs) * actions, dim=1, keepdim=True)
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(self.qf2(concat_obs) * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)
-		# print(y_target[:10])
-		# print(y1_pred[:10])
 
 		"""
 		Update Q networks
@@ -451,7 +243,6 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			self.target_qf1,
 			self.qf2,
 			self.target_qf2,
-			# self.pf,
 		]
 		return nets
 
@@ -471,14 +262,11 @@ def demonstration_factory(base):
 			super().__init__(config)
 			self.target_index = 0
 			self.num_targets = self.env.num_targets
-			self.num_rounds = 0
 
 		def next_target(self):
 			self.target_index += 1
-			if self.target_index == self.env.num_targets:
-				self.num_rounds += 1
-				self.target_index = 0
-			return self
+		def reset_target(self):
+			self.target_index = 0
 
 		def reset(self):
 			target_index = self.target_index
@@ -508,7 +296,7 @@ def collect_demonstrations(variant):
 	num_successes = 0
 	fail_paths = deque([],int(demo_kwargs['min_successes']*(1/demo_kwargs['min_success_rate']-1)))
 	while num_successes < demo_kwargs['min_successes']:
-		while env.num_rounds < 1:
+		while env.target_index < env.num_targets:
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
 				demo_kwargs['path_length'],
@@ -519,12 +307,13 @@ def collect_demonstrations(variant):
 				if path['env_infos'][-1]['task_success']:
 					paths.append(path)
 					success = True
+					num_successes += 1
 				else:
 					fail_paths.append(path)
 			if success:
 				env.next_target()
-			num_successes += success
 			print("total paths collected: ", len(paths), "total successes: ", num_successes)
+		env.reset_target()
 	paths.extend(fail_paths)
 
 	return paths
@@ -540,17 +329,11 @@ def eval_exp(variant):
 	file_name = os.path.join(variant['save_path'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
 	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
-	# pf = th.load(file_name,map_location=th.device("cpu"))['trainer/pf']
 
 	policy_kwargs = variant['policy_kwargs']
-	# policy = ArgmaxDiscretePolicy(
-	policy = BoltzmannPolicy(
+	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		# pf=pf,
-		pf=None,
-		obs_dim=current_obs_dim,
-		env=eval_env,
 		logit_scale=1000,
 		**policy_kwargs,
 	)
@@ -592,14 +375,11 @@ def resume_exp(variant):
 	target_qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/target_qf1']
 	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
 	target_qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/target_qf2']
-	pf = th.load(file_name,map_location=th.device("cpu"))['trainer/pf']
 
 	policy_kwargs = variant['policy_kwargs']
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		pf=pf,
-		obs_dim=current_obs_dim,
 		**policy_kwargs,
 	)
 
@@ -616,9 +396,7 @@ def resume_exp(variant):
 		if exploration_strategy is None:
 			pass
 		elif exploration_strategy == 'boltzmann':
-			expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,logit_scale=exploration_kwargs['logit_scale'],**policy_kwargs)
-		elif exploration_strategy == 'epsilon_greedy':
-			expl_policy = EpsilonGreedyPolicy(qf1,qf2,pf,action_dim,epsilon=exploration_kwargs['epsilon'],**policy_kwargs)
+			expl_policy = BoltzmannPolicy(qf1,qf2,logit_scale=exploration_kwargs['logit_scale'],**policy_kwargs)
 		else:
 			error
 
@@ -630,8 +408,6 @@ def resume_exp(variant):
 			target_qf1=target_qf1,
 			qf2=qf2,
 			target_qf2=target_qf2,
-			pf=pf,
-			obs_dim=current_obs_dim,
 			**variant['trainer_kwargs']
 		)
 	else:
@@ -648,104 +424,10 @@ def resume_exp(variant):
 		exploration_data_collector=expl_path_collector,
 		evaluation_data_collector=eval_path_collector,
 		replay_buffer=replay_buffer,
-		max_path_length=variant['max_path_length'],
-		batch_size=variant['batch_size'],
-		traj_batch_size=variant['traj_batch_size'],
-		num_epochs=variant['num_epochs'],
-		num_eval_steps_per_epoch=variant['num_eval_steps_per_epoch'],
-		num_expl_steps_per_train_loop=variant['num_expl_steps_per_train_loop'],
-		num_pf_trains_per_train_loop=variant['num_pf_trains_per_train_loop'],
-		num_trains_per_train_loop=variant['num_trains_per_train_loop'],
-		min_num_steps_before_training=variant['min_num_steps_before_training'],
-		user_eval_mode=variant['user_eval_mode']
+		**variant['algorithm_args']
 	)
 	algorithm.to(ptu.device)
 	algorithm.train()
-
-from railrl.core import logger
-from tqdm import trange
-from rail_utils import *
-def pf_exp(variant):
-	env_class = railrl_class(wrapper([],default_class),[cap_adapt])
-	env_kwargs = variant.get('env_kwargs', {})
-	eval_env = make(None, env_class, env_kwargs, False)
-	expl_env = make(None, env_class, env_kwargs, False)
-	expl_env.seed(variant['seedid'])
-	eval_env.seed(variant['seedid'])
-
-	if variant.get('add_env_demos', False):
-		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_demo_path"])
-	if variant.get('add_env_offpolicy_data', False):
-		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_offpolicy_data_path"])
-
-	path_loader_kwargs = variant.get("path_loader_kwargs", {})
-	action_dim = eval_env.action_space.low.size
-	current_obs_dim = expl_env.current_obs_dim
-
-	pf_kwargs = variant.get("pf_kwargs", {})
-	pf = LSTM(
-		input_size=current_obs_dim+action_dim,
-		# output_size=eval_env.env.num_targets,
-		output_size=3,
-		# output_activation=th.sigmoid,
-		**pf_kwargs
-	)
-	_qf = Mlp(
-		input_size=1,
-		output_size=1,
-		hidden_sizes=[1]
-	)
-
-	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
-	replay_buffer_kwargs['env'] = expl_env
-	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
-		obs_dim=current_obs_dim,
-		pf=pf,
-		**replay_buffer_kwargs,
-	)
-
-	trainer_class = variant.get("trainer_class", DQNPavlovTrainer)
-	if trainer_class == DQNPavlovTrainer:
-		trainer = trainer_class(
-			qf1=_qf,
-			target_qf1=_qf,
-			qf2=_qf,
-			target_qf2=_qf,
-			pf=pf,
-			obs_dim=current_obs_dim,
-			**variant['trainer_kwargs']
-		)
-	else:
-		error
-
-	path_loader_class = variant.get('path_loader_class', MDPPathLoader)
-	path_loader = path_loader_class(trainer,
-		replay_buffer=replay_buffer,
-		demo_train_buffer=replay_buffer,
-		demo_test_buffer=replay_buffer,
-		**path_loader_kwargs
-	)
-	path_loader.load_demos()
-
-	for net in trainer.networks:
-		net.to(ptu.device)
-	# for _ in range(20):
-	for _ in range(1):
-		for _i in range(variant['algorithm_args']['num_pf_trains_per_train_loop']):
-			train_data = replay_buffer.random_traj_batch(variant['algorithm_args']['traj_batch_size'])
-			trainer.train_pf(train_data)
-			val_data = replay_buffer.val_random_traj_batch(variant['algorithm_args']['traj_batch_size'])
-			trainer.val_pf(val_data)
-		logger.record_dict(trainer.get_diagnostics())
-		logger.dump_tabular(with_prefix=True, with_timestamp=False)
-
-	print(replay_buffer._top)
-	predictions = [pf(th.cat((obs[:length[0],np.newaxis,-current_obs_dim:].float(),
-								action[:length[0],np.newaxis,:].float()),dim=2))[0].squeeze().cpu().detach().numpy()
-	 for obs,action,length in zip(th.tensor(replay_buffer._observations[:replay_buffer._top]).cuda(),
-	 						th.tensor(replay_buffer._actions[:replay_buffer._top]).cuda(),
-							replay_buffer._lengths[:replay_buffer._top])]
-	np.save(os.path.join(variant['save_path'],'predictions_1000'), predictions)
 
 def experiment(variant):
 	env_class = variant.get('env_class', None)
@@ -764,16 +446,7 @@ def experiment(variant):
 	action_dim = eval_env.action_space.low.size
 	current_obs_dim = expl_env.current_obs_dim
 
-	# pf_kwargs = variant.get("pf_kwargs", {})
-	# pf = LSTM(
-	# 	input_size=current_obs_dim+action_dim,
-	# 	# output_size=expl_env.env.num_targets,
-	# 	output_size=3,
-	# 	# output_activation=th.sigmoid,
-	# 	**pf_kwargs
-	# )
 	obs_dim = expl_env.observation_space.low.size
-	# obs_dim += pf.hidden_size
 	qf_kwargs = variant.get("qf_kwargs", {})
 	qf1 = Mlp(
 		input_size=obs_dim,
@@ -804,10 +477,6 @@ def experiment(variant):
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		# pf=pf,
-		pf=None,
-		obs_dim=current_obs_dim,
-		env=eval_env,
 		**policy_kwargs,
 	)
 
@@ -825,22 +494,16 @@ def experiment(variant):
 		if exploration_strategy is None:
 			pass
 		elif exploration_strategy == 'boltzmann':
-			# expl_policy = BoltzmannPolicy(qf1,qf2,pf,current_obs_dim,
-			expl_policy = BoltzmannPolicy(qf1,qf2,None,current_obs_dim,
+			expl_policy = BoltzmannPolicy(qf1,qf2,
 										logit_scale=exploration_kwargs['logit_scale'],
-										env=expl_env,
 										**policy_kwargs)
 			# expl_policy = HybridAgent(expl_policy)
-			expl_policy = expl_policy
 		else:
 			error
 
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
-	replay_buffer_kwargs['env'] = expl_env
-	replay_buffer = variant.get('replay_buffer_class', PavlovSubtrajReplayBuffer)(
-		obs_dim=obs_dim,
-		# pf=pf,
-		pf=None,
+	replay_buffer_kwargs.update({'observation_dim':obs_dim,'action_dim':action_dim})
+	replay_buffer = variant.get('replay_buffer_class', PavlovReplayBuffer)(
 		**replay_buffer_kwargs,
 	)
 
@@ -851,9 +514,6 @@ def experiment(variant):
 			target_qf1=target_qf1,
 			qf2=qf2,
 			target_qf2=target_qf2,
-			# pf=pf,
-			pf=None,
-			obs_dim=current_obs_dim,
 			**variant['trainer_kwargs']
 		)
 	else:

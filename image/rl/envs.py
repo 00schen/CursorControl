@@ -174,7 +174,7 @@ def shared_autonomy_factory(base):
 		def predict(self,obs,info):
 			recommend,self.oracle_info = self.oracle.get_action(obs,info)
 
-			info['recommend'] = recommend
+			# info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
 
 			return np.concatenate((obs,recommend))
@@ -199,7 +199,7 @@ def window_factory(base):
 
 			self.history.append(obs)
 			self.is_nonnoop.append((not info['noop']))
-			info['current_obs'] = obs
+			# info['current_obs'] = obs
 
 			# return np.concatenate((*self.env.targets,*self.prev_nonnoop,*self.history,)),r,done,info
 			return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
