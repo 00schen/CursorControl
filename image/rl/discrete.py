@@ -11,6 +11,8 @@ import argparse
 from copy import deepcopy,copy
 import os
 
+# from filelock import FileLock
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name',)
 parser.add_argument('--job',)
@@ -52,9 +54,9 @@ if __name__ == "__main__":
 	path_length = 200
 	variant = dict(
 		algorithm_args=dict(
-			num_epochs=1000,
-			num_eval_steps_per_epoch=path_length,
-			# num_eval_steps_per_epoch=0,
+			num_epochs=100,
+			# num_eval_steps_per_epoch=path_length,
+			num_eval_steps_per_epoch=0,
 			num_trains_per_train_loop=100,
 			# num_trains_per_train_loop=0,
 			num_expl_steps_per_train_loop=path_length,
@@ -131,11 +133,11 @@ if __name__ == "__main__":
 			# ],
 
 			demo_paths=[dict(
-					path=os.path.join(os.path.abspath(''),f"demos/{args.env_name}_usermodel_1002.npy"),
-					obs_dict=False,
-					is_demo=False,
-					train_split=1,
-				)],
+						path=os.path.join(os.path.abspath(''),"demos",demo),
+						obs_dict=False,
+						is_demo=False,
+						train_split=1,
+						) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboardinput" in demo],
 			# add_demos_to_replay_buffer=False,
 		),
 		# add_env_demos=True,
@@ -147,49 +149,49 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		pretrain_rl=args.pretrain,
-		save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch23','run3','id0',),
+		# save_path = os.path.join(os.path.abspath(''),'logs','debug-lightswitch23','run3','id0',),
 
 		demo_kwargs=dict(
-			total_paths=500,
-			fails_per_success=0,
+			min_successes=500,
+			min_success_rate=1,
 			path_length=path_length,
-			save_name=f"{args.env_name}_usermodel_1002"
+			save_name=f"{args.env_name}_keyboardinput_"
 		)
 	)
 	from agents import *
 	config = deepcopy(default_config)
 	config.update(dict(
 		env_name=args.env_name,
-		oracle=UserModelAgent,
+		oracle=KeyboardAgent,
 		# num_obs=1,
 		# num_nonnoop=10,
 		action_type='disc_traj',
+		traj_len=.05,
+		# traj_len=.2 if args.env_name == 'Laptop' else .5 if args.env_name == 'Feeding' else 1,
 		cap=0,
 		step_limit=path_length,
 		action_clip=.1,
-		env_kwargs=dict(success_dist=.05),
+		env_kwargs=dict(success_dist=.03,frame_skip=5),
 	))
-	wrapper_class = railrl_class(wrapper([window_factory,cap_factory],default_class),
+	wrapper_class = railrl_class(wrapper([window_factory,cap_factory,],default_class),
 					[window_adapt,cap_adapt,])
-	# wrapper_class = railrl_class(wrapper([shared_autonomy_factory,window_factory,target_factory,shaping_factory],sparse_factory(None)),
-	# 				[window_adapt,target_adapt,shaping_adapt])
-	# wrapper_class = railrl_class(wrapper([window_factory,target_factory,metric_factory,shaping_factory],default_class),
-					# [cap_adapt,window_adapt,target_adapt,shaping_adapt])
+	
 	variant.update(dict(
 		env_class=wrapper_class if args.job != 'demo' else init_factory(default_class),
+		# env_class=wrapper_class if args.job != 'demo' else default_class,
 		env_kwargs={'config':config},
 	))
 
 	search_space = {
 		'seedid': [2000],
 		'env_kwargs.config.input_penalty': [1],
-		# 'env_kwargs.config.shaping': [0],
-		'trainer_kwargs.learning_rate': [1e-4,],
-		# 'trainer_kwargs.soft_target_tau': [1e-3,3e-3,5e-3,7e-3],
-		'trainer_kwargs.soft_target_tau': [.0001,.0003,.0005,.001],
+		'env_kwargs.config.shaping': [0],
+		'trainer_kwargs.learning_rate': [5e-4],
+		'trainer_kwargs.soft_target_tau': [.0003,],
 		'trainer_kwargs.target_update_period': [100,],
-		'trainer_kwargs.discount': [1,],
-		'path_loader_kwargs.add_demos_to_replay_buffer': [True,False],
+		'trainer_kwargs.discount': [.995],
+		'path_loader_kwargs.add_demos_to_replay_buffer': [True],
+		# 'path_loader_kwargs.demo_paths': [[{**variant['path_loader_kwargs']['demo_paths'][0],**{'train_split':i}}] for i in [.2,.1,.05,.02]],
 
 		'algorithm_args.num_pf_trains_per_train_loop': [int(1),],
 		'pf_kwargs.num_layers': [1],
@@ -200,8 +202,9 @@ if __name__ == "__main__":
 		# 'env_kwargs.config.exploration_sd': [1e-6]
 		'env_kwargs.config.num_obs': [10],
 		'env_kwargs.config.num_nonnoop': [10,],
-		'exploration_kwargs.logit_scale': [int(3e2)]
+		'exploration_kwargs.logit_scale': [int(1e3)]
 	}
+	# variant['path_loader_kwargs'].pop('demo_paths')
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,
@@ -262,6 +265,7 @@ if __name__ == "__main__":
 		if args.job in ['exp']:
 			variant = variants[0]
 			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
+			variant['replay_buffer_kwargs']['max_num_traj']=600
 			variant['render'] = args.no_render
 			variant['algorithm_args']['dump_tabular'] = args.dump_tabular
 			run_variants(experiment, [variant], process_args,run_id="run_0")
@@ -271,7 +275,12 @@ if __name__ == "__main__":
 			run_variants(eval_exp, [variant], process_args,run_id="evaluation")
 		elif args.job in ['demo']:
 			variant = variants[0]
+			import time
+			variant['seedid'] = time.time_ns()
 			variant['render'] = args.no_render
-			variant['demo_kwargs']['num_paths'] = variant['demo_kwargs']['total_paths']
+			variant['demo_kwargs']['min_successes'] = 12
+			variant['demo_kwargs']['min_success_rate'] = .1
 			variant['env_kwargs']['config']['action_type'] = 'trajectory'
-			collect_demonstrations(variant)
+			# variant['env_class'] = render_user_factory(variant['env_class'])
+			paths = collect_demonstrations(variant)
+			np.save(os.path.join("demos",variant['demo_kwargs']['save_name']+str(variant['seedid'])), paths)

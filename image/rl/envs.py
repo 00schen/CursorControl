@@ -123,6 +123,7 @@ def shared_autonomy_factory(base):
 			self.oracle = config['oracle'](self.env)
 			self.current_obs_dim = np.prod(self.env.observation_space.shape)+self.oracle.size
 			self.observation_space = spaces.Box(-np.inf,np.inf,(self.current_obs_dim,))
+			self.traj_len = config['traj_len']
 
 			if config['action_type'] in ['target', 'trajectory','disc_traj']:
 				self.pretrain = IKAgent(config)
@@ -138,7 +139,7 @@ def shared_autonomy_factory(base):
 					np.array((0,1,0)),
 					np.array((0,0,-1)),
 					np.array((0,0,1)),					
-				][index]
+				][index]*self.traj_len
 				return trajectory(traj)
 			self.translate = {
 				# 'target': target,
@@ -171,7 +172,7 @@ def shared_autonomy_factory(base):
 			return obs
 
 		def predict(self,obs,info):
-			recommend,_info = self.oracle.get_action(obs,info)
+			recommend,self.oracle_info = self.oracle.get_action(obs,info)
 
 			info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
@@ -280,35 +281,65 @@ def init_factory(base):
 			super().__init__(config)
 		def reset(self):
 			def init_start_pos(self,og_init_pos):
-				return og_init_pos + rng.uniform(-1, 1, size=3)
+				return og_init_pos + rng.uniform(-.3, .3, size=3)
 			self.env.init_start_pos = MethodType(init_start_pos,self.env)
 			obs = super().reset()
 			return obs
 	return InitPos
 
-# import pygame as pg
-# def feedback_factory(base):
-# 	SCREEN_SIZE = 250
-# 	class Feedback(base):
-# 		def __init__(self,config):
-# 			super().__init__(config)
-# 			self.screen = None
+import pygame as pg
+SCREEN_SIZE = 300
+def render_user_factory(base):
+	class RenderUser(base):
+		def __init__(self,config):
+			super().__init__(config)
 
-# 		def get_user_input(self,obs,info):
-# 			# if self.screen is not None:
-# 			# 	self.screen.fill(pg.color.THECOLORS["white"])
-# 			# 	font = pg.font.Font(None, 24)
-# 			# 	text = label
-# 			# 	text = font.render(text, 1, pg.color.THECOLORS["black"])
-# 			# 	self.screen.blit(text, (125,125))
-# 			pass
+		def setup_render(self):
+			pg.init()
+			self.screen = pg.display.set_mode((SCREEN_SIZE,SCREEN_SIZE))
+			pg.mouse.set_visible(False)
 
-# 		def render(self,mode=None):
-# 			# if mode == 'human':
-# 				# pg.init()
-# 				# self.screen = pg.display.set_mode((SCREEN_SIZE,SCREEN_SIZE))
-# 			return super().render(mode)
-# 	return Feedback
+		def render_input(self):
+			self.screen.fill(pg.color.THECOLORS["white"])
+			
+			center = np.array([SCREEN_SIZE//2,SCREEN_SIZE//2])
+			mouse_pos = self.oracle_info['mouse_pos']
+			choice_action = self.oracle_info['action']
+			rad2p = lambda rad: np.array([np.cos(rad),np.sin(rad)])
+			for i in range(1,13,2):
+				pg.draw.line(self.screen, (10,10,10,0), 1000*rad2p(np.pi*i/6)+center, 50*rad2p(np.pi*i/6)+center, 2)
+			pg.draw.circle(self.screen, (10,10,10,0), center, 50, 2)
+
+			font = pg.font.Font(None, 24)
+			for action,i in zip(['right','left','forward','backward','up','down'],[0,3,5,2,4,1]):
+				if action == choice_action:
+					text = font.render(action, 1, pg.color.THECOLORS["blue"])
+				else:
+					text = font.render(action, 1, pg.color.THECOLORS["black"])
+				self.screen.blit(text, 80*rad2p(np.pi*i/3)+center-np.array([text.get_width()/2,text.get_height()/2]))
+			if 'noop' == choice_action:
+				text = font.render('noop', 1, pg.color.THECOLORS["blue"])
+			else:
+				text = font.render('noop', 1, pg.color.THECOLORS["black"])
+			self.screen.blit(text, center-np.array([text.get_width()/2,text.get_height()/2]))
+
+			pg.draw.circle(self.screen, (76,187,23,0), mouse_pos, 5)
+
+			pg.display.flip()
+			pg.event.pump()
+
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			self.render_input()
+			return obs,r,done,info
+
+		def reset(self):
+			if self.setup_render:
+				self.setup_render()
+				self.setup_render = None
+			obs = super().reset()
+			return obs
+	return RenderUser
 
 default_config = {
 	'step_limit': 200,

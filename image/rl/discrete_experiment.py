@@ -285,10 +285,10 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		batch = np_to_pytorch_batch(batch)
 
 		rewards = batch['rewards'].transpose(0,1)
-		terminals = batch['terminals'].transpose(0,1)
+		# terminals = batch['terminals'].transpose(0,1)
 		obs = batch['observations'][:,:,-self.obs_dim:].transpose(0,1)
 		actions = batch['actions'].transpose(0,1)
-		next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
+		# next_obs = batch['next_observations'][:,:,-self.obs_dim:].transpose(0,1)
 		# targets = batch['targets'].transpose(0,1)
 		nonnoops = batch['nonnoops']
 		lengths = batch['lengths']
@@ -385,8 +385,8 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		actions = batch['actions']
 		concat_obs = batch['observations']
 		concat_next_obs = batch['next_observations']
-		print(rewards.mean())
-		print(self.discount)
+		# print(rewards.mean(),rewards[:5])
+		# print(self.discount)
 
 		"""
 		Q loss
@@ -408,8 +408,8 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(self.qf2(concat_obs) * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)
-		print(y_target[:10])
-		print(y1_pred[:10])
+		# print(y_target[:10])
+		# print(y1_pred[:10])
 
 		"""
 		Update Q networks
@@ -469,15 +469,15 @@ def demonstration_factory(base):
 	class DemonstrationEnv(base):
 		def __init__(self,config):
 			super().__init__(config)
-			self.target_index = -1
+			self.target_index = 0
+			self.num_targets = self.env.num_targets
+			self.num_rounds = 0
 
-		def __iter__(self):
-			return self
-		def __next__(self):
+		def next_target(self):
 			self.target_index += 1
 			if self.target_index == self.env.num_targets:
-				self.target_index = -1
-				raise StopIteration
+				self.num_rounds += 1
+				self.target_index = 0
 			return self
 
 		def reset(self):
@@ -498,31 +498,34 @@ def collect_demonstrations(variant):
 
 	path_collector = MdpPathCollector(
 		env,
-		DemonstrationAgent(env,lower_p=.8,upper_p=1),
+		DemonstrationAgent(env,lower_p=.8,upper_p=1,traj_len=env_kwargs['config']['traj_len']),
 	)
 
 	if variant.get('render',False):
 		env.render('human')
 	demo_kwargs = variant.get('demo_kwargs')
 	paths = []
-	for env_i in env:
-		print(env.target_index)
-		fail_paths = deque([],demo_kwargs['fails_per_success']*demo_kwargs['num_paths']//env.env.num_targets)
-		success_paths = deque([],demo_kwargs['num_paths']//env.env.num_targets)
-		while len(fail_paths) < fail_paths.maxlen or len(success_paths) < success_paths.maxlen:
+	num_successes = 0
+	fail_paths = deque([],int(demo_kwargs['min_successes']*(1/demo_kwargs['min_success_rate']-1)))
+	while num_successes < demo_kwargs['min_successes']:
+		while env.num_rounds < 1:
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
-				demo_kwargs['path_length']*4,
+				demo_kwargs['path_length'],
 				discard_incomplete_paths=True,
 			)
+			success = False
 			for path in collected_paths:
 				if path['env_infos'][-1]['task_success']:
-					success_paths.append(path)
+					paths.append(path)
+					success = True
 				else:
 					fail_paths.append(path)
-			print(len(fail_paths),len(success_paths))
-		paths.extend(fail_paths)
-		paths.extend(success_paths)
+			if success:
+				env.next_target()
+			num_successes += success
+			print("total paths collected: ", len(paths), "total successes: ", num_successes)
+	paths.extend(fail_paths)
 
 	return paths
 

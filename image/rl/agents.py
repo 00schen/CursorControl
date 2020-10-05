@@ -3,21 +3,10 @@ import pybullet as p
 from numpy.linalg import norm
 from envs import rng
 
-# class Trajectory:
-# 	def __init__(self,env):
-# 		self.env = env
-# 	def __call__(self,target_pos):
-# 		return self.env.target
-
 """Oracle Agents"""
-# class Oracle:
-# 	def __init__(self,env):
-# 		self.env = env
-# 		self.director = 
-# 	def reset(self):
-# 		pass
-
 class Agent:
+	def __init__(self):
+		self.size = 6
 	def reset(self):
 		pass
 
@@ -37,21 +26,31 @@ class TargetAgent(Agent):
 		action = self.env.target_pos
 		return action, {}
 
-class KeyboardAgent(Agent):
+import pygame as pg
+SCREEN_SIZE = 300
+class UserInputAgent(Agent):
 	def __init__(self,env):
-		self.size = 6
+		super().__init__()
+		self.env = env
+	def get_input(self):
+		pass
 	def get_action(self,obs,info=None):
-		action = np.zeros(self.size)
+		user_info = self.get_input()
+		action = {
+			'left': 	np.array([0,1,0,0,0,0]),
+			'right': 	np.array([1,0,0,0,0,0]),
+			'forward':	np.array([0,0,1,0,0,0]),
+			'backward':	np.array([0,0,0,1,0,0]),
+			'up':		np.array([0,0,0,0,0,1]),
+			'down':		np.array([0,0,0,0,1,0]),
+			'noop':		np.array([0,0,0,0,0,0])
+		}[self.action]
+		return action, user_info
+
+class KeyboardAgent(UserInputAgent):
+	def get_input(self):
 		keys = p.getKeyboardEvents()
 		inputs = {
-			p.B3G_LEFT_ARROW: 	np.array([0,1,0,0,0,0]),
-			p.B3G_RIGHT_ARROW: 	np.array([1,0,0,0,0,0]),
-			ord('e'):		 	np.array([0,0,1,0,0,0]),
-			ord('d'):		 	np.array([0,0,0,1,0,0]),
-			p.B3G_UP_ARROW:		np.array([0,0,0,0,0,1]),
-			p.B3G_DOWN_ARROW:	np.array([0,0,0,0,1,0])
-		}
-		prints = {
 			p.B3G_LEFT_ARROW: 	'left',
 			p.B3G_RIGHT_ARROW: 	'right',
 			ord('e'):		 	'forward',
@@ -59,63 +58,46 @@ class KeyboardAgent(Agent):
 			p.B3G_UP_ARROW:		'up',
 			p.B3G_DOWN_ARROW:	'down'
 		}
+		self.action = 'noop'
 		for key in inputs:
 			if key in keys and keys[key]&p.KEY_WAS_TRIGGERED:
-				action = inputs[key]
-				label = prints[key]
-				print(label)
-		if not np.count_nonzero(action):
-			label = 'noop'
-			print('noop')
-		return action, {}
+				self.action = inputs[key]
+			
+		return {"action": self.action}
 
-class MouseAgent:
-	def __init__(self,env):
-		self.size = 6
-	def get_action(self,obs,info=None):
-		action = np.zeros(self.size)
-		mouse_event = p.getMouseEvents()[-1]
-		new_mouse_pos = np.array([mouse_event[1],mouse_event[2]])
-		radians = np.arctan2(*(new_mouse_pos-self.og_mouse_pos))-np.pi/12
-		index = np.digitize([radians],np.linspace(0,2*np.pi,6,endpoint=False))
+class MouseAgent(UserInputAgent):
+	def get_input(self):
+		mouse_pos = pg.mouse.get_pos()
+		new_mouse_pos = np.array(mouse_pos)-np.array([SCREEN_SIZE//2,SCREEN_SIZE//2])
+		# new_mouse_pos = np.array(mouse_pos)-np.array(self.mouse_pos)
+		self.mouse_pos = mouse_pos
+		radians = (np.arctan2(*new_mouse_pos) - (np.pi/3) + (2*np.pi)) % (2*np.pi)
+		index = np.digitize([radians],np.linspace(0,2*np.pi,7,endpoint=True))[0]
 		inputs = {
-			3: 	np.array([0,1,0,0,0,0]),
-			0: 	np.array([1,0,0,0,0,0]),
-			1:	np.array([0,0,1,0,0,0]),
-			4:	np.array([0,0,0,1,0,0]),
-			2:	np.array([0,0,0,0,0,1]),
-			5:	np.array([0,0,0,0,1,0])
+			1:	'right',
+			4:	'left',
+			2:	'forward',
+			5:	'backward',
+			3:	'up',
+			6:	'down',
 		}
-		prints = {
-			3: 	'left',
-			0: 	'right',
-			1:	'forward',
-			4:	'backward',
-			2:	'up',
-			5:	'down'
-		}
-		if norm(new_mouse_pos-self.og_mouse_pos) > .1:
-			action = inputs[index]
-			label = prints[index]
-			print(label)
-		if not np.count_nonzero(action):
-			label = 'noop'
-			print('noop')
-		return action, {}
+		if norm(new_mouse_pos) > 50:
+			self.action = inputs[index]
+		else:
+			self.action = 'noop'
+		return {"mouse_pos": mouse_pos, "action": self.action}
 
-		def reset(self):
-			print(p.getMouseEvents())
-			mouse_event = p.getMouseEvents()[-1]
-			self.og_mouse_pos = np.array([mouse_event[1],mouse_event[2]])
+	def reset(self):
+		self.mouse_pos = pg.mouse.get_pos()
 
-class UserModelAgent:
+class UserModelAgent(Agent):
 	def __init__(self,env,threshold=.5):
+		super().__init__()
 		self.env = env
-		self.size = 6
 		self.threshold = threshold
 	def get_action(self,obs,info=None):
 		if self.prev_noop:
-			prob = info['cos_error'] < self.threshold
+			prob = (1-info['cos_error'])/2
 		else:
 			prob = info['cos_error'] < self.threshold
 		# prob = info['cos_error'] < self.threshold
@@ -134,8 +116,9 @@ class UserModelAgent:
 
 """Demonstration Agents"""
 class FollowerAgent:
-	def __init__(self,env):
+	def __init__(self,env,traj_len):
 		self.env = env
+		self.traj_len = traj_len
 	def get_action(self,obs,info=None):
 		recommend = obs[-6:]
 		if np.count_nonzero(recommend):
@@ -157,8 +140,7 @@ class FollowerAgent:
 
 
 		action = self.env.target_pos-self.env.tool_pos
-
-		return self.trajectory, {"action_index": self.action_index, "trajectory": self.trajectory}
+		return self.trajectory*self.traj_len, {"action_index": self.action_index, "trajectory": self.trajectory}
 	def reset(self):
 		self.trajectory = np.array([0,0,0])
 		self.action_count = 0
@@ -193,8 +175,8 @@ class EpsilonAgent:
 		self.action_index = 0
 
 class DemonstrationAgent:
-	def __init__(self,env,lower_p=.5,upper_p=1):
-		self.agents = [FollowerAgent(env.env),EpsilonAgent(env.env,epsilon=1/10)]
+	def __init__(self,env,lower_p=.5,upper_p=1,traj_len=.5):
+		self.agents = [FollowerAgent(env.env,traj_len),EpsilonAgent(env.env,epsilon=1/10)]
 		self.lower_p = lower_p
 		self.upper_p = upper_p
 	def get_action(self,obs,info=None):

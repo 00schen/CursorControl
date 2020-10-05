@@ -39,7 +39,7 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		# reason about the shape of the data
 		self._rewards = np.zeros((max_num_traj, traj_max, 1))
 		# self._terminals[i] = a terminal was received at time i
-		self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
+		# self._terminals = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		# self._nonnoops = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
 		# self._targets = np.zeros((max_num_traj, traj_max, 3),)
 		# self._recommends = np.zeros((max_num_traj, traj_max, 1), dtype='uint8')
@@ -108,11 +108,11 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 		# self._observations[self._sample,:n_items,:-self.pf.hidden_size] = path['observations']
 		self._actions[self._sample,:n_items,:] = path['actions']
 		self._rewards[self._sample,:n_items,:] = path['rewards']
-		self._terminals[self._sample,:n_items,:] = path['terminals']
+		# self._terminals[self._sample,:n_items,:] = path['terminals']
 		self._next_obs[self._sample,:n_items,:] = path['next_observations']
 		# self._next_obs[self._sample,:n_items,:-self.pf.hidden_size] = path['next_observations']
 		self._lengths[self._sample] = n_items
-		print(path['rewards'][-5:])
+		print(path['rewards'].mean())
 
 		# self._observations[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
 		# self._next_obs[self._sample,:n_items,-self.env.env.num_targets:] = np.array([np.arange(0,self.env.env.num_targets) == env_info['target_index'] for env_info in path['env_infos']])
@@ -146,8 +146,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			observations=self._observations[start_indices],
 			actions=self._actions[start_indices],
 			rewards=self._rewards[start_indices],
-			terminals=self._terminals[start_indices],
-			next_observations=self._next_obs[start_indices],
+			# terminals=self._terminals[start_indices],
+			# next_observations=self._next_obs[start_indices],
 			nonnoops=self._nonnoops[start_indices],
 			recommends=self._recommends[start_indices],
 			# targets=self._targets[start_indices],
@@ -164,8 +164,8 @@ class PavlovSubtrajReplayBuffer(ReplayBuffer):
 			observations=self._observations[start_indices],
 			actions=self._actions[start_indices],
 			rewards=self._rewards[start_indices],
-			terminals=self._terminals[start_indices],
-			next_observations=self._next_obs[start_indices],
+			# terminals=self._terminals[start_indices],
+			# next_observations=self._next_obs[start_indices],
 			nonnoops=self._nonnoops[start_indices],
 			recommends=self._recommends[start_indices],
 			# targets=self._targets[start_indices],
