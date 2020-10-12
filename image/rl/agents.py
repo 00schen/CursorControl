@@ -45,6 +45,7 @@ class UserInputAgent(Agent):
 			'down':		np.array([0,0,0,0,1,0]),
 			'noop':		np.array([0,0,0,0,0,0])
 		}[self.action]
+		print(self.action)
 		return action, user_info
 
 class KeyboardAgent(UserInputAgent):
@@ -91,22 +92,27 @@ class MouseAgent(UserInputAgent):
 		self.mouse_pos = pg.mouse.get_pos()
 
 class UserModelAgent(Agent):
-	def __init__(self,env,threshold=.5):
+	def __init__(self,env,threshold=.5,epsilon=0):
 		super().__init__()
 		self.env = env
 		self.threshold = threshold
+		self.epsilon = epsilon
 	def get_action(self,obs,info=None):
 		if self.prev_noop:
-			prob = (1-info['cos_error'])/2
+			prob = (1-info['cos_error'])/4
 		else:
 			prob = info['cos_error'] < self.threshold
-		# prob = info['cos_error'] < self.threshold
+		prob = info['cos_error'] < self.threshold
 		# prob = 0
 		action = np.zeros(self.size)
 		if rng.random() < prob:
 			traj = self.env.target_pos-self.env.tool_pos
 			axis = np.argmax(np.abs(traj))
-			action[2*axis+(traj[axis]>0)] = 1
+			if rng.random() > self.epsilon:
+				index = 2*axis+(traj[axis]>0)
+			else:
+				index = rng.integers(6)
+			action[index] = 1
 
 			# action[:3] = self.env.target_pos-self.env.tool_pos
 		self.prev_noop = not np.count_nonzero(action)

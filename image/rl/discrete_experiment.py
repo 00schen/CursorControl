@@ -32,7 +32,7 @@ from collections import OrderedDict
 from railrl.core.timer import timer
 
 from replay_buffers import *
-
+from envs import rng
 class OneHotCategorical(Distribution,TorchOneHot):
 	def rsample_and_logprob(self):
 		s = self.sample()
@@ -88,13 +88,41 @@ class HybridAgent:
 	def get_action(self,obs):
 		recommend = obs[-6:]
 		action,info = self.policy.get_action(obs)
-		print(recommend)
-		if np.count_nonzero(recommend):
+		# print(recommend)
+		self.step_count += 1
+		self.recommend_count += (np.count_nonzero(recommend) > 0)
+		if np.count_nonzero(recommend) and rng.random() > self.recommend_count/self.step_count:
 			return recommend,info
 		else:
 			return action, info
 	def reset(self):
 		self.policy.reset()
+		self.recommend_count = 0
+		self.step_count = 0
+
+class FullTrajPathCollector(MdpPathCollector):
+	def collect_new_paths(
+			self,
+			max_path_length,
+			num_steps,
+	):
+		paths = []
+		num_steps_collected = 0
+		while num_steps_collected < num_steps:
+			path = self._rollout_fn(
+				self._env,
+				self._policy,
+				max_path_length=max_path_length,
+				render=self._render,
+				render_kwargs=self._render_kwargs,
+			)
+			path_len = len(path['actions'])
+			num_steps_collected += path_len
+			paths.append(path)
+		self._num_paths_total += len(paths)
+		self._num_steps_total += num_steps_collected
+		self._epoch_paths.extend(paths)
+		return paths
 
 class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 	def __init__(self, *args, **kwargs):
@@ -125,7 +153,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 			init_expl_paths = self.expl_data_collector.collect_new_paths(
 				self.max_path_length,
 				self.min_num_steps_before_training,
-				discard_incomplete_paths=False,
 			)
 			print(init_expl_paths['actions'].mean(axis=0))
 			self.replay_buffer.add_paths(init_expl_paths)
@@ -136,7 +163,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 			self.eval_data_collector.collect_new_paths(
 				self.max_path_length,
 				self.num_eval_steps_per_epoch,
-				discard_incomplete_paths=True,
 			)
 		timer.stop_timer('evaluation sampling')
 
@@ -146,7 +172,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 				new_expl_paths = self.expl_data_collector.collect_new_paths(
 					self.max_path_length,
 					self.num_expl_steps_per_train_loop,
-					discard_incomplete_paths=True,
 				)
 				timer.stop_timer('exploration sampling')
 
@@ -284,7 +309,7 @@ def collect_demonstrations(variant):
 	env = make(None, env_class, env_kwargs, False)
 	env.seed(variant['seedid'])
 
-	path_collector = MdpPathCollector(
+	path_collector = FullTrajPathCollector(
 		env,
 		DemonstrationAgent(env,lower_p=.8,upper_p=1,traj_len=env_kwargs['config']['traj_len']),
 	)
@@ -300,7 +325,6 @@ def collect_demonstrations(variant):
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
 				demo_kwargs['path_length'],
-				discard_incomplete_paths=True,
 			)
 			success = False
 			for path in collected_paths:
@@ -324,7 +348,6 @@ def eval_exp(variant):
 	eval_env = make(None, env_class, env_kwargs, False)
 	# eval_env.seed(variant['seedid'])
 	eval_env.seed(1999)
-	current_obs_dim = eval_env.current_obs_dim
 
 	file_name = os.path.join(variant['save_path'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
@@ -340,7 +363,7 @@ def eval_exp(variant):
 
 	# eval_policy = HybridAgent(policy)
 	eval_policy = policy
-	eval_path_collector = MdpPathCollector(
+	eval_path_collector = FullTrajPathCollector(
 		eval_env,
 		eval_policy,
 	)
@@ -350,7 +373,6 @@ def eval_exp(variant):
 	eval_collected_paths = eval_path_collector.collect_new_paths(
 		variant['algorithm_args']['max_path_length'],
 		variant['algorithm_args']['num_eval_steps_per_epoch']*10,
-		discard_incomplete_paths=True,
 	)
 
 	np.save(os.path.join(variant['save_path'],'evaluated_paths'), eval_collected_paths)
@@ -362,13 +384,7 @@ def resume_exp(variant):
 	env_kwargs = variant.get('env_kwargs', {})
 
 	expl_env = make(env_id, env_class, env_kwargs, normalize_env)
-	eval_env = make(env_id, env_class, env_kwargs, normalize_env)
 	expl_env.seed(variant['seedid'])
-	eval_env.seed(variant['seedid'])
-
-	path_loader_kwargs = variant.get("path_loader_kwargs", {})
-	action_dim = eval_env.action_space.low.size
-	current_obs_dim = expl_env.current_obs_dim
 
 	file_name = os.path.join(variant['file_name'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
@@ -384,7 +400,7 @@ def resume_exp(variant):
 	)
 
 	eval_policy = policy
-	eval_path_collector = MdpPathCollector(
+	eval_path_collector = FullTrajPathCollector(
 		eval_env,
 		eval_policy,
 	)
@@ -413,14 +429,14 @@ def resume_exp(variant):
 	else:
 		error
 
-	expl_path_collector = MdpPathCollector(
+	expl_path_collector = FullTrajPathCollector(
 		expl_env,
 		expl_policy,
 	)
 	algorithm = PavlovBatchRLAlgorithm(
 		trainer=trainer,
 		exploration_env=expl_env,
-		evaluation_env=eval_env,
+		evaluation_env=expl_env,
 		exploration_data_collector=expl_path_collector,
 		evaluation_data_collector=eval_path_collector,
 		replay_buffer=replay_buffer,
@@ -432,10 +448,8 @@ def resume_exp(variant):
 def experiment(variant):
 	env_class = variant.get('env_class', None)
 	env_kwargs = variant.get('env_kwargs', {})
-	eval_env = make(None, env_class, env_kwargs, False)
 	expl_env = make(None, env_class, env_kwargs, False)
 	expl_env.seed(variant['seedid'])
-	eval_env.seed(variant['seedid'])
 
 	if variant.get('add_env_demos', False):
 		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_demo_path"])
@@ -443,8 +457,7 @@ def experiment(variant):
 		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_offpolicy_data_path"])
 
 	path_loader_kwargs = variant.get("path_loader_kwargs", {})
-	action_dim = eval_env.action_space.low.size
-	current_obs_dim = expl_env.current_obs_dim
+	action_dim = expl_env.action_space.low.size
 
 	obs_dim = expl_env.observation_space.low.size
 	qf_kwargs = variant.get("qf_kwargs", {})
@@ -480,29 +493,29 @@ def experiment(variant):
 		**policy_kwargs,
 	)
 
-	eval_policy = HybridAgent(policy)
 	eval_policy = policy
-	eval_path_collector = MdpPathCollector(
-		eval_env,
+	eval_policy = HybridAgent(policy)
+	eval_path_collector = FullTrajPathCollector(
+		expl_env,
 		eval_policy,
 	)
 
-	expl_policy = policy
+	expl_policy = HybridAgent(policy)
 	exploration_kwargs =  variant.get('exploration_kwargs', {})
 	if exploration_kwargs:
-		exploration_strategy = exploration_kwargs.get("strategy", 'boltzmann')
+		exploration_strategy = exploration_kwargs.get("strategy", None)
 		if exploration_strategy is None:
 			pass
 		elif exploration_strategy == 'boltzmann':
 			expl_policy = BoltzmannPolicy(qf1,qf2,
 										logit_scale=exploration_kwargs['logit_scale'],
 										**policy_kwargs)
-			# expl_policy = HybridAgent(expl_policy)
+			expl_policy = HybridAgent(expl_policy)
 		else:
 			error
 
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
-	replay_buffer_kwargs.update({'observation_dim':obs_dim,'action_dim':action_dim})
+	replay_buffer_kwargs.update({'env':expl_env})
 	replay_buffer = variant.get('replay_buffer_class', PavlovReplayBuffer)(
 		**replay_buffer_kwargs,
 	)
@@ -519,14 +532,14 @@ def experiment(variant):
 	else:
 		error
 
-	expl_path_collector = MdpPathCollector(
+	expl_path_collector = FullTrajPathCollector(
 		expl_env,
 		expl_policy,
 	)
 	algorithm = PavlovBatchRLAlgorithm(
 		trainer=trainer,
 		exploration_env=expl_env,
-		evaluation_env=eval_env,
+		evaluation_env=expl_env,
 		exploration_data_collector=expl_path_collector,
 		evaluation_data_collector=eval_path_collector,
 		replay_buffer=replay_buffer,

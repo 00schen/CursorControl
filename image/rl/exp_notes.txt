@@ -2,6 +2,9 @@
 *_1001: 100 successes
 *_1002: hard boundary user input
 *_1003: 400 time steps
-debug-lightswitch13: multiple targets, user input, still diff-distance reward
-debug-lightswitch19: no shaping, only input penalty
-debug-lightswitch23: stack observations no target position
+
+1602355862565469600: Laptop all penalties for user input same
+1602433699777340800: Laptop only one penalty per user burst
+1602451314351196500: Laptop decay forward on user bursts
+1602459224266245900: argmax no decay
+1602460291775263000: argmax decay = .5

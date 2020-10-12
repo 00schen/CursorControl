@@ -3,7 +3,7 @@ from collections import OrderedDict
 import numpy as np
 
 from railrl.data_management.replay_buffer import ReplayBuffer
-from railrl.data_management.env_replay_buffer import EnvReplayBuffer
+from railrl.data_management.simple_replay_buffer import SimpleReplayBuffer
 from railrl.envs.env_utils import get_dim
 
 from envs import rng
@@ -11,16 +11,23 @@ import torch as th
 import torch.nn.functional as F
 from collections import deque
 
+from rail_utils import window_adapt
+
 class PavlovReplayBuffer(SimpleReplayBuffer):
-	def __init__(self,max_replay_buffer_size,observation_dim,action_dim,):
-		super().__init__(max_replay_buffer_size,observation_dim,action_dim,{})
+	def __init__(self,max_replay_buffer_size,env):
+		self.env = env
+		super().__init__(max_replay_buffer_size,env.observation_space.low.size,env.action_space.low.size,{})
 		
-	def add_sample(self, observation, action, reward, next_observation,terminal, env_info, **kwargs):
+	def add_sample(self, observation, action, reward, next_observation, terminal, env_info, **kwargs):
 		self._observations[self._top] = observation
 		self._actions[self._top] = action
 		self._rewards[self._top] = reward
 		self._terminals[self._top] = env_info['task_success']
 		self._next_obs[self._top] = next_observation
+
+		for key in self._env_info_keys:
+			self._env_infos[key][self._top] = env_info[key]
+		self._advance()
 
 class PavlovSubtrajReplayBuffer(ReplayBuffer):
 	def __init__(

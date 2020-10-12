@@ -185,35 +185,37 @@ def window_factory(base):
 	class PrevNnonNoopK(base):
 		def __init__(self,config):
 			super().__init__(config)
+			self.window = config['window']
 			self.current_obs_dim = np.prod(self.env.observation_space.shape)+self.oracle.size
 			self.history_shape = (config['num_obs'],self.current_obs_dim)
 			self.nonnoop_shape = (config['num_nonnoop'],self.current_obs_dim)
-			# self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape)+self.env.num_targets*3,))
 			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
 
 		def step(self,action):
 			obs,r,done,info = super().step(action)
-
-			if len(self.history) == self.history_shape[0] and self.is_nonnoop[0]:
-				self.prev_nonnoop.append(self.history[0])
-
+			obs,r = self.remove_bursts(obs,r)			
 			self.history.append(obs)
-			self.is_nonnoop.append((not info['noop']))
+			if not info['noop']:
+				self.prev_nonnoop.append(obs)
 			# info['current_obs'] = obs
-
-			# return np.concatenate((*self.env.targets,*self.prev_nonnoop,*self.history,)),r,done,info
 			return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
+
+		def remove_bursts(self,obs,r=0):
+			if np.count_nonzero(obs[-6:]):
+				if timer < self.window:
+					r = 0
+					path['observations'][i][-6:] = np.zeros(6)
+				self.timer = 0
+			self.timer += 1
 
 		def reset(self):
 			obs = super().reset()
-			if obs is None:
-				return self.observation_space.sample()
 			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
-			self.is_nonnoop = deque([False]*self.history_shape[0],self.history_shape[0])
 			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-			self.history.append(obs)
 
-			# return np.concatenate((*self.env.targets,*self.prev_nonnoop,*self.history,))
+			self.timer = self.window
+			obs,_r = self.remove_bursts(obs)
+			self.history.append(obs)
 			return np.concatenate((*self.prev_nonnoop,*self.history,))
 	return PrevNnonNoopK
 

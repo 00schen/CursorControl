@@ -104,7 +104,6 @@ def window_adapt(self,path):
 	new_path = {'observations':[],'next_observations':[]}
 
 	history.append(next(obs_iter))
-	# obs = np.concatenate((*path['env_infos'][0]['targets'],np.ravel(prev_nonnoop),np.ravel(history),))
 	obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 	done = False
 	while not done:
@@ -116,7 +115,6 @@ def window_adapt(self,path):
 		info = next(info_iter)
 		is_nonnoop.append(info['noop'])
 		done = next(done_iter)
-		# obs = np.concatenate((*info['targets'],np.ravel(prev_nonnoop),np.ravel(history),))
 		obs = np.concatenate((np.ravel(prev_nonnoop),np.ravel(history),))
 		new_path['next_observations'].append(obs)
 
