@@ -1,168 +1,96 @@
-import numpy as np
-from numpy.random import default_rng
-rng = default_rng()
-from numpy.linalg import norm
-from types import MethodType
-
-import pybullet as p
-import assistive_gym
-from gym import spaces,Env
-
 from functools import reduce
 from collections import deque
 import os
 
-parentname = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import numpy as np
+from numpy.random import default_rng
+rng = default_rng()
+from numpy.linalg import norm
 
-class IKAgent:
-	def __init__(self,config):
-		self.new_pos = -1
-		self.tool_pos = -1
-		self.action_clip = config['action_clip']
-		# self.noise_sd = config['exploration_sd']
+import pybullet as p
+import assistive_gym
+from gym import spaces,Env
+from railrl.envs.env_utils import get_dim
 
-	def predict(self,env,pred):
-		joint_states = p.getJointStates(env.robot, jointIndices=env.robot_left_arm_joint_indices, physicsClientId=env.id)
-		joint_positions = np.array([x[0] for x in joint_states])
+from agents import KeyboardOracle,MouseOracle,UserModelOracle
 
-		link_pos = p.getLinkState(env.robot, 13, computeForwardKinematics=True, physicsClientId=env.id)[0]
-		new_pos = np.array(pred)+np.array(link_pos)-env.tool_pos
-
-		new_joint_positions = np.array(p.calculateInverseKinematics(env.robot, 13, new_pos, physicsClientId=env.id))
-		new_joint_positions = new_joint_positions[:7]
-		action = new_joint_positions - joint_positions
-		# action = rng.normal(action,self.noise_sd)
-
-		clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
-		action = clip_by_norm(action,self.action_clip)
-
-		# p.removeBody(self.new_pos)
-		# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.02, rgbaColor=[10, 255, 10, 1], physicsClientId=env.id)
-		# self.new_pos = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
-		# 		basePosition=pred, useMaximalCoordinates=False, physicsClientId=env.id)
-
-		# p.removeBody(self.tool_pos)
-		# sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.01, rgbaColor=[10, 255, 10, 1], physicsClientId=env.id)
-		# self.tool_pos = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=sphere_visual,\
-		# 		basePosition=env.tool_pos, useMaximalCoordinates=False, physicsClientId=env.id)
-
-		return action
-
-def sparse_factory(base):
-	class Sparse(Env):
+def overhead_factory(config):
+	factories = [oracle_factory,action_factory,]+config['factories']
+	wrapper = reduce(lambda value,func: func(value), factories, AssistiveWrapper)
+	
+	class Overhead(wrapper):
 		def __init__(self,config):
-			self.env = {
-				"ScratchItch": assistive_gym.ScratchItchJacoEnv,
-				"Feeding": assistive_gym.FeedingJacoEnv,
-				"Laptop": assistive_gym.LaptopJacoEnv,
-				"LightSwitch": assistive_gym.LightSwitchJacoEnv,
-				"Reach": assistive_gym.ReachJacoEnv,
-			}[config['env_name']](**config['env_kwargs'])
-
-			self.step_limit = config['step_limit']
+			super().__init__(config)
+			self.adapt_tran = config['adapt_tran']
+			if self.adapt_tran:
+				self.adapts = [adapt(config) for adapt in [burst_adapt,stack_adapt,cap_adapt]+config.get('adapts',[])]
+				self.adapt_step = lambda obs,r,done,info:reduce(lambda sub_tran,adapt:adapt._step(*sub_tran),
+															self.adapts,(obs,r,done,info))
+				self.adapt_reset = lambda obs:reduce(lambda obs,adapt:adapt._step(obs),self.adapts,(obs))
 
 		def step(self,action):
-			obs,r,done,info = self.env.step(action)
-			self.timesteps += 1
-
-			r = self.env.task_success > 0
-			done = self.env.task_success > 0 or self.timesteps >= self.step_limit
-
-			# info['target_pos'] = self.env.target_pos
-			info['target_index'] = self.env.target_index
-			info['targets'] = self.env.targets
-
-			return obs,r,done,info
-
+			tran = super().step(action)
+			if self.adapt_tran:
+				tran = self.adapt_step(*tran)
+			return *tran
+		
 		def reset(self):
-			obs = self.env.reset()
-			self.timesteps = 0
+			obs = super().reset()
+			if self.adapt_tran:
+				obs = self.adapt_reset(obs)
 			return obs
+	return Overhead(config)
 
-		def render(self,mode=None,**kwargs):
-			return self.env.render(mode)
-		def seed(self,value):
-			self.env.seed(value)
-		def close(self):
-			self.env.close()
+class AssistiveWrapper(Env):
+	def __init__(self,config):
+		self.env = {
+			"ScratchItch": assistive_gym.ScratchItchJacoEnv,
+			"Feeding": assistive_gym.FeedingJacoEnv,
+			"Laptop": assistive_gym.LaptopJacoEnv,
+			"LightSwitch": assistive_gym.LightSwitchJacoEnv,
+			"Reach": assistive_gym.ReachJacoEnv,
+		}[config['env_name']](**config['env_kwargs'])
+		self.step_limit = config['step_limit']
+		self.observation_space = self.env.observation_space
+		self.action_space = self.env.action_space
 
-	return Sparse
-
-class Noise():
-	def __init__(self, action_space=None, sd=.1, dropout=.3, lag=.85, include=(0,1,2)):
-		self.sd = sd
-		self.lag = lag
-		self.dropout = dropout
-
-		if action_space is not None:
-			self.action_space = action_space
-			self.dim = action_space.shape[0]
-		self.noises = [[self._add_awg,self._add_lag,self._add_dropout][i] for i in include]+[lambda value: value]
+	def step(self,action):
+		obs,r,done,info = self.env.step(action)
+		self.timesteps += 1
+		r = self.env.task_success > 0
+		done = self.env.task_success > 0 or self.timesteps >= self.step_limit
+		info['target_pos'] = self.env.target_index
+		return obs,r,done,info
 
 	def reset(self):
-		# self.noise = rng.normal(np.identity(self.dim), self.sd)
-		self.lag_buffer = deque([],10)
+		obs = self.env.reset()
+		self.timesteps = 0
+		return obs
 
-	def _add_awg(self, action):
-		# return action@self.noise
-		return action + rng.normal(np.zeros(action.shape), self.sd)
-	def _add_lag(self, action):
-		self.lag_buffer.append(action)
-		return np.array(self.lag_buffer.popleft() if rng.random() > self.lag else self.lag_buffer[0])
-	def _add_dropout(self, action):
-		return np.array(action if rng.random() > self.dropout else self.action_space.sample())
-	def __call__(self,action):
-		return reduce(lambda value,func: func(value), self.noises, action)
+	def render(self,mode=None,**kwargs):
+		return self.env.render(mode)
+	def seed(self,value):
+		self.env.seed(value)
+	def close(self):
+		self.env.close()
 
-def shared_autonomy_factory(base):
-	class SharedAutonomy(base):
+def oracle_factory(base):
+	class Oracle(base):
 		def __init__(self,config):
 			super().__init__(config)
 			self.input_penalty = config['input_penalty']
-			self.action_type = config['action_type']
-			self.oracle = config['oracle'](self.env)
-			self.current_obs_dim = np.prod(self.env.observation_space.shape)+self.oracle.size
-			self.observation_space = spaces.Box(-np.inf,np.inf,(self.current_obs_dim,))
-			self.traj_len = config['traj_len']
-
-			if config['action_type'] in ['target', 'trajectory','disc_traj']:
-				self.pretrain = IKAgent(config)
-			joint = lambda action: action
-			target = lambda pred: self.pretrain.predict(self.env,pred)
-			trajectory = lambda traj: target(self.env.tool_pos+traj)
-			def disc_traj(index):
-				index = np.argmax(index)
-				traj = [
-					np.array((-1,0,0)),
-					np.array((1,0,0)),
-					np.array((0,-1,0)),
-					np.array((0,1,0)),
-					np.array((0,0,-1)),
-					np.array((0,0,1)),					
-				][index]*self.traj_len
-				return trajectory(traj)
-			self.translate = {
-				# 'target': target,
-				'trajectory': trajectory,
-				'joint': joint,
-				'disc_traj': disc_traj,
-			}[config['action_type']]
-			self.action_space = {
-				# "target": spaces.Box(-1,1,(3,)),
-				"trajectory": spaces.Box(-1,1,(3,)),
-				"joint": spaces.Box(-1,1,(7,)),
-				"disc_traj": spaces.Box(0,1,(6,)),
-			}[config['action_type']]
+			self.oracle = {
+				'keyboard': KeyboardOracle,
+				'mouse': MouseOracle,
+				'usermodel': UserModelOracle,
+			}[config['oracle'](self.env)]
+			self.observation_space = spaces.Box(-10,10,
+									(get_dim(self.observation_space)+self.oracle.size,))
 
 		def step(self,action):
-			t_action = self.translate(action)
-			obs,r,done,info = super().step(t_action)
+			obs,r,done,info = super().step(action)
 			obs = self.predict(obs,info)
 			r -= self.input_penalty*(not info['noop'])
-
-			if self.action_type in ['target']:
-				info['pred_target_dist'] = norm(action-self.env.target_pos)
-
 			return obs,r,done,info
 
 		def reset(self):
@@ -173,121 +101,81 @@ def shared_autonomy_factory(base):
 
 		def predict(self,obs,info):
 			recommend,self.oracle_info = self.oracle.get_action(obs,info)
-
 			# info['recommend'] = recommend
 			info['noop'] = not np.count_nonzero(recommend)
-
 			return np.concatenate((obs,recommend))
 
-	return SharedAutonomy
+	return Oracle
 
-def window_factory(base):
-	class PrevNnonNoopK(base):
+def action_factory(base):
+	class Action(base):
 		def __init__(self,config):
 			super().__init__(config)
-			self.window = config['window']
-			self.current_obs_dim = np.prod(self.env.observation_space.shape)+self.oracle.size
-			self.history_shape = (config['num_obs'],self.current_obs_dim)
-			self.nonnoop_shape = (config['num_nonnoop'],self.current_obs_dim)
-			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
+			self.action_type = config['action_type']
+			self.action_space = {
+				# "target": spaces.Box(-1,1,(3,)),
+				"trajectory": spaces.Box(-1,1,(3,)),
+				"joint": spaces.Box(-1,1,(7,)),
+				"disc_traj": spaces.Box(0,1,(6,)),
+			}[config['action_type']]
 
 		def step(self,action):
-			obs,r,done,info = super().step(action)
-			obs,r = self.remove_bursts(obs,r)			
-			self.history.append(obs)
-			if not info['noop']:
-				self.prev_nonnoop.append(obs)
-			# info['current_obs'] = obs
-			return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
-
-		def remove_bursts(self,obs,r=0):
-			if np.count_nonzero(obs[-6:]):
-				if timer < self.window:
-					r = 0
-					path['observations'][i][-6:] = np.zeros(6)
-				self.timer = 0
-			self.timer += 1
-
-		def reset(self):
-			obs = super().reset()
-			self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
-			self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
-
-			self.timer = self.window
-			obs,_r = self.remove_bursts(obs)
-			self.history.append(obs)
-			return np.concatenate((*self.prev_nonnoop,*self.history,))
-	return PrevNnonNoopK
-
-def cap_factory(base):
-	class CapReward(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.cap = config['cap']
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			r = np.minimum(r,self.cap)
+			t_action = self.translate(action)
+			obs,r,done,info = super().step(t_action)
+			if self.action_type in ['target']:
+				info['pred_target_dist'] = norm(action-self.env.target_pos)
 			return obs,r,done,info
-	return CapReward
 
-def target_factory(base):
-	class Target(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.observation_space.shape)+3,))
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			obs = np.concatenate((self.env.target_pos,obs,))
-			return obs,r,done,info
-		def reset(self):
-			obs = super().reset()
-			obs = np.concatenate((self.env.target_pos,obs,))
-			return obs
-	return Target
+	return Action
 
-def metric_factory(base):
-	class Metric(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.success_count = deque([0]*20,20)
-			self.success_dist = .2
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			if done:
-				self.success_count.append(info['task_success'])
-			info['success_dist'] = self.success_dist
-			return obs,r,done,info
-		def reset(self):
-			if np.mean(self.success_count) > .5:
-				self.success_dist = max(.025,self.success_dist*.95)
-				self.success_count = deque([0]*20,20)
-			self.env.success_dist = self.success_dist
-			obs = super().reset()
-			return obs
-	return Metric
+class burst_adapt:
+	""" Remove user input from observation and reward if input is in bursts
+		Burst defined as inputs separated by no more than 'space' steps """
+	def __init__(self,config):
+		self.space = config['space']+2
 
-def shaping_factory(base):
-	class Shaping(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.shaping = config['shaping']
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			r = self.shaping*((info['task_success'] - 1) + 50*info['diff_distance'])
-			return obs,r,done,info
-	return Shaping
+	def _step(self,obs,r,done,info):
+		if np.count_nonzero(obs[-6:]):
+			if timer < self.space:
+				r = 0
+				obs[-6:] = np.zeros(6)
+			self.timer = 0
+		self.timer += 1
+		return obs,r,done,info
 
-def init_factory(base):
-	class InitPos(base):
-		def __init__(self,config):
-			super().__init__(config)
-		def reset(self):
-			def init_start_pos(self,og_init_pos):
-				return og_init_pos + rng.uniform(-.3, .3, size=3)
-			self.env.init_start_pos = MethodType(init_start_pos,self.env)
-			obs = super().reset()
-			return obs
-	return InitPos
+	def _reset(self,obs):
+		self.timer = self.space
+		obs,_r,_d,_i = self._step(obs,0,False,{})
+		return obs
+
+class stack_adapt:
+	""" 'num_obs' most recent steps and 'num_nonnoop' most recent input steps stacked """
+	def __init__(self,config):
+		self.history_shape = (config['num_obs'],get_dim(self.observation_space))
+		self.nonnoop_shape = (config['num_nonnoop'],get_dim(self.observation_space))
+		self.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
+
+	def _step(self,obs,r,done,info):
+		self.history.append(obs)
+		if not info['noop']:
+			self.prev_nonnoop.append(obs)
+		# info['current_obs'] = obs
+		return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
+
+	def _reset(self,obs):
+		self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
+		self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
+		obs,_r,_d,_i = self._step(obs,0,False,{})
+		return obs
+
+class cap_adapt:
+	""" rewards capped at 'cap' """
+	def __init__(self,config):
+		self.cap = config['cap']
+
+	def _step(self,obs,r,done,info):
+		r = np.minimum(r,self.cap)
+		return obs,r,done,info
 
 import pygame as pg
 SCREEN_SIZE = 300
@@ -303,7 +191,7 @@ def render_user_factory(base):
 
 		def render_input(self):
 			self.screen.fill(pg.color.THECOLORS["white"])
-			
+
 			center = np.array([SCREEN_SIZE//2,SCREEN_SIZE//2])
 			mouse_pos = self.oracle_info['mouse_pos']
 			choice_action = self.oracle_info['action']
@@ -342,11 +230,3 @@ def render_user_factory(base):
 			obs = super().reset()
 			return obs
 	return RenderUser
-
-default_config = {
-	'step_limit': 200,
-	'env_kwargs': {},
-	'noise': False,
-}
-wrapper = lambda factories,base_factory: reduce(lambda value,func: func(value), factories, base_factory)
-default_class = wrapper([shared_autonomy_factory,],sparse_factory(None))

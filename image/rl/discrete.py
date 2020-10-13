@@ -1,15 +1,15 @@
-from discrete_experiment import *
+from discrete_experiment import DQNPavlovTrainer,experiment,eval_exp,collect_demonstrations
 
 import railrl.misc.hyperparameter as hyp
 from railrl.launchers.arglauncher import run_variants
 
 from railrl.torch.networks import Clamp
 
-from envs import *
-from rail_utils import *
+from utils import adapt_factory,PathAdaptLoader
 import argparse
 from copy import deepcopy,copy
 import os
+import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name',)
@@ -59,10 +59,9 @@ if __name__ == "__main__":
 		version="normal",
 		collection_mode='batch',
 		trainer_kwargs=dict(
-			# discount=0.99,
-			# discount=1,
-			# soft_target_tau=5e-3,
-			# target_update_period=1,
+			discount=.995,
+			soft_target_tau=1e-3,
+			target_update_period=10,
 			# qf_lr=3E-4,
 			reward_scale=1,
 		),
@@ -81,18 +80,18 @@ if __name__ == "__main__":
 		path_loader_kwargs=dict(
 			obs_key="state_observation",
 
-			demo_paths=[dict(
-						path=os.path.join(os.path.abspath(''),"demos",demo),
-						obs_dict=False,
-						is_demo=False,
-						train_split=1,
-						) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboardinput" in demo],
 			# demo_paths=[dict(
-			# 			path=os.path.join(os.path.abspath(''),"demos",f"{args.env_name}_usermodel_1001.npy"),
+			# 			path=os.path.join(os.path.abspath(''),"demos",demo),
 			# 			obs_dict=False,
 			# 			is_demo=False,
 			# 			train_split=1,
-			# 			)],
+			# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboardinput" in demo],
+			demo_paths=[dict(
+						path=os.path.join(os.path.abspath(''),"demos",f"{args.env_name}_usermodel_1001.npy"),
+						obs_dict=False,
+						is_demo=False,
+						train_split=1,
+						)],
 			# add_demos_to_replay_buffer=False,
 		),
 
@@ -101,40 +100,32 @@ if __name__ == "__main__":
 			min_successes=100,
 			min_success_rate=1,
 			path_length=path_length,
-			save_name=f"{args.env_name}_keyboardinput_"
-			# save_name=f"{args.env_name}_usermodel_1001"
+			# save_name=f"{args.env_name}_keyboardinput_"
+			save_name=f"{args.env_name}_usermodel_1001"
 		)
 	)
-	from agents import *
-	config = deepcopy(default_config)
-	config.update(dict(
+	config = dict(
 		env_name=args.env_name,
-		oracle=KeyboardAgent,
+		factories=[],
+		adapt_tran=True,
+		oracle='model',
 		action_type='disc_traj',
 		traj_len=.2,
-		action_clip=.1,
 		cap=0,
+		input_penalty=1,
 		step_limit=path_length,
-		# elig_decay=.35,
 		env_kwargs=dict(success_dist=.03,frame_skip=5),
-	))
+	)
 	variant.update(dict(
-		env_class=railrl_class(wrapper([window_factory,cap_factory,],default_class),
-					[window_adapt,cap_adapt,]),
+		env_class=adapt_factory,
 		env_kwargs={'config':config},
 	))
 
 	search_space = {
 		'seedid': [2000,],
-		'env_kwargs.config.input_penalty': [1],
 		'trainer_kwargs.learning_rate': [1e-3,],
-		'trainer_kwargs.soft_target_tau': [5e-4,],
-		'trainer_kwargs.target_update_period': [10,],
-		'trainer_kwargs.discount': [.995],
-		'path_loader_kwargs.add_demos_to_replay_buffer': [True],
 
-		'replay_buffer_kwargs.window': [3],
-		'replay_buffer_kwargs.decay': [.5],
+		'env_kwargs.config.space': [1],
 		'env_kwargs.config.num_obs': [10],
 		'env_kwargs.config.num_nonnoop': [10,],
 		# 'exploration_kwargs.logit_scale': [int(1e3)]
@@ -151,8 +142,7 @@ if __name__ == "__main__":
 		if not args.use_ray:
 			variant['render'] = args.no_render
 		if args.job in ['demo']:
-			variant['env_kwargs']['config']['action_type'] = 'trajectory'
-			variant['env_class'] = default_class
+			variant['env_kwargs']['config']['adapt_tran'] = False
 
 	if args.use_ray:
 		import ray

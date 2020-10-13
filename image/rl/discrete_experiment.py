@@ -1,104 +1,28 @@
 import torch as th
+import torch.nn.functional as F
+import torch.optim as optim
 import numpy as np
 import os
-from numpy.linalg import norm
 
 from railrl.samplers.data_collector import MdpPathCollector
-from railrl.torch.torch_rl_algorithm import (
-	TorchBatchRLAlgorithm,
-)
-
+from railrl.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from railrl.torch.networks import Mlp
 from railrl.torch.dqn.double_dqn import DoubleDQNTrainer
 
 from railrl.demos.source.mdp_path_loader import MDPPathLoader
 
 from railrl.core import logger
-from railrl.torch.core import np_to_pytorch_batch
 import railrl.torch.pytorch_util as ptu
 from railrl.envs.make_env import make
 from railrl.misc.eval_util import create_stats_ordered_dict
 
-from railrl.torch.core import PyTorchModule
-import torch.nn.functional as F
-from railrl.torch.distributions import OneHotCategorical as TorchOneHot
-from railrl.torch.distributions import Distribution
-from railrl.torch.distributions import MultivariateDiagonalNormal as Normal
-import torch.optim as optim
-from torch.nn import CrossEntropyLoss
-from railrl.pythonplusplus import identity
-
 from collections import OrderedDict
+from collections import deque
 from railrl.core.timer import timer
 
-from replay_buffers import *
-from envs import rng
-class OneHotCategorical(Distribution,TorchOneHot):
-	def rsample_and_logprob(self):
-		s = self.sample()
-		log_p = self.log_prob(s)
-		return s, log_p
-
-class ArgmaxDiscretePolicy(PyTorchModule):
-	def __init__(self, qf1, qf2):
-		super().__init__()
-		self.qf1 = qf1
-		self.qf2 = qf2
-		self.action_dim = qf1.output_size
-
-	def get_action(self, obs):
-		if isinstance(obs,np.ndarray):
-			obs = th.from_numpy(obs).float()
-		if next(self.qf1.parameters()).is_cuda:
-			obs = obs.cuda()
-
-		with th.no_grad():
-			q_values = th.min(self.qf1(obs),self.qf2(obs))
-			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
-		return action.cpu().numpy(), {}
-
-	def reset(self):
-		pass
-
-class BoltzmannPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2, logit_scale=100):
-		super().__init__()
-		self.qf1 = qf1
-		self.qf2 = qf2
-		self.logit_scale = logit_scale
-
-	def get_action(self, obs):
-		if isinstance(obs,np.ndarray):
-			obs = th.from_numpy(obs).float()
-		if next(self.qf1.parameters()).is_cuda:
-			obs = obs.cuda()
-
-		with th.no_grad():
-			q_values = th.min(self.qf1(obs),self.qf2(obs))
-
-			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
-		return action.cpu().numpy(), {}
-
-	def reset(self):
-		pass
-
-class HybridAgent:
-	def __init__(self, policy):
-		self.policy = policy
-	def get_action(self,obs):
-		recommend = obs[-6:]
-		action,info = self.policy.get_action(obs)
-		# print(recommend)
-		self.step_count += 1
-		self.recommend_count += (np.count_nonzero(recommend) > 0)
-		if np.count_nonzero(recommend) and rng.random() > self.recommend_count/self.step_count:
-			return recommend,info
-		else:
-			return action, info
-	def reset(self):
-		self.policy.reset()
-		self.recommend_count = 0
-		self.step_count = 0
+from replay_buffers import PavlovReplayBuffer
+from utils import rng
+from agents import DemonstrationPolicy,ArgmaxDiscretePolicy,BoltzmannPolicy,HybridPolicy,TranslationPolicy
 
 class FullTrajPathCollector(MdpPathCollector):
 	def collect_new_paths(
@@ -301,17 +225,16 @@ def demonstration_factory(base):
 			self.env.generate_target = MethodType(generate_target,self.env)
 			return super().reset()
 	return DemonstrationEnv
-from agents import DemonstrationAgent
 def collect_demonstrations(variant):
 	env_class = variant['env_class']
 	env_kwargs = variant.get('env_kwargs', {})
-	env_class = demonstration_factory(env_class)
+	env_kwargs['config']['factories'] += demonstration_factory
 	env = make(None, env_class, env_kwargs, False)
 	env.seed(variant['seedid'])
 
 	path_collector = FullTrajPathCollector(
 		env,
-		DemonstrationAgent(env,lower_p=.8,upper_p=1,traj_len=env_kwargs['config']['traj_len']),
+		DemonstrationPolicy(env,lower_p=.8,upper_p=1,traj_len=env_kwargs['config']['traj_len']),
 	)
 
 	if variant.get('render',False):
@@ -493,14 +416,12 @@ def experiment(variant):
 		**policy_kwargs,
 	)
 
-	eval_policy = policy
-	eval_policy = HybridAgent(policy)
+	eval_policy = TranslationPolicy(HybridPolicy(policy))
 	eval_path_collector = FullTrajPathCollector(
 		expl_env,
 		eval_policy,
 	)
 
-	expl_policy = HybridAgent(policy)
 	exploration_kwargs =  variant.get('exploration_kwargs', {})
 	if exploration_kwargs:
 		exploration_strategy = exploration_kwargs.get("strategy", None)
@@ -510,9 +431,9 @@ def experiment(variant):
 			expl_policy = BoltzmannPolicy(qf1,qf2,
 										logit_scale=exploration_kwargs['logit_scale'],
 										**policy_kwargs)
-			expl_policy = HybridAgent(expl_policy)
 		else:
 			error
+	expl_policy = TranslationPolicy(HybridPolicy(expl_policy))
 
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
 	replay_buffer_kwargs.update({'env':expl_env})

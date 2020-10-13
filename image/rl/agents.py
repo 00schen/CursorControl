@@ -1,34 +1,23 @@
 import numpy as np
 import pybullet as p
 from numpy.linalg import norm
-from envs import rng
+import torch as th
+import torch.nn.functional as F
+from railrl.torch.core import PyTorchModule
+from railrl.torch.distributions import Distribution
+from railrl.torch.distributions import OneHotCategorical as TorchOneHot
 
-"""Oracle Agents"""
+from utils import rng
+
 class Agent:
 	def __init__(self):
 		self.size = 6
 	def reset(self):
 		pass
 
-class TrajectoryAgent(Agent):
-	def __init__(self,env):
-		self.env = env
-		self.size = 3
-	def get_action(self,obs,info=None):
-		action = self.env.target_pos - self.env.tool_pos
-		return action, {}
-
-class TargetAgent(Agent):
-	def __init__(self,env):
-		self.env = env
-		self.size = 3
-	def get_action(self,obs,info=None):
-		action = self.env.target_pos
-		return action, {}
-
+"""Oracle Agents"""
 import pygame as pg
-SCREEN_SIZE = 300
-class UserInputAgent(Agent):
+class UserInputOracle(Agent):
 	def __init__(self,env):
 		super().__init__()
 		self.env = env
@@ -48,7 +37,7 @@ class UserInputAgent(Agent):
 		print(self.action)
 		return action, user_info
 
-class KeyboardAgent(UserInputAgent):
+class KeyboardOracle(UserInputOracle):
 	def get_input(self):
 		keys = p.getKeyboardEvents()
 		inputs = {
@@ -66,7 +55,7 @@ class KeyboardAgent(UserInputAgent):
 			
 		return {"action": self.action}
 
-class MouseAgent(UserInputAgent):
+class MouseOracle(UserInputOracle):
 	def get_input(self):
 		mouse_pos = pg.mouse.get_pos()
 		new_mouse_pos = np.array(mouse_pos)-np.array([SCREEN_SIZE//2,SCREEN_SIZE//2])
@@ -91,19 +80,18 @@ class MouseAgent(UserInputAgent):
 	def reset(self):
 		self.mouse_pos = pg.mouse.get_pos()
 
-class UserModelAgent(Agent):
+class UserModelOracle(Agent):
 	def __init__(self,env,threshold=.5,epsilon=0):
 		super().__init__()
 		self.env = env
 		self.threshold = threshold
 		self.epsilon = epsilon
 	def get_action(self,obs,info=None):
-		if self.prev_noop:
-			prob = (1-info['cos_error'])/4
-		else:
-			prob = info['cos_error'] < self.threshold
+		# if self.prev_noop:
+		# 	prob = (1-info['cos_error'])/4
+		# else:
+		# 	prob = info['cos_error'] < self.threshold
 		prob = info['cos_error'] < self.threshold
-		# prob = 0
 		action = np.zeros(self.size)
 		if rng.random() < prob:
 			traj = self.env.target_pos-self.env.tool_pos
@@ -120,43 +108,139 @@ class UserModelAgent(Agent):
 	def reset(self):
 		self.prev_noop = True
 
-"""Demonstration Agents"""
-class FollowerAgent:
-	def __init__(self,env,traj_len):
+"""Policies"""
+class TranslationPolicy(Agent):
+	def __init__(self,env,policy,**kwargs):
+		super().__init__()
 		self.env = env
-		self.traj_len = traj_len
-	def get_action(self,obs,info=None):
+		self.policy = policy
+		def joint(action,ainfo={}):
+			ainfo['joint'] = action
+			return action,ainfo	
+		def target(coor,ainfo={}):
+			ainfo['target'] = coor
+			joint_states = p.getJointStates(self.env.robot, jointIndices=self.env.robot_left_arm_joint_indices, physicsClientId=self.env.id)
+			joint_positions = np.array([x[0] for x in joint_states])
+
+			link_pos = p.getLinkState(self.env.robot, 13, computeForwardKinematics=True, physicsClientId=self.env.id)[0]
+			new_pos = np.array(coor)+np.array(link_pos)-self.env.tool_pos
+
+			new_joint_positions = np.array(p.calculateInverseKinematics(self.env.robot, 13, new_pos, physicsClientId=self.env.id))
+			new_joint_positions = new_joint_positions[:7]
+			action = new_joint_positions - joint_positions
+
+			clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
+			action = clip_by_norm(action,.1)
+			return joint(action, ainfo)
+		def trajectory(traj,ainfo={}):
+			ainfo['trajectory'] = traj
+			return target(self.env.tool_pos+traj,ainfo)
+		def disc_traj(onehot,ainfo={}):
+			ainfo['disc_traj'] = onehot
+			index = np.argmax(onehot)
+			traj = [
+				np.array((-1,0,0)),
+				np.array((1,0,0)),
+				np.array((0,-1,0)),
+				np.array((0,1,0)),
+				np.array((0,0,-1)),
+				np.array((0,0,1)),
+			][index]*kwargs['traj_len']
+			return trajectory(traj,ainfo)
+		self.translate = {
+			# 'target': target,
+			'trajectory': trajectory,
+			'joint': joint,
+			'disc_traj': disc_traj,
+		}[kwargs['action_type']]
+	
+	def get_action(self,obs):
+		return self.translate(self.policy(obs))
+
+class OneHotCategorical(Distribution,TorchOneHot):
+	def rsample_and_logprob(self):
+		s = self.sample()
+		log_p = self.log_prob(s)
+		return s, log_p
+
+class ArgmaxDiscretePolicy(PyTorchModule):
+	def __init__(self, qf1, qf2):
+		super().__init__()
+		self.qf1 = qf1
+		self.qf2 = qf2
+		self.action_dim = qf1.output_size
+
+	def get_action(self, obs):
+		if isinstance(obs,np.ndarray):
+			obs = th.from_numpy(obs).float()
+		if next(self.qf1.parameters()).is_cuda:
+			obs = obs.cuda()
+
+		with th.no_grad():
+			q_values = th.min(self.qf1(obs),self.qf2(obs))
+			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
+		return action.cpu().numpy(), {}
+
+	def reset(self):
+		pass
+
+class BoltzmannPolicy(PyTorchModule):
+	def __init__(self, qf1, qf2, logit_scale=100):
+		super().__init__()
+		self.qf1 = qf1
+		self.qf2 = qf2
+		self.logit_scale = logit_scale
+
+	def get_action(self, obs):
+		if isinstance(obs,np.ndarray):
+			obs = th.from_numpy(obs).float()
+		if next(self.qf1.parameters()).is_cuda:
+			obs = obs.cuda()
+
+		with th.no_grad():
+			q_values = th.min(self.qf1(obs),self.qf2(obs))
+
+			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
+		return action.cpu().numpy(), {}
+
+	def reset(self):
+		pass
+
+class OverridePolicy:
+	def __init__(self, policy):
+		self.policy = policy
+	def get_action(self,obs):
+		recommend = obs[-6:]
+		action,info = self.policy.get_action(obs)
+		# print(recommend)
+		self.step_count += 1
+		self.recommend_count += (np.count_nonzero(recommend) > 0)
+		if np.count_nonzero(recommend) and rng.random() > self.recommend_count/self.step_count:
+			return recommend,info
+		else:
+			return action, info
+	def reset(self):
+		self.policy.reset()
+		self.recommend_count = 0
+		self.step_count = 0
+
+"""Demonstration Policies"""
+class FollowerPolicy:
+	def get_action(self,obs):
 		recommend = obs[-6:]
 		if np.count_nonzero(recommend):
-			index = np.argmax(recommend)
-			# traj = recommend[:3]
-			# axis = np.argmax(np.abs(traj))
-			# index = 2*axis+(traj[axis]>0)
-			self.trajectory = {
-				0: np.array([-1,0,0]),
-				1: np.array([1,0,0]),
-				2: np.array([0,-1,0]),
-				3: np.array([0,1,0]),
-				4: np.array([0,0,-1]),
-				5: np.array([0,0,1]),
-			}[index]
-			self.action_index = index
-		# action = np.zeros(6)
-		# action[self.action_index] = 1
-
-
-		action = self.env.target_pos-self.env.tool_pos
-		return self.trajectory*self.traj_len, {"action_index": self.action_index, "trajectory": self.trajectory}
+			self.action_index = np.argmax(recommend)
+		action = np.zeros(6)
+		action[self.action_index] = 1
+		return self.translate(action)
 	def reset(self):
-		self.trajectory = np.array([0,0,0])
-		self.action_count = 0
 		self.action_index = 0
 
-class EpsilonAgent:
-	def __init__(self,env,epsilon=.25):
+class EpsilonPolicy:
+	def __init__(self,env,epsilon=.25,**kwargs):
 		self.epsilon = epsilon
-		self.env = env
-	def get_action(self,obs,info=None):
+		super().__init__(env,**kwargs)
+	def get_action(self,obs):
 		real_traj = self.env.target_pos-self.env.tool_pos
 		real_index = np.argmax(np.abs(real_traj))
 		real_index = real_index*2 + real_traj[real_index] > 0
@@ -166,32 +250,22 @@ class EpsilonAgent:
 			self.action_index = self.action_index if rng.random() > self.epsilon else rng.choice(6)
 		action = np.zeros(6)
 		action[self.action_index] = 1
-		trajectory = [
-					np.array((-1,0,0)),
-					np.array((1,0,0)),
-					np.array((0,-1,0)),
-					np.array((0,1,0)),
-					np.array((0,0,-1)),
-					np.array((0,0,1)),
-				][self.action_index]
-
-		action = rng.random(3)
-		return trajectory, {"action_index": self.action_index, "trajectory": trajectory}
+		return self.translate(action)
 	def reset(self):
 		self.action_index = 0
 
-class DemonstrationAgent:
-	def __init__(self,env,lower_p=.5,upper_p=1,traj_len=.5):
-		self.agents = [FollowerAgent(env.env,traj_len),EpsilonAgent(env.env,epsilon=1/10)]
+class DemonstrationPolicy:
+	def __init__(self,env,lower_p=.5,upper_p=1):
+		self.polcies = [FollowerPolicy(),EpsilonPolicy(env.env,epsilon=1/10)]
 		self.lower_p = lower_p
 		self.upper_p = upper_p
-	def get_action(self,obs,info=None):
+	def get_action(self,obs):
 		p = [self.p,1-self.p]
-		actions = [agent.get_action(obs) for agent in self.agents]
-		action,agent_info = rng.choice(actions,p=p)
-		return action,agent_info
+		actions = [policy.get_action(obs) for policy in self.polcies]
+		act_tuple = rng.choice(actions,p=p)
+		return *act_tuple
 	def reset(self):
 		self.p = rng.random()*(self.upper_p-self.lower_p) + self.lower_p
 		# self.p = 1
-		for agent in self.agents:
-			agent.reset()
+		for policy in self.polcies:
+			policy.reset()
