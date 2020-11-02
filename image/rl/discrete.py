@@ -1,11 +1,10 @@
-from discrete_experiment import DQNPavlovTrainer,experiment,eval_exp,collect_demonstrations
-
 import railrl.misc.hyperparameter as hyp
 from railrl.launchers.arglauncher import run_variants
-
 from railrl.torch.networks import Clamp
 
-from utils import adapt_factory,PathAdaptLoader
+from discrete_experiment import DQNPavlovTrainer,experiment,eval_exp,collect_demonstrations
+from envs import default_overhead
+
 import argparse
 from copy import deepcopy,copy
 import os
@@ -23,17 +22,19 @@ parser.add_argument('--per_gpu', default=1, type=int)
 args, _ = parser.parse_known_args()
 
 if __name__ == "__main__":
-	path_length = 200
+	path_length = 400
 	variant = dict(
 		algorithm_args=dict(
-			num_epochs=100,
-			num_eval_steps_per_epoch=path_length*3,
+			num_epochs=250,
+			num_eval_steps_per_epoch=path_length,
 			num_trains_per_train_loop=50,
 			num_expl_steps_per_train_loop=path_length*3//4,
 			min_num_steps_before_training=0,
 
 			batch_size=1024,
 			max_path_length=path_length,
+			# pretrain_with_bc=False,
+			# num_pretrains=0,
 		),
 
 		trainer_class=DQNPavlovTrainer,
@@ -45,24 +46,22 @@ if __name__ == "__main__":
 		twin_q=True,
 		policy_kwargs=dict(
 		),
+		override=False,
 		qf_kwargs=dict(
 			hidden_sizes=[512]*3,
 			output_activation=Clamp(max=0), # rewards are <= 0
 		),
-		pf_kwargs=dict(
-			hidden_size=128,
+		exploration_kwargs=dict(
+			strategy='merge_arg',
 		),
-		# exploration_kwargs=dict(
-		# 	strategy='boltzmann'
-		# ),
 
 		version="normal",
 		collection_mode='batch',
 		trainer_kwargs=dict(
 			discount=.995,
+			learning_rate=5e-4,
 			soft_target_tau=1e-3,
 			target_update_period=10,
-			# qf_lr=3E-4,
 			reward_scale=1,
 		),
 		launcher_config=dict(
@@ -76,7 +75,6 @@ if __name__ == "__main__":
 			tensorboard=True,
 		),
 
-		path_loader_class=PathAdaptLoader,
 		path_loader_kwargs=dict(
 			obs_key="state_observation",
 
@@ -86,19 +84,24 @@ if __name__ == "__main__":
 			# 			is_demo=False,
 			# 			train_split=1,
 			# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboardinput" in demo],
-			demo_paths=[dict(
-						path=os.path.join(os.path.abspath(''),"demos",f"{args.env_name}_usermodel_1001.npy"),
-						obs_dict=False,
-						is_demo=False,
-						train_split=1,
-						)],
-			# add_demos_to_replay_buffer=False,
+			# demo_paths=[dict(
+			# 			path=os.path.join(os.path.abspath(''),"demos",f"{args.env_name}_usermodel_1001.npy"),
+			# 			obs_dict=False,
+			# 			is_demo=False,
+			# 			train_split=1,
+			# 			)],
+
+			add_demos_to_replay_buffer=False,
 		),
+
+		# eval_path=os.path.join(os.path.abspath(''),"logs","tests6","run0","id0"),
+		eval_path=os.path.join(os.path.abspath(''),"logs","testc6","run0","id0"),
 
 		load_demos=True,
 		demo_kwargs=dict(
-			min_successes=100,
-			min_success_rate=1,
+			# min_successes=100,
+			# min_success_rate=1,
+			num_episodes=100,
 			path_length=path_length,
 			# save_name=f"{args.env_name}_keyboardinput_"
 			save_name=f"{args.env_name}_usermodel_1001"
@@ -111,23 +114,37 @@ if __name__ == "__main__":
 		oracle='model',
 		action_type='disc_traj',
 		traj_len=.2,
-		cap=0,
-		input_penalty=1,
+		cap=1,
+		# input_penalty=1,
 		step_limit=path_length,
-		env_kwargs=dict(success_dist=.03,frame_skip=5),
+		# env_kwargs=dict(success_dist=.03,frame_skip=5),
+		env_kwargs=dict(path_length=path_length,frame_skip=5),
+		oracle_kwargs=dict(epsilon=.1),
+		burst = True,
+		space=0,
+		stack = True,
+		num_obs=10,
+		num_nonnoop=10,
 	)
 	variant.update(dict(
-		env_class=adapt_factory,
+		env_class=default_overhead,
 		env_kwargs={'config':config},
 	))
 
 	search_space = {
-		'seedid': [2000,],
-		'trainer_kwargs.learning_rate': [1e-3,],
+		'seedid': [2000,2001,2002],
+		# 'trainer_kwargs.learning_rate': [5e-4,],
+		# 'trainer_kwargs.soft_target_tau': [1e-3],
+		'env_kwargs.config.oracle_kwargs.blank': [1,.5],
+		'env_kwargs.config.input_penalty': [0,.2,.5,.8],
+		'env_kwargs.config.env_kwargs.success_dist': [.25],
+		'max_overrides': [200],
+		'env_kwargs.config.oracle_kwargs.threshold': [.15,.3,.45],
+		'exploration_kwargs.alpha': [.2,.5]
 
-		'env_kwargs.config.space': [1],
-		'env_kwargs.config.num_obs': [10],
-		'env_kwargs.config.num_nonnoop': [10,],
+		# 'env_kwargs.config.space': [0],
+		# 'env_kwargs.config.num_obs': [10],
+		# 'env_kwargs.config.num_nonnoop': [10,],
 		# 'exploration_kwargs.logit_scale': [int(1e3)]
 	}
 
@@ -139,8 +156,16 @@ if __name__ == "__main__":
 		variants.append(variant)
 
 	def process_args(variant):
+		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
 			variant['render'] = args.no_render
+			if args.job in ['exp']:
+				variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
+				variant['algorithm_args']['dump_tabular'] = args.no_dump_tabular
+			elif args.job in ['demo']:
+				variant['demo_kwargs']['min_successes'] = 10
+			elif args.job in ['practice']:
+				variant['demo_kwargs']['min_successes'] = 100
 		if args.job in ['demo']:
 			variant['env_kwargs']['config']['adapt_tran'] = False
 
@@ -177,7 +202,10 @@ if __name__ == "__main__":
 				def sample(self,variant):
 					return collect_demonstrations(variant)
 			num_workers = 10
-			variant['demo_kwargs']['min_successes'] = variant['demo_kwargs']['min_successes']//num_workers
+			if 'min_successes' in variant['demo_kwargs']:
+				variant['demo_kwargs']['min_successes'] = variant['demo_kwargs']['min_successes']//num_workers
+			else:
+				variant['demo_kwargs']['num_episodes'] = variant['demo_kwargs']['num_episodes']//num_workers
 
 			samplers = [Sampler.remote() for i in range(num_workers)]
 			samples = [samplers[i].sample.remote(variant) for i in range(num_workers)]
@@ -190,12 +218,15 @@ if __name__ == "__main__":
 
 		if args.job in ['exp']:
 			variant = variants[0]
-			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
-			variant['algorithm_args']['dump_tabular'] = args.no_dump_tabular
 			run_variants(experiment, [variant], process_args,run_id=str(current_time))
-		if args.job in ['eval']:
+		elif args.job in ['eval']:
 			variant = variants[0]
 			run_variants(eval_exp, [variant], process_args,run_id="evaluation")
+		elif args.job in ['practice']:
+			variant = variants[0]
+			variant['seedid'] = current_time
+			process_args(variant)
+			collect_demonstrations(variant)
 		elif args.job in ['demo']:
 			variant = variants[0]
 			variant['seedid'] = current_time

@@ -9,9 +9,8 @@ from railrl.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from railrl.torch.networks import Mlp
 from railrl.torch.dqn.double_dqn import DoubleDQNTrainer
 
-from railrl.demos.source.mdp_path_loader import MDPPathLoader
-
 from railrl.core import logger
+from railrl.torch.core import np_to_pytorch_batch
 import railrl.torch.pytorch_util as ptu
 from railrl.envs.make_env import make
 from railrl.misc.eval_util import create_stats_ordered_dict
@@ -20,9 +19,8 @@ from collections import OrderedDict
 from collections import deque
 from railrl.core.timer import timer
 
-from replay_buffers import PavlovReplayBuffer
-from utils import rng
-from agents import DemonstrationPolicy,ArgmaxDiscretePolicy,BoltzmannPolicy,HybridPolicy,TranslationPolicy
+from utils import *
+from agents import DemonstrationPolicy,ArgmaxDiscretePolicy,BoltzmannPolicy,OverridePolicy,TranslationPolicy,ComparisonMergeArgPolicy
 
 class FullTrajPathCollector(MdpPathCollector):
 	def collect_new_paths(
@@ -51,10 +49,16 @@ class FullTrajPathCollector(MdpPathCollector):
 class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 	def __init__(self, *args, **kwargs):
 		self.dump_tabular = kwargs.pop('dump_tabular',True)
+		self.pretrain_with_bc = kwargs.pop('pretrain_with_bc',False)
+		self.num_pretrains = kwargs.pop('num_pretrains',0)
 		super().__init__(*args,**kwargs)
 
 	def train(self):
 		timer.return_global_times = True
+		if self.pretrain_with_bc:
+			for _ in range(self.num_pretrains):
+				train_data = self.replay_buffer.random_batch(self.batch_size)
+				self.trainer.train(train_data)
 		for _ in range(self.num_epochs):
 			self._begin_epoch()
 			timer.start_timer('saving')
@@ -78,7 +82,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 				self.max_path_length,
 				self.min_num_steps_before_training,
 			)
-			print(init_expl_paths['actions'].mean(axis=0))
 			self.replay_buffer.add_paths(init_expl_paths)
 			self.expl_data_collector.end_epoch(-1)
 
@@ -113,6 +116,7 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 
 class DQNPavlovTrainer(DoubleDQNTrainer):
 	def __init__(self,qf1,target_qf1,qf2,target_qf2,**kwargs):
+		self.bc_soft_target_tau = kwargs.pop('bc_soft_target_tau',.5)
 		super().__init__(qf1,target_qf1,**kwargs)
 		self.qf1 = qf1
 		self.target_qf1 = target_qf1
@@ -123,6 +127,30 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			self.qf2.parameters(),
 			lr=self.learning_rate,
 		)
+
+	def bc(self,batch):
+		batch = np_to_pytorch_batch(batch)
+		actions = batch['actions']
+		concat_obs = batch['observations']
+
+		target = actions.argmax(dim=1).squeeze()
+		qf1_loss = F.cross_entropy(self.qf1(concat_obs),target)
+		qf2_loss = F.cross_entropy(self.qf2(concat_obs),target)
+
+		self.qf1_optimizer.zero_grad()
+		qf1_loss.backward()
+		self.qf1_optimizer.step()
+		self.qf2_optimizer.zero_grad()
+		qf2_loss.backward()
+		self.qf2_optimizer.step()
+
+		ptu.soft_update_from_to(
+			self.qf1, self.target_qf1, self.bc_soft_target_tau
+		)
+		ptu.soft_update_from_to(
+			self.qf2, self.target_qf2, self.bc_soft_target_tau
+		)
+		
 
 	def train_from_torch(self, batch):
 		rewards = batch['rewards']
@@ -151,6 +179,8 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(self.qf2(concat_obs) * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)
+		# self.qf1.alpha = np.exp(-ptu.get_numpy(qf1_loss))
+		# self.qf2.alpha = np.exp(-ptu.get_numpy(qf2_loss))		
 
 		"""
 		Update Q networks
@@ -210,7 +240,7 @@ def demonstration_factory(base):
 		def __init__(self,config):
 			super().__init__(config)
 			self.target_index = 0
-			self.num_targets = self.env.num_targets
+			self.num_targets = self.base_env.num_targets
 
 		def next_target(self):
 			self.target_index += 1
@@ -222,19 +252,19 @@ def demonstration_factory(base):
 			def generate_target(self,index):
 				nonlocal target_index
 				self.__class__.generate_target(self,target_index)
-			self.env.generate_target = MethodType(generate_target,self.env)
+			self.base_env.generate_target = MethodType(generate_target,self.base_env)
 			return super().reset()
 	return DemonstrationEnv
 def collect_demonstrations(variant):
 	env_class = variant['env_class']
 	env_kwargs = variant.get('env_kwargs', {})
-	env_kwargs['config']['factories'] += demonstration_factory
+	env_kwargs['config']['factories'] += [demonstration_factory]
 	env = make(None, env_class, env_kwargs, False)
 	env.seed(variant['seedid'])
 
 	path_collector = FullTrajPathCollector(
 		env,
-		DemonstrationPolicy(env,lower_p=.8,upper_p=1,traj_len=env_kwargs['config']['traj_len']),
+		TranslationPolicy(env,DemonstrationPolicy(env,lower_p=.8,upper_p=1),**env_kwargs['config']),
 	)
 
 	if variant.get('render',False):
@@ -242,8 +272,14 @@ def collect_demonstrations(variant):
 	demo_kwargs = variant.get('demo_kwargs')
 	paths = []
 	num_successes = 0
-	fail_paths = deque([],int(demo_kwargs['min_successes']*(1/demo_kwargs['min_success_rate']-1)))
-	while num_successes < demo_kwargs['min_successes']:
+	if 'min_successes' in demo_kwargs:
+		fail_size = int(demo_kwargs['min_successes']*(1/demo_kwargs['min_success_rate']-1))
+		condition = lambda: num_successes < demo_kwargs['min_successes']
+	else:
+		fail_size = demo_kwargs['num_episodes']
+		condition = lambda: len(fail_paths) + len(paths) < fail_size
+	fail_paths = deque([],fail_size)
+	while condition():
 		while env.target_index < env.num_targets:
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
@@ -272,7 +308,7 @@ def eval_exp(variant):
 	# eval_env.seed(variant['seedid'])
 	eval_env.seed(1999)
 
-	file_name = os.path.join(variant['save_path'],'params.pkl')
+	file_name = os.path.join(variant['eval_path'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
 	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
 
@@ -280,12 +316,10 @@ def eval_exp(variant):
 	policy = ArgmaxDiscretePolicy(
 		qf1=qf1,
 		qf2=qf2,
-		logit_scale=1000,
 		**policy_kwargs,
 	)
 
-	# eval_policy = HybridAgent(policy)
-	eval_policy = policy
+	eval_policy = TranslationPolicy(eval_env,OverridePolicy(eval_env,policy),**env_kwargs['config'])
 	eval_path_collector = FullTrajPathCollector(
 		eval_env,
 		eval_policy,
@@ -306,8 +340,8 @@ def resume_exp(variant):
 	env_class = variant.get('env_class', None)
 	env_kwargs = variant.get('env_kwargs', {})
 
-	expl_env = make(env_id, env_class, env_kwargs, normalize_env)
-	expl_env.seed(variant['seedid'])
+	env = make(env_id, env_class, env_kwargs, normalize_env)
+	env.seed(variant['seedid'])
 
 	file_name = os.path.join(variant['file_name'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
@@ -353,13 +387,13 @@ def resume_exp(variant):
 		error
 
 	expl_path_collector = FullTrajPathCollector(
-		expl_env,
+		env,
 		expl_policy,
 	)
 	algorithm = PavlovBatchRLAlgorithm(
 		trainer=trainer,
-		exploration_env=expl_env,
-		evaluation_env=expl_env,
+		exploration_env=env,
+		evaluation_env=env,
 		exploration_data_collector=expl_path_collector,
 		evaluation_data_collector=eval_path_collector,
 		replay_buffer=replay_buffer,
@@ -371,8 +405,8 @@ def resume_exp(variant):
 def experiment(variant):
 	env_class = variant.get('env_class', None)
 	env_kwargs = variant.get('env_kwargs', {})
-	expl_env = make(None, env_class, env_kwargs, False)
-	expl_env.seed(variant['seedid'])
+	env = make(None, env_class, env_kwargs, False)
+	env.seed(variant['seedid'])
 
 	if variant.get('add_env_demos', False):
 		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_demo_path"])
@@ -380,9 +414,9 @@ def experiment(variant):
 		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_offpolicy_data_path"])
 
 	path_loader_kwargs = variant.get("path_loader_kwargs", {})
-	action_dim = expl_env.action_space.low.size
+	action_dim = env.action_space.low.size
 
-	obs_dim = expl_env.observation_space.low.size
+	obs_dim = env.observation_space.low.size
 	qf_kwargs = variant.get("qf_kwargs", {})
 	qf1 = Mlp(
 		input_size=obs_dim,
@@ -416,12 +450,7 @@ def experiment(variant):
 		**policy_kwargs,
 	)
 
-	eval_policy = TranslationPolicy(HybridPolicy(policy))
-	eval_path_collector = FullTrajPathCollector(
-		expl_env,
-		eval_policy,
-	)
-
+	expl_policy = policy
 	exploration_kwargs =  variant.get('exploration_kwargs', {})
 	if exploration_kwargs:
 		exploration_strategy = exploration_kwargs.get("strategy", None)
@@ -431,13 +460,24 @@ def experiment(variant):
 			expl_policy = BoltzmannPolicy(qf1,qf2,
 										logit_scale=exploration_kwargs['logit_scale'],
 										**policy_kwargs)
+		elif exploration_strategy == 'merge_arg':
+			expl_policy = ComparisonMergeArgPolicy(env,qf1,qf2,exploration_kwargs['alpha'],**policy_kwargs)
 		else:
 			error
-	expl_policy = TranslationPolicy(HybridPolicy(expl_policy))
+	if variant['override']:
+		expl_policy = TranslationPolicy(env,OverridePolicy(env,expl_policy,variant['max_overrides']),**env_kwargs['config'])
+	else:
+		expl_policy = TranslationPolicy(env,expl_policy,**env_kwargs['config'])
+
+	eval_policy = TranslationPolicy(env,policy,**env_kwargs['config'])
+	eval_path_collector = FullTrajPathCollector(
+		env,
+		eval_policy,
+	)
 
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
-	replay_buffer_kwargs.update({'env':expl_env})
-	replay_buffer = variant.get('replay_buffer_class', PavlovReplayBuffer)(
+	replay_buffer_kwargs.update({'env':env})
+	replay_buffer = variant.get('replay_buffer_class', AdaptReplayBuffer)(
 		**replay_buffer_kwargs,
 	)
 
@@ -454,13 +494,13 @@ def experiment(variant):
 		error
 
 	expl_path_collector = FullTrajPathCollector(
-		expl_env,
+		env,
 		expl_policy,
 	)
 	algorithm = PavlovBatchRLAlgorithm(
 		trainer=trainer,
-		exploration_env=expl_env,
-		evaluation_env=expl_env,
+		exploration_env=env,
+		evaluation_env=env,
 		exploration_data_collector=expl_path_collector,
 		evaluation_data_collector=eval_path_collector,
 		replay_buffer=replay_buffer,
@@ -469,7 +509,7 @@ def experiment(variant):
 	algorithm.to(ptu.device)
 
 	if variant.get('load_demos', False):
-		path_loader_class = variant.get('path_loader_class', MDPPathLoader)
+		path_loader_class = variant.get('path_loader_class', AdaptPathLoader)
 		path_loader = path_loader_class(trainer,
 			replay_buffer=replay_buffer,
 			demo_train_buffer=replay_buffer,
@@ -480,5 +520,5 @@ def experiment(variant):
 	if variant.get('train_rl', True):
 		print(replay_buffer._top)
 		if variant.get('render',False):
-			expl_env.render('human')
+			env.render('human')
 		algorithm.train()

@@ -10,7 +10,8 @@ class PavlovReplayBuffer(SimpleReplayBuffer):
 		self._observations[self._top] = observation
 		self._actions[self._top] = action
 		self._rewards[self._top] = reward
-		self._terminals[self._top] = env_info['task_success']
+		# self._terminals[self._top] = env_info['task_success']
+		self._terminals[self._top] = terminal
 		self._next_obs[self._top] = next_observation
 
 		for key in self._env_info_keys:

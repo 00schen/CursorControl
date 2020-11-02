@@ -8,3 +8,10 @@
 1602451314351196500: Laptop decay forward on user bursts
 1602459224266245900: argmax no decay
 1602460291775263000: argmax decay = .5
+
+c8,s8: using burst
+c9,s9: no burst
+s15: heuristic alpha, sticky user
+s16: constant alpha, sticky user, penalty
+s17: vary alpha and penalty
+s18: new penalty criteria

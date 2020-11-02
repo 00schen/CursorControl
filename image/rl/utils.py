@@ -1,56 +1,80 @@
 import numpy as np
-from envs import overhead_factory,rng
+from replay_buffers import PavlovReplayBuffer
 
 from railrl.demos.source.dict_to_mdp_path_loader import DictToMDPPathLoader
-class PathAdaptLoader(DictToMDPPathLoader):
+class AdaptPathLoader(DictToMDPPathLoader):
 	def load_path(self, path, replay_buffer, obs_dict=None):
-		if path['env_infos'][0].get('adapt',True):
-			replay_buffer.env.adapt_path(path)
-		super().load_path(path, replay_buffer, obs_dict)
+		replay_buffer.add_path(path,True)
+		# super().load_path(path, replay_buffer, obs_dict)
 
-def action_adapt(self,action,info,ainfo):
-	if self.action_type in ['target']:
-		action = info.get('target_pred',info['target_pos'])
-	elif self.action_type in ['joint']:
-		action = info['joint_action']
-	elif self.action_type in ['disc_traj']:
-		action = np.zeros(6)
-		index = ainfo['action_index']
-		action[index] = 1
-	return action
+class AdaptReplayBuffer(PavlovReplayBuffer):
+	def __init__(self,max_replay_buffer_size,env):
+		super().__init__(max_replay_buffer_size,env)
+	def add_path(self,path,adapt_tran=False):
+		self.adapt_path(path,adapt_tran)
+		super().add_path(path)
+	def adapt_path(self,path,adapt_tran):
+		tran_iter = zip(list(path['observations'][1:])+[path['next_observations'][-1]],
+						list(path['actions']),
+						list(path['rewards']),
+						list(path['terminals']),
+						list(path['env_infos']),
+						list(path['agent_infos']),
+					)
 
-def adapt_factory(base,adapt_funcs):
-	class PathAdapter(base):
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			info['adapt'] = False
-			return obs,r,done,info
-		def adapt_path(self,path):
-			tran_iter = zip(list(path['observations'][1:])+[path['next_observations'][-1]],
-							list(path['actions']),
-							list(path['rewards']),
-							list(path['terminals']),
-							list(path['env_infos']),
-							list(path['agent_infos']),
-							)
+		processed_trans = []
+		obs = path['observations'][0]
+		if adapt_tran:
+			obs = self.env.adapt_reset(obs)
+		for next_obs,action,r,done,info,ainfo in tran_iter:
+			if adapt_tran:
+				next_obs,r,done,info = self.env.adapt_step(next_obs,r,done,info)
+			action = ainfo.get(self.env.action_type,action)
+			processed_trans.append((obs,next_obs,action,r,done,info,ainfo))
+			obs = next_obs
 
-			processed_trans = []
-			obs = self.adapt_reset(path['observations'][0])
-			for next_obs,action,r,done,info,ainfo in tran_iter:
-				next_obs,r,done,info = self.adapt_step(next_obs,r,done,info)
-				action = self.action_adapt(action,info,ainfo)
-				processed_trans.append((obs,next_obs,action,r,done,info,ainfo))
-				obs = next_obs
+		new_path = dict(zip(
+			['observations','next_observations','actions','rewards','terminals','env_infos','agent_infos'],
+			list(zip(*processed_trans))
+			))
+		path.update(new_path)
+		path['observations'] = np.array(path['observations'])
+		path['next_observations'] = np.array(path['next_observations'])
+		path['actions'] = np.array(path['actions'])
+		path['rewards'] = np.array(path['rewards'])[:,np.newaxis]
+		path['terminals'] = np.array(path['terminals'])[:,np.newaxis]
+		return path
 
-			new_path = dict(zip(
-				['observations','next_observations','actions','rewards','terminals','env_infos','agent_infos'],
-				list(zip(*processed_trans)),))
-			path.update(new_path)
-			path['env_infos'][0]['adapt'] = False
-			return path
-	return PathAdapter
+class RunningMeanStd:
+	def __init__(self, epsilon=1, shape=()):
+		"""
+		Calulates the running mean and std of a data stream
+		https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+		:param epsilon: helps with arithmetic issues
+		:param shape: the shape of the data stream's output
+		"""
+		self.mean = np.zeros(shape, np.float64)
+		self.var = np.ones(shape, np.float64)
+		self.count = epsilon
 
-def adapt_factory(config):
-	if config['adapt_tran']:
-		config['factories'] += [adapt_factory]
-	return overhead_factory(config)
+	def update(self, arr):
+		batch_mean = np.mean(arr, axis=0)
+		batch_var = np.var(arr, axis=0)
+		batch_count = arr.shape[0]
+		self.update_from_moments(batch_mean, batch_var, batch_count)
+
+	def update_from_moments(self, batch_mean, batch_var, batch_count):
+		delta = batch_mean - self.mean
+		tot_count = self.count + batch_count
+
+		new_mean = self.mean + delta * batch_count / tot_count
+		m_a = self.var * self.count
+		m_b = batch_var * batch_count
+		m_2 = m_a + m_b + np.square(delta) * self.count * batch_count / (self.count + batch_count)
+		new_var = m_2 / (self.count + batch_count)
+
+		new_count = batch_count + self.count
+
+		self.mean = new_mean
+		self.var = new_var
+		self.count = new_count
