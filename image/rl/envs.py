@@ -2,6 +2,7 @@ from functools import reduce
 from collections import deque
 import os
 from copy import deepcopy
+from types import MethodType
 
 import numpy as np
 from numpy.random import default_rng
@@ -12,40 +13,38 @@ import assistive_gym as ag
 from gym import spaces,Env
 from railrl.envs.env_utils import get_dim
 
-from agents import KeyboardOracle,MouseOracle,UserModelOracle,PPOModelOracle
+from agents import KeyboardOracle,MouseOracle,UserModelOracle,DemonstrationPolicy,TranslationPolicy
 
 def default_overhead(config):
-	factories = [oracle_factory,action_factory,]+config['factories']
-	if config['env_name'] == "Assortment":
-		factories += [assorted_factory]
+	if 'oracle' in config:
+		config['factories'] = [oracle_factory] + config['factories']
+	factories = [action_factory] + config['factories']
 	wrapper = reduce(lambda value,func: func(value), factories, AssistiveWrapper)
 	
 	class Overhead(wrapper):
 		def __init__(self,config):
 			self.rng = default_rng(config['seedid'])
 			super().__init__(config)
-			self.adapt_tran = config['adapt_tran']
-			if self.adapt_tran:
-				self.adapts = []
-				if config['burst']:
-					self.adapts.append(burst_adapt)
-				if config['stack']:
-					self.adapts.append(burst_adapt)
-				self.adapts = [adapt(self,config) for adapt in self.adapts+[cap_adapt]]
-				self.adapt_step = lambda obs,r,done,info:reduce(lambda sub_tran,adapt:adapt._step(*sub_tran),
-															self.adapts,(obs,r,done,info))
-				self.adapt_reset = lambda obs:reduce(lambda obs,adapt:adapt._reset(obs),self.adapts,(obs))
+			adapt_map = {
+				'burst': burst,
+				'stack': stack,
+				'reward': reward,
+				'train': train_li_oracle,
+			}
+			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
+			self.adapts = [adapt(self,config) for adapt in self.adapts]
+			self.adapt_step = lambda obs,r,done,info:reduce(lambda sub_tran,adapt:adapt._step(*sub_tran),
+														self.adapts,(obs,r,done,info))
+			self.adapt_reset = lambda obs:reduce(lambda obs,adapt:adapt._reset(obs),self.adapts,(obs))
 
 		def step(self,action):
 			tran = super().step(action)
-			if self.adapt_tran:
-				tran = self.adapt_step(*tran)
+			tran = self.adapt_step(*tran)
 			return tran
 		
 		def reset(self):
 			obs = super().reset()
-			if self.adapt_tran:
-				obs = self.adapt_reset(obs)
+			obs = self.adapt_reset(obs)
 			return obs
 	return Overhead(config)
 
@@ -54,14 +53,11 @@ class AssistiveWrapper(Env):
 		self.env_name = config['env_name']
 		
 		self.base_env,self.env_name = {
-			# "ScratchItch": assistive_gym.ScratchItchJacoEnv,
-			"Feeding": (ag.FeedingJacoEnv, 'FeedingJaco-v0'),
+			"Feeding": (ag.FeedingJacoEnv, 'Feeding'),
 			"Laptop": (ag.LaptopJacoEnv, 'Laptop'),
 			"LightSwitch": (ag.LightSwitchJacoEnv, 'LightSwitch'),
 			"Circle": (ag.CircleJacoEnv, 'Circle'),
 			"Sin": (ag.SinJacoEnv, 'Sin'),
-			"Dressing": (ag.DressingJacoEnv, 'DressingJaco-v0'),
-			"Assortment": (ag.LaptopJacoEnv, ''),
 		}[config['env_name']]
 		self.base_env = self.base_env(**config['env_kwargs'])
 		self.step_limit = config['step_limit']
@@ -74,9 +70,8 @@ class AssistiveWrapper(Env):
 
 		if self.env_name in ['Circle','Sin']:
 			info['frachet'] = self.base_env.discrete_frachet/self.timesteps
-			info['task_success'] = self.timesteps >= self.step_limit and info['frachet'] <= self.base_env.success_dist
+			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
 
-		r = info['task_success']
 		done = self.base_env.task_success > 0 or self.timesteps >= self.step_limit
 		info['target_pos'] = self.base_env.target_pos
 		return obs,r,done,info
@@ -96,62 +91,12 @@ class AssistiveWrapper(Env):
 	def get_base_env(self):
 		return self.base_env
 
-def assorted_factory(base):
-	class Assorted(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.envs = [env(**config['env_kwargs']) for env in [ag.FeedingJacoEnv,ag.LaptopJacoEnv,ag.LightSwitchJacoEnv,]]
-			self.base_env = self.rng.choice(self.envs)
-		def reset(self):
-			self.base_env = self.rng.choice(self.envs)
-			return super().reset()
-		def get_base_env(self):
-			return self.base_env
-	return Assorted
-
-def oracle_factory(base):
-	class Oracle(base):
-		def __init__(self,config):
-			super().__init__(config)
-			self.input_penalty = config['input_penalty']
-			self.oracle = {
-				'keyboard': KeyboardOracle,
-				'mouse': MouseOracle,
-				'model': UserModelOracle,
-				'ppo': PPOModelOracle,
-			}[config['oracle']](self,**config['oracle_kwargs'])
-			self.observation_space = spaces.Box(-10,10,
-									(get_dim(self.observation_space)+self.oracle.size,))
-
-		def step(self,action):
-			obs,r,done,info = super().step(action)
-			obs = self.predict(obs,info)
-			self.recommend = deepcopy(obs[-6:])
-			r -= self.input_penalty*(not info['noop'])
-			return obs,r,done,info
-
-		def reset(self):
-			obs = super().reset()
-			self.oracle.reset()
-			self.recommend = np.zeros(6)
-			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
-			return obs
-
-		def predict(self,obs,info):
-			recommend,self.oracle_info = self.oracle.get_action(obs,info)
-			# info['recommend'] = recommend
-			info['noop'] = not np.count_nonzero(recommend)
-			return np.concatenate((obs,recommend))
-
-	return Oracle
-
 def action_factory(base):
 	class Action(base):
 		def __init__(self,config):
 			super().__init__(config)
 			self.action_type = config['action_type']
 			self.action_space = {
-				# "target": spaces.Box(-1,1,(3,)),
 				"trajectory": spaces.Box(-1,1,(3,)),
 				"joint": spaces.Box(-1,1,(7,)),
 				"disc_traj": spaces.Box(0,1,(6,)),
@@ -162,10 +107,135 @@ def action_factory(base):
 			if self.action_type in ['target']:
 				info['pred_target_dist'] = norm(action-self.base_env.target_pos)
 			return obs,r,done,info
-
 	return Action
 
-class burst_adapt:
+def oracle_factory(base):
+	class Oracle(base):
+		def __init__(self,config):
+			super().__init__(config)
+			self.input_penalty = config['input_penalty']
+			self.oracle = {
+				'keyboard': KeyboardOracle,
+				'mouse': MouseOracle,
+				'model': UserModelOracle,
+			}[config['oracle']](self,**config['oracle_kwargs'])
+			self.observation_space = spaces.Box(-10,10,
+									(get_dim(self.observation_space)+self.oracle.size,))
+
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			obs = self._predict(obs,info)
+			return obs,r,done,info
+
+		def reset(self):
+			obs = super().reset()
+			self.oracle.reset()
+			self.recommend = np.zeros(6)
+			return np.concatenate((obs,np.zeros(6)))
+			# return obs
+
+		def _predict(self,obs,info):
+			recommend,_info = self.oracle.get_action(obs,info)
+			self.recommend = recommend
+			# info['recommend'] = recommend
+			info['noop'] = not np.count_nonzero(recommend)
+			# return obs
+			return np.concatenate((obs,recommend))
+	return Oracle
+
+def train_oracle_factory(base):
+	class TrainOracle(base):
+		def __init__(self,config):
+			super().__init__(config)
+			# self.initial_oracle = UserModelOracle(self,**config['oracle_kwargs'])
+			# self.initial_policy = TranslationPolicy(self,DemonstrationPolicy(self,lower_p=.8),**config)
+			self.observation_space = spaces.Box(-10,10,
+									(get_dim(self.observation_space)+3+3+3*3+3,))
+		def step(self,action):
+			obs,r,done,info = super().step(action)
+			base_env = self.base_env
+			bad_switch = np.logical_and(info['angle_dir'] != 0,
+										np.logical_or(np.logical_and(info['angle_dir'] < 0, base_env.target_string == 1),
+											np.logical_and(info['angle_dir'] > 0, base_env.target_string == 0))).astype(int)
+			bad_contact = (info['bad_contact'] > 0)\
+						or (np.count_nonzero(bad_switch)>0)
+			info['bad_contact'] = bad_contact
+			switch_pos,__ = p.getBasePositionAndOrientation(base_env.switches[0], physicsClientId=base_env.id)
+			obs = np.concatenate([base_env.target_string,base_env.current_string,*base_env.target_pos,switch_pos,obs]).ravel()
+			return obs,r,done,info
+		def reset(self):
+			# if self.rng.random() < 1/3:
+			# 	def init_start_pos(self,og_init_pos):
+			# 		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[1], physicsClientId=self.id)
+			# 		init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+			# 		return init_pos
+			# 	self.base_env.init_start_pos = MethodType(init_start_pos,self.base_env)
+			# 	obs = super().reset()
+			# 	angle = p.getJointStates(self.base_env.switches[0], jointIndices=[0], physicsClientId=self.base_env.id)[0][0]
+			# 	p.resetJointState(self.base_env.switches[0], jointIndex=0, targetValue=-1-angle, physicsClientId=self.base_env.id)
+			# elif self.rng.random() < 1/2:
+			# 	def init_start_pos(self,og_init_pos):
+			# 		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[2], physicsClientId=self.id)
+			# 		init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+			# 		return init_pos
+			# 	self.base_env.init_start_pos = MethodType(init_start_pos,self.base_env)
+			# 	obs = super().reset()
+			# 	angle = p.getJointStates(self.base_env.switches[0], jointIndices=[0], physicsClientId=self.base_env.id)[0][0]
+			# 	p.resetJointState(self.base_env.switches[0], jointIndex=0, targetValue=-1-angle, physicsClientId=self.base_env.id)
+			# 	angle = p.getJointStates(self.base_env.switches[1], jointIndices=[0], physicsClientId=self.base_env.id)[0][0]
+			# 	p.resetJointState(self.base_env.switches[1], jointIndex=0, targetValue=-1-angle, physicsClientId=self.base_env.id)
+			# else:
+			# 	obs = super().reset()
+
+			# self.initial_oracle.reset()
+			# self.initial_policy.reset()
+			# obs,r,done,info = self.step(np.zeros(7))
+			# bad_contact_found = False
+			# for i in range(100):
+			# 	self.recommend,_info = self.initial_oracle.get_action(obs,info)
+			# 	if info['bad_contact']:
+			# 		bad_contact_found = True
+			# 		break
+			# 	action,_info = self.initial_policy.get_action(obs)
+			# 	obs,r,done,info = self.step(action)
+			# 	self.timestep = 0
+			# if not bad_contact_found:
+			# 	return self.reset()
+			# return obs
+
+			obs = super().reset()
+			base_env = self.base_env
+			switch_pos,__ = p.getBasePositionAndOrientation(base_env.switches[0], physicsClientId=base_env.id)
+			return np.concatenate([base_env.target_string,base_env.current_string,*base_env.target_pos,switch_pos,obs]).ravel()
+	return TrainOracle
+
+class train_li_oracle:
+	def __init__(self,master_env,config):
+		pass
+	def _step(self,obs,r,done,info):
+		r = 0
+		target_string = obs[:3]
+		current_string = obs[3:6]
+		target_pos = obs[6:15].reshape((3,3))
+		tool_pos = obs[-15:-12]
+		target_indices = np.nonzero(np.not_equal(target_string,current_string))[0]
+		if len(target_indices) > 0:
+			# r -= min([norm(self.tool_pos-self.target_pos[i]) for i in target_indices])
+			r -= 10*norm(tool_pos-target_pos[target_indices[0]])
+		else:
+			r -= 0
+		for i in range(3):
+			if target_string[i] == 0:
+				r -= 250*abs(-.02 - info['angle_dir'][i])
+			else:
+				r -= 250*abs(.02 - info['angle_dir'][i])
+		r -= 10*len(target_indices)
+		print(obs[:6],info['angle_dir'],r)
+		return obs,r,done,info
+	def _reset(self,obs):
+		return obs
+		
+class burst:
 	""" Remove user input from observation and reward if input is in bursts
 		Burst defined as inputs separated by no more than 'space' steps """
 	def __init__(self,master_env,config):
@@ -174,7 +244,6 @@ class burst_adapt:
 	def _step(self,obs,r,done,info):
 		if np.count_nonzero(obs[-6:]):
 			if self.timer < self.space:
-				r += 1
 				obs[-6:] = np.zeros(6)
 			self.timer = 0
 		self.timer += 1
@@ -185,7 +254,7 @@ class burst_adapt:
 		obs,_r,_d,_i = self._step(obs,0,False,{})
 		return obs
 
-class stack_adapt:
+class stack:
 	""" 'num_obs' most recent steps and 'num_nonnoop' most recent input steps stacked """
 	def __init__(self,master_env,config):
 		self.history_shape = (config['num_obs'],get_dim(master_env.observation_space))
@@ -205,13 +274,17 @@ class stack_adapt:
 		obs,_r,_d,_i = self._step(obs,0,False,{})
 		return obs
 
-class cap_adapt:
+class reward:
 	""" rewards capped at 'cap' """
 	def __init__(self,master_env,config):
-		self.cap = config['cap']
+		self.range = (config['reward_min'],config['reward_max'])
+		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		r = np.minimum(r,self.cap)
+		r = 0
+		# r += info['task_success']
+		r -= self.master_env.input_penalty*(np.count_nonzero(obs[-6:]) > 0)
+		r = np.clip(r,*self.range)
 		return obs,r,done,info
 
 	def _reset(self,obs):

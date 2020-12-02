@@ -2,8 +2,8 @@ import railrl.misc.hyperparameter as hyp
 from railrl.launchers.arglauncher import run_variants
 from railrl.torch.networks import Clamp
 
-from discrete_experiment import DQNPavlovTrainer,experiment,eval_exp,collect_demonstrations
-from envs import default_overhead
+from discrete_experiment import experiment,eval_exp,collect_demonstrations
+from envs import default_overhead,train_oracle_factory
 
 import argparse
 from copy import deepcopy,copy
@@ -22,10 +22,11 @@ parser.add_argument('--per_gpu', default=1, type=int)
 args, _ = parser.parse_known_args()
 
 if __name__ == "__main__":
-	path_length = 400
+	path_length = 200
+	num_epochs = int(5e3)
 	variant = dict(
 		algorithm_args=dict(
-			num_epochs=250,
+			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=path_length,
 			num_trains_per_train_loop=50,
 			num_expl_steps_per_train_loop=path_length*3//4,
@@ -33,30 +34,25 @@ if __name__ == "__main__":
 
 			batch_size=1024,
 			max_path_length=path_length,
-			# pretrain_with_bc=False,
-			# num_pretrains=0,
+			pretrain=True,
+			num_pretrains=int(1e5),
 		),
 
-		trainer_class=DQNPavlovTrainer,
-
 		replay_buffer_kwargs=dict(
+			# max_replay_buffer_size=int(1e4)*path_length,
 			max_replay_buffer_size=500*path_length,
 		),
 
-		twin_q=True,
 		policy_kwargs=dict(
 		),
-		override=False,
 		qf_kwargs=dict(
 			hidden_sizes=[512]*3,
 			output_activation=Clamp(max=0), # rewards are <= 0
 		),
 		exploration_kwargs=dict(
-			strategy='merge_arg',
+			strategy='boltzmann',
+			override=True,
 		),
-
-		version="normal",
-		collection_mode='batch',
 		trainer_kwargs=dict(
 			discount=.995,
 			learning_rate=5e-4,
@@ -64,6 +60,9 @@ if __name__ == "__main__":
 			target_update_period=10,
 			reward_scale=1,
 		),
+
+		version="normal",
+		collection_mode='batch',
 		launcher_config=dict(
 			exp_name=args.exp_name,
 			mode='here_no_doodad',
@@ -83,48 +82,48 @@ if __name__ == "__main__":
 			# 			obs_dict=False,
 			# 			is_demo=False,
 			# 			train_split=1,
-			# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboardinput" in demo],
-			# demo_paths=[dict(
-			# 			path=os.path.join(os.path.abspath(''),"demos",f"{args.env_name}_usermodel_1001.npy"),
-			# 			obs_dict=False,
-			# 			is_demo=False,
-			# 			train_split=1,
-			# 			)],
-
-			add_demos_to_replay_buffer=False,
+			# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
+			demo_paths=[dict(
+						path=os.path.join(os.path.abspath(''),"demos",demo),
+						obs_dict=False,
+						is_demo=False,
+						train_split=1,
+						) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_model" in demo],
 		),
 
-		# eval_path=os.path.join(os.path.abspath(''),"logs","tests6","run0","id0"),
-		eval_path=os.path.join(os.path.abspath(''),"logs","testc6","run0","id0"),
+		eval_path=os.path.join(os.path.abspath(''),"logs","testli-11","run1","id0"),
+
 
 		load_demos=True,
 		demo_kwargs=dict(
-			# min_successes=100,
-			# min_success_rate=1,
-			num_episodes=100,
+			only_success=True,
+			num_episodes=500,
 			path_length=path_length,
 			# save_name=f"{args.env_name}_keyboardinput_"
-			save_name=f"{args.env_name}_usermodel_1001"
+			save_name=f"{args.env_name}_model_2000"
 		)
 	)
 	config = dict(
 		env_name=args.env_name,
-		factories=[],
-		adapt_tran=True,
-		oracle='model',
-		action_type='disc_traj',
-		traj_len=.2,
-		cap=1,
-		# input_penalty=1,
 		step_limit=path_length,
-		# env_kwargs=dict(success_dist=.03,frame_skip=5),
-		env_kwargs=dict(path_length=path_length,frame_skip=5),
-		oracle_kwargs=dict(epsilon=.1),
-		burst = True,
+		env_kwargs=dict(success_dist=.03,frame_skip=5),
+		# env_kwargs=dict(path_length=path_length,frame_skip=5),
+
+		# factories=[train_oracle_factory],
+		factories = [],
+		oracle='model',
+		oracle_kwargs=dict(),
+		action_type='disc_traj',
+		traj_len=.1,
+
+		# adapts = ['train'],
+		adapts = ['burst','stack','reward'],
 		space=0,
-		stack = True,
 		num_obs=10,
 		num_nonnoop=10,
+		reward_max=0,
+		reward_min=-np.inf,
+		input_penalty=1,		
 	)
 	variant.update(dict(
 		env_class=default_overhead,
@@ -135,17 +134,19 @@ if __name__ == "__main__":
 		'seedid': [2000,2001,2002],
 		# 'trainer_kwargs.learning_rate': [5e-4,],
 		# 'trainer_kwargs.soft_target_tau': [1e-3],
-		'env_kwargs.config.oracle_kwargs.blank': [1,.5],
-		'env_kwargs.config.input_penalty': [0,.2,.5,.8],
-		'env_kwargs.config.env_kwargs.success_dist': [.25],
-		'max_overrides': [200],
-		'env_kwargs.config.oracle_kwargs.threshold': [.15,.3,.45],
-		'exploration_kwargs.alpha': [.2,.5]
+		# 'env_kwargs.config.oracle_kwargs.blank': [1,],
+		# 'env_kwargs.config.env_kwargs.success_dist': [.25,.1,],
+		'env_kwargs.config.oracle_kwargs.threshold': [.2,0,-.2,],
+		# 'env_kwargs.config.input_penalty': [.1,.25,.5,1],
+		# 'env_kwargs.config.oracle_kwargs.threshold': [.3,.15],
+		# 'env_kwargs.config.env_kwargs.success_dist': [.1,.15],
+		'env_kwargs.config.smooth_alpha': [.8,],
 
-		# 'env_kwargs.config.space': [0],
-		# 'env_kwargs.config.num_obs': [10],
-		# 'env_kwargs.config.num_nonnoop': [10,],
-		# 'exploration_kwargs.logit_scale': [int(1e3)]
+		'exploration_kwargs.logit_scale': [1,100]
+
+		# 'trainer_kwargs.cql_kwargs.re_shift': [0,10,50,100],
+		# 'trainer_kwargs.cql_kwargs.re_scale': [.5,1,2,5],
+		# 'trainer_kwargs.cql_kwargs.cql_alpha': [0,.2,.5,1]
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -163,11 +164,11 @@ if __name__ == "__main__":
 				variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
 				variant['algorithm_args']['dump_tabular'] = args.no_dump_tabular
 			elif args.job in ['demo']:
-				variant['demo_kwargs']['min_successes'] = 10
+				variant['demo_kwargs']['num_episodes'] = 10
 			elif args.job in ['practice']:
-				variant['demo_kwargs']['min_successes'] = 100
+				variant['demo_kwargs']['num_episodes'] = 10
 		if args.job in ['demo']:
-			variant['env_kwargs']['config']['adapt_tran'] = False
+			variant['env_kwargs']['config']['adapts'] = []
 
 	if args.use_ray:
 		import ray
@@ -190,6 +191,7 @@ if __name__ == "__main__":
 					iterator = ray.get_actor("global_iterator")
 					run_id = ray.get(iterator.next.remote())
 					variant['launcher_config']['gpu_id'] = 0
+					variant['algorithm_args']['eval_path_name'] = run_id
 					run_variants(experiment, [variant], process_args,run_id=run_id)
 			runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
 			runner_pool = ActorPool(runners)
@@ -200,12 +202,11 @@ if __name__ == "__main__":
 			@ray.remote(num_cpus=1,num_gpus=0)
 			class Sampler:
 				def sample(self,variant):
+					variant = deepcopy(variant)
+					variant['seedid'] += ray.get(iterator.next.remote())
 					return collect_demonstrations(variant)
 			num_workers = 10
-			if 'min_successes' in variant['demo_kwargs']:
-				variant['demo_kwargs']['min_successes'] = variant['demo_kwargs']['min_successes']//num_workers
-			else:
-				variant['demo_kwargs']['num_episodes'] = variant['demo_kwargs']['num_episodes']//num_workers
+			variant['demo_kwargs']['num_episodes'] = variant['demo_kwargs']['num_episodes']//num_workers
 
 			samplers = [Sampler.remote() for i in range(num_workers)]
 			samples = [samplers[i].sample.remote(variant) for i in range(num_workers)]

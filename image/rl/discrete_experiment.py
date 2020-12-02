@@ -1,5 +1,6 @@
 import torch as th
 import torch.nn.functional as F
+from torch import nn
 import torch.optim as optim
 import numpy as np
 import os
@@ -18,9 +19,10 @@ from railrl.misc.eval_util import create_stats_ordered_dict
 from collections import OrderedDict
 from collections import deque
 from railrl.core.timer import timer
+from copy import deepcopy
 
 from utils import *
-from agents import DemonstrationPolicy,ArgmaxDiscretePolicy,BoltzmannPolicy,OverridePolicy,TranslationPolicy,ComparisonMergeArgPolicy
+from agents import DemonstrationPolicy,ArgmaxDiscretePolicy,BoltzmannPolicy,OverridePolicy,TranslationPolicy,ComparisonMergeArgPolicy,LightSwitchTrainOracle
 
 class FullTrajPathCollector(MdpPathCollector):
 	def collect_new_paths(
@@ -48,17 +50,24 @@ class FullTrajPathCollector(MdpPathCollector):
 
 class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 	def __init__(self, *args, **kwargs):
+		self.path_loader = kwargs.pop('path_loader')
 		self.dump_tabular = kwargs.pop('dump_tabular',True)
+		self.pretrain = kwargs.pop('pretrain',False)
 		self.pretrain_with_bc = kwargs.pop('pretrain_with_bc',False)
 		self.num_pretrains = kwargs.pop('num_pretrains',0)
+		self.eval_path_name = kwargs.pop('eval_path_name','')
 		super().__init__(*args,**kwargs)
 
 	def train(self):
 		timer.return_global_times = True
-		if self.pretrain_with_bc:
+		if self.pretrain:
 			for _ in range(self.num_pretrains):
 				train_data = self.replay_buffer.random_batch(self.batch_size)
 				self.trainer.train(train_data)
+		elif self.pretrain_with_bc:
+			for _ in range(self.num_pretrains):
+				train_data = self.replay_buffer.random_batch(self.batch_size)
+				self.trainer.bc(train_data)
 		for _ in range(self.num_epochs):
 			self._begin_epoch()
 			timer.start_timer('saving')
@@ -85,14 +94,6 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 			self.replay_buffer.add_paths(init_expl_paths)
 			self.expl_data_collector.end_epoch(-1)
 
-		timer.start_timer('evaluation sampling')
-		if self.epoch % self._eval_epoch_freq == 0:
-			self.eval_data_collector.collect_new_paths(
-				self.max_path_length,
-				self.num_eval_steps_per_epoch,
-			)
-		timer.stop_timer('evaluation sampling')
-
 		if not self._eval_only:
 			for _ in range(self.num_train_loops_per_epoch):
 				timer.start_timer('exploration sampling', unique=False)
@@ -111,22 +112,50 @@ class PavlovBatchRLAlgorithm(TorchBatchRLAlgorithm):
 					train_data = self.replay_buffer.random_batch(self.batch_size)
 					self.trainer.train(train_data)
 				timer.stop_timer('training')
+
+		timer.start_timer('evaluation sampling')
+		if self.epoch % self._eval_epoch_freq == 0:
+			eval_paths = self.eval_data_collector.collect_new_paths(
+				self.max_path_length,
+				self.num_eval_steps_per_epoch,
+			)
+			# if self.epoch % 10 == 0:
+			# 	os.makedirs(os.path.join(os.path.abspath(''),'eval_paths1'),exist_ok=True)
+			# 	if f'{self.eval_path_name}_eval_paths.npy' in os.listdir(os.path.join(os.path.abspath(''),'eval_paths1')):
+			# 		eval_paths.extend(np.load(os.path.join(os.path.abspath(''),'eval_paths1',f'{self.eval_path_name}_eval_paths.npy'),allow_pickle=True))
+			# 	np.save(os.path.join(os.path.abspath(''),'eval_paths1',f'{self.eval_path_name}_eval_paths'), eval_paths)
+		timer.stop_timer('evaluation sampling')
+
+		if self.epoch % int(1e4) == 0 and self.epoch > 0:
+			if self.path_loader is not None:
+				self.path_loader.load_demos()
+		
 		log_stats = self._get_diagnostics()
 		return log_stats, False
 
-class DQNPavlovTrainer(DoubleDQNTrainer):
-	def __init__(self,qf1,target_qf1,qf2,target_qf2,**kwargs):
-		self.bc_soft_target_tau = kwargs.pop('bc_soft_target_tau',.5)
+class D2DQNTrainer(DoubleDQNTrainer):
+	def __init__(self,qf1,qf2,qf_kwargs,**kwargs):
+		obs_dim = qf_kwargs.pop('obs_dim')
+		action_dim = qf_kwargs.pop('action_dim')
+		target_qf1 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			**qf_kwargs
+		)
 		super().__init__(qf1,target_qf1,**kwargs)
-		self.qf1 = qf1
-		self.target_qf1 = target_qf1
+		self.qf1 = self.qf
+		self.target_qf1 = self.target_qf
 		self.qf2 = qf2
-		self.target_qf2 = target_qf2
+		self.target_qf2 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			**qf_kwargs
+		)
 		self.qf1_optimizer = self.qf_optimizer
 		self.qf2_optimizer = optim.Adam(
 			self.qf2.parameters(),
 			lr=self.learning_rate,
-		)
+		)		
 
 	def bc(self,batch):
 		batch = np_to_pytorch_batch(batch)
@@ -145,12 +174,11 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		self.qf2_optimizer.step()
 
 		ptu.soft_update_from_to(
-			self.qf1, self.target_qf1, self.bc_soft_target_tau
+			self.qf1, self.target_qf1, self.soft_target_tau
 		)
 		ptu.soft_update_from_to(
-			self.qf2, self.target_qf2, self.bc_soft_target_tau
+			self.qf2, self.target_qf2, self.soft_target_tau
 		)
-		
 
 	def train_from_torch(self, batch):
 		rewards = batch['rewards']
@@ -178,9 +206,7 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 		y1_pred = th.sum(self.qf1(concat_obs) * actions, dim=1, keepdim=True)
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(self.qf2(concat_obs) * actions, dim=1, keepdim=True)
-		qf2_loss = self.qf_criterion(y2_pred, y_target)
-		# self.qf1.alpha = np.exp(-ptu.get_numpy(qf1_loss))
-		# self.qf2.alpha = np.exp(-ptu.get_numpy(qf2_loss))		
+		qf2_loss = self.qf_criterion(y2_pred, y_target)	
 
 		"""
 		Update Q networks
@@ -231,8 +257,181 @@ class DQNPavlovTrainer(DoubleDQNTrainer):
 			target_qf1 = self.target_qf1,
 			qf2 = self.qf2,
 			target_qf2 = self.target_qf2,
-			# pf = self.pf,
 		)
+
+class RNDTrainer(D2DQNTrainer):
+	def __init__(self,qf1,qf2,qf_kwargs,**kwargs):
+		qf_kwargs1 = deepcopy(qf_kwargs)
+		qf_kwargs1.pop('output_activation')
+		super().__init__(qf1,qf2,qf_kwargs,**kwargs)
+		obs_dim = qf_kwargs1.pop('obs_dim')
+		action_dim = qf_kwargs1.pop('action_dim')
+		self.f_hat = Mlp(
+			input_size=obs_dim,
+			output_size=obs_dim,
+			**qf_kwargs1,
+			hidden_init=nn.init.uniform_
+		)
+		self.f = Mlp(
+			input_size=obs_dim,
+			output_size=obs_dim,
+			**qf_kwargs1,
+			hidden_init=nn.init.normal_
+		)
+		self.f_optimizer = optim.Adam(
+			self.f.parameters(),
+			lr=self.learning_rate,
+		)	
+		self.error_rms = RunningMeanStd(shape=1)
+
+	def train_from_torch(self, batch):
+		rewards = batch['rewards']
+		next_obs = batch['next_observations']
+
+		pred_error = F.mse_loss(self.f(next_obs),self.f_hat(next_obs),reduction='none').sum(dim=1).detach()
+		pred_error = ptu.get_numpy(pred_error)
+		self.error_rms.update(pred_error)
+		pred_error = (pred_error - self.error_rms.mean)/np.sqrt(self.error_rms.var)
+		rewards += -2 + ptu.from_numpy(np.minimum(2,pred_error)[:,np.newaxis])
+		# rewards += -2 + th.minimum(2,pred_error)
+		super().train_from_torch(batch)
+
+		loss = F.mse_loss(self.f(next_obs).detach(),self.f_hat(next_obs))
+		self.f_optimizer.zero_grad()
+		loss.backward()
+		self.f_optimizer.step()
+		if self._need_to_update_eval_statistics:
+			self._need_to_update_eval_statistics = False
+			self.eval_statistics['F Loss'] = np.mean(ptu.get_numpy(loss))
+
+	@property
+	def networks(self):
+		nets = [
+			self.qf1,
+			self.target_qf1,
+			self.qf2,
+			self.target_qf2,
+			self.f,
+			self.f_hat,
+		]
+		return nets
+
+	def get_snapshot(self):
+		return dict(
+			qf1 = self.qf1,
+			target_qf1 = self.target_qf1,
+			qf2 = self.qf2,
+			target_qf2 = self.target_qf2,
+			f = self.f,
+			f_hat = self.f_hat,
+		)
+
+class CQLTrainer(D2DQNTrainer):
+	def __init__(self,qf1,qf2,qf_kwargs,cql_kwargs,**kwargs):
+		self.cql_alpha = cql_kwargs['cql_alpha']
+		self.re_shift = cql_kwargs['re_shift']
+		self.re_scale = cql_kwargs['re_scale']
+		super().__init__(qf1,qf2,qf_kwargs,**kwargs)
+	def train_from_torch(self, batch):
+		rewards = batch['rewards']
+		terminals = batch['terminals']
+		actions = batch['actions']
+		concat_obs = batch['observations']
+		concat_next_obs = batch['next_observations']
+
+		rewards = (rewards - self.re_shift)/self.re_scale
+
+		"""
+		Q loss
+		"""
+		best_action_idxs = th.min(self.qf1(concat_next_obs),self.qf2(concat_next_obs)).max(
+			1, keepdim=True
+		)[1]
+		target_q_values = th.min(self.target_qf1(concat_next_obs).gather(
+											1, best_action_idxs
+										),
+									self.target_qf2(concat_next_obs).gather(
+											1, best_action_idxs
+										)
+								)
+		y_target = rewards + (1. - terminals) * self.discount * target_q_values
+		y_target = y_target.detach()
+		# actions is a one-hot vector
+		q1 = self.qf1(concat_obs)
+		q1_logsumexp = q1.logsumexp(1,keepdim=True)
+		y1_pred = th.sum(q1 * actions, dim=1, keepdim=True)
+		td1_loss = self.qf_criterion(y1_pred, y_target)
+		cql1_loss = F.l1_loss(y1_pred, q1_logsumexp)
+		q2 = self.qf2(concat_obs)
+		q2_logsumexp = q2.logsumexp(1,keepdim=True)
+		y2_pred = th.sum(q2 * actions, dim=1, keepdim=True)
+		td2_loss = self.qf_criterion(y2_pred, y_target)
+		cql2_loss = F.l1_loss(y2_pred, q2_logsumexp)
+
+		qf1_loss = td1_loss + self.cql_alpha*cql1_loss
+		qf2_loss = td2_loss + self.cql_alpha*cql2_loss
+
+
+		"""
+		Update Q networks
+		"""
+		self.qf1_optimizer.zero_grad()
+		qf1_loss.backward()
+		self.qf1_optimizer.step()
+		self.qf2_optimizer.zero_grad()
+		qf2_loss.backward()
+		self.qf2_optimizer.step()
+
+		"""
+		Soft target network updates
+		"""
+		if self._n_train_steps_total % self.target_update_period == 0:
+			ptu.soft_update_from_to(
+				self.qf1, self.target_qf1, self.soft_target_tau
+			)
+			ptu.soft_update_from_to(
+				self.qf2, self.target_qf2, self.soft_target_tau
+			)
+
+		"""
+		Save some statistics for eval using just one batch.
+		"""
+		if self._need_to_update_eval_statistics:
+			self._need_to_update_eval_statistics = False
+			self.eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
+			self.eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
+			self.eval_statistics.update(create_stats_ordered_dict(
+				'Q Predictions',
+				ptu.get_numpy(th.min(y1_pred,y2_pred)),
+			))
+
+class FullRNDTrainer(DoubleDQNTrainer):
+	def __init__(self,qf1a,qf2a,qf1b,qf2b,qf_kwargs,**kwargs):
+		cql_kwargs = kwargs.pop('cql_kwargs')
+		self.expl_trainer = RNDTrainer(qf1a,qf2a,deepcopy(qf_kwargs),**kwargs)
+		self.eval_trainer = CQLTrainer(qf1b,qf2b,deepcopy(qf_kwargs),cql_kwargs,**kwargs)
+		super().__init__(self.eval_trainer.qf,self.eval_trainer.target_qf,**kwargs)
+	
+	def train_from_torch(self, batch):
+		self.expl_trainer.train_from_torch(batch)
+		self.eval_trainer.train_from_torch(batch)
+		"""
+		Save some statistics for eval using just one batch.
+		"""
+		if self._need_to_update_eval_statistics:
+			self._need_to_update_eval_statistics = False
+			for key,value in self.expl_trainer.eval_statistics.items():
+				self.eval_statistics['Expl '+key] = value
+			for key,value in self.eval_trainer.eval_statistics.items():
+				self.eval_statistics['Eval '+key] = value 
+
+	@property
+	def networks(self):
+		nets = self.expl_trainer.networks + self.eval_trainer.networks
+		return nets
+
+	def get_snapshot(self):
+		return {**self.expl_trainer.get_snapshot(),**self.eval_trainer.get_snapshot()}
 
 from types import MethodType
 def demonstration_factory(base):
@@ -271,62 +470,51 @@ def collect_demonstrations(variant):
 		env.render('human')
 	demo_kwargs = variant.get('demo_kwargs')
 	paths = []
-	num_successes = 0
-	if 'min_successes' in demo_kwargs:
-		fail_size = int(demo_kwargs['min_successes']*(1/demo_kwargs['min_success_rate']-1))
-		condition = lambda: num_successes < demo_kwargs['min_successes']
-	else:
-		fail_size = demo_kwargs['num_episodes']
-		condition = lambda: len(fail_paths) + len(paths) < fail_size
-	fail_paths = deque([],fail_size)
-	while condition():
+	while len(paths) < demo_kwargs['num_episodes']:
 		while env.target_index < env.num_targets:
 			collected_paths = path_collector.collect_new_paths(
 				demo_kwargs['path_length'],
 				demo_kwargs['path_length'],
 			)
-			success = False
+			success_found = False
 			for path in collected_paths:
-				if path['env_infos'][-1]['task_success']:
+				if path['env_infos'][-1]['task_success'] or (not demo_kwargs['only_success']):
 					paths.append(path)
-					success = True
-					num_successes += 1
-				else:
-					fail_paths.append(path)
-			if success:
-				env.next_target()
-			print("total paths collected: ", len(paths), "total successes: ", num_successes)
+					success_found = True
+			if success_found:
+				env.next_target()	
+			print("total paths collected: ", len(paths))
 		env.reset_target()
-	paths.extend(fail_paths)
 
 	return paths
 
 def eval_exp(variant):
 	env_class = variant.get('env_class', None)
 	env_kwargs = variant.get('env_kwargs', {})
-	eval_env = make(None, env_class, env_kwargs, False)
+	env = make(None, env_class, env_kwargs, False)
 	# eval_env.seed(variant['seedid'])
-	eval_env.seed(1999)
+	env.seed(1999)
 
 	file_name = os.path.join(variant['eval_path'],'params.pkl')
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
 	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
 
 	policy_kwargs = variant['policy_kwargs']
-	policy = ArgmaxDiscretePolicy(
-		qf1=qf1,
-		qf2=qf2,
-		**policy_kwargs,
-	)
+	policy = LightSwitchTrainOracle(env,qf1,qf2,.99)
+	# policy = ArgmaxDiscretePolicy(
+	# 	qf1=qf1,
+	# 	qf2=qf2,
+	# 	**policy_kwargs,
+	# )
 
-	eval_policy = TranslationPolicy(eval_env,OverridePolicy(eval_env,policy),**env_kwargs['config'])
+	policy = TranslationPolicy(env,policy,**env_kwargs['config'])
 	eval_path_collector = FullTrajPathCollector(
-		eval_env,
-		eval_policy,
+		env,
+		policy,
 	)
 
 	if variant.get('render',False):
-		eval_env.render('human')
+		env.render('human')
 	eval_collected_paths = eval_path_collector.collect_new_paths(
 		variant['algorithm_args']['max_path_length'],
 		variant['algorithm_args']['num_eval_steps_per_epoch']*10,
@@ -374,8 +562,8 @@ def resume_exp(variant):
 			error
 
 
-	trainer_class = variant.get("trainer_class", DQNPavlovTrainer)
-	if trainer_class == DQNPavlovTrainer:
+	trainer_class = variant.get("trainer_class", D2DQNTrainer)
+	if trainer_class == D2DQNTrainer:
 		trainer = trainer_class(
 			qf1=qf1,
 			target_qf1=target_qf1,
@@ -408,72 +596,79 @@ def experiment(variant):
 	env = make(None, env_class, env_kwargs, False)
 	env.seed(variant['seedid'])
 
-	if variant.get('add_env_demos', False):
-		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_demo_path"])
-	if variant.get('add_env_offpolicy_data', False):
-		variant["path_loader_kwargs"]["demo_paths"].append(variant["env_offpolicy_data_path"])
-
-	path_loader_kwargs = variant.get("path_loader_kwargs", {})
-	action_dim = env.action_space.low.size
-
-	obs_dim = env.observation_space.low.size
 	qf_kwargs = variant.get("qf_kwargs", {})
-	qf1 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_activation=F.leaky_relu,
-		**qf_kwargs
-	)
-	target_qf1 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_activation=F.leaky_relu,
-		**qf_kwargs
-	)
-	qf2 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_activation=F.leaky_relu,
-		**qf_kwargs
-	)
-	target_qf2 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_activation=F.leaky_relu,
-		**qf_kwargs
-	)
+	obs_dim = env.observation_space.low.size
+	action_dim = env.action_space.low.size
+	qf_kwargs['hidden_activation'] = F.leaky_relu
 
+	qf1b = Mlp(
+		input_size=obs_dim,
+		output_size=action_dim,
+		**qf_kwargs
+	)
+	qf2b = Mlp(
+		input_size=obs_dim,
+		output_size=action_dim,
+		**qf_kwargs
+	)
 	policy_kwargs = variant['policy_kwargs']
-	policy = ArgmaxDiscretePolicy(
-		qf1=qf1,
-		qf2=qf2,
-		**policy_kwargs,
-	)
-
-	expl_policy = policy
-	exploration_kwargs =  variant.get('exploration_kwargs', {})
-	if exploration_kwargs:
-		exploration_strategy = exploration_kwargs.get("strategy", None)
-		if exploration_strategy is None:
-			pass
-		elif exploration_strategy == 'boltzmann':
-			expl_policy = BoltzmannPolicy(qf1,qf2,
-										logit_scale=exploration_kwargs['logit_scale'],
-										**policy_kwargs)
-		elif exploration_strategy == 'merge_arg':
-			expl_policy = ComparisonMergeArgPolicy(env,qf1,qf2,exploration_kwargs['alpha'],**policy_kwargs)
-		else:
-			error
-	if variant['override']:
-		expl_policy = TranslationPolicy(env,OverridePolicy(env,expl_policy,variant['max_overrides']),**env_kwargs['config'])
+	if variant['exploration_kwargs'].get("strategy",'argmax') == 'train_lightswitch':
+		eval_policy = LightSwitchTrainOracle(env,qf1b,qf2b,.9)
 	else:
-		expl_policy = TranslationPolicy(env,expl_policy,**env_kwargs['config'])
+		eval_policy = ArgmaxDiscretePolicy(
+			qf1b,qf2b,
+			**policy_kwargs,)
+	eval_policy = TranslationPolicy(env,eval_policy,**env_kwargs['config'])
 
-	eval_policy = TranslationPolicy(env,policy,**env_kwargs['config'])
-	eval_path_collector = FullTrajPathCollector(
-		env,
-		eval_policy,
-	)
+	exploration_kwargs =  variant['exploration_kwargs']
+	exploration_strategy = exploration_kwargs.get("strategy",'argmax')
+	qf1a,qf2a = qf1b,qf2b
+	if exploration_strategy == 'argmax':
+		expl_policy = ArgmaxDiscretePolicy(
+			qf1a,qf2a,
+			**policy_kwargs,)
+	if exploration_strategy == 'boltzmann':
+		expl_policy = BoltzmannPolicy(
+			qf1a,qf2a,
+			logit_scale=exploration_kwargs['logit_scale'],**policy_kwargs)
+	elif exploration_strategy == 'merge_arg':
+		expl_policy = ComparisonMergeArgPolicy(env,
+			qf1a,qf2a,
+			exploration_kwargs['alpha'],**policy_kwargs)
+	elif exploration_strategy == 'train_lightswitch':
+		expl_policy = LightSwitchTrainOracle(env,qf1a,qf2a,.8)
+	elif exploration_strategy == 'rnd':
+		qf1a = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			**qf_kwargs
+		)
+		qf2a = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			**qf_kwargs
+		)
+		expl_policy = ArgmaxDiscretePolicy(
+			qf1a,qf2a,
+			**policy_kwargs,)
+	else:
+		error
+	if exploration_kwargs['override']:
+		expl_policy = OverridePolicy(env,expl_policy)
+	expl_policy = TranslationPolicy(env,expl_policy,**env_kwargs['config'])
+
+	qf_kwargs['obs_dim'] = env.observation_space.low.size
+	qf_kwargs['action_dim'] = env.action_space.low.size
+	if exploration_strategy == 'rnd':
+		trainer = FullRNDTrainer(
+			qf1a,qf2a,qf1b,qf2b,
+			deepcopy(qf_kwargs),
+			**variant['trainer_kwargs'])
+	else:
+		trainer = D2DQNTrainer(
+			qf1b,qf2b,
+			deepcopy(qf_kwargs),
+			**variant['trainer_kwargs'])
 
 	replay_buffer_kwargs = variant.get('replay_buffer_kwargs',{})
 	replay_buffer_kwargs.update({'env':env})
@@ -481,34 +676,8 @@ def experiment(variant):
 		**replay_buffer_kwargs,
 	)
 
-	trainer_class = variant.get("trainer_class", DQNPavlovTrainer)
-	if trainer_class == DQNPavlovTrainer:
-		trainer = trainer_class(
-			qf1=qf1,
-			target_qf1=target_qf1,
-			qf2=qf2,
-			target_qf2=target_qf2,
-			**variant['trainer_kwargs']
-		)
-	else:
-		error
-
-	expl_path_collector = FullTrajPathCollector(
-		env,
-		expl_policy,
-	)
-	algorithm = PavlovBatchRLAlgorithm(
-		trainer=trainer,
-		exploration_env=env,
-		evaluation_env=env,
-		exploration_data_collector=expl_path_collector,
-		evaluation_data_collector=eval_path_collector,
-		replay_buffer=replay_buffer,
-		**variant['algorithm_args']
-	)
-	algorithm.to(ptu.device)
-
 	if variant.get('load_demos', False):
+		path_loader_kwargs = variant.get("path_loader_kwargs", {})
 		path_loader_class = variant.get('path_loader_class', AdaptPathLoader)
 		path_loader = path_loader_class(trainer,
 			replay_buffer=replay_buffer,
@@ -517,6 +686,27 @@ def experiment(variant):
 			**path_loader_kwargs
 		)
 		path_loader.load_demos()
+
+	expl_path_collector = FullTrajPathCollector(
+		env,
+		expl_policy,
+	)
+	eval_path_collector = FullTrajPathCollector(
+		env,
+		eval_policy,
+	)
+	algorithm = PavlovBatchRLAlgorithm(
+		trainer=trainer,
+		exploration_env=env,
+		evaluation_env=env,
+		exploration_data_collector=expl_path_collector,
+		evaluation_data_collector=eval_path_collector,
+		replay_buffer=replay_buffer,
+		path_loader = path_loader if variant.get('load_demos', False) else None,
+		**variant['algorithm_args']
+	)
+	algorithm.to(ptu.device)
+
 	if variant.get('train_rl', True):
 		print(replay_buffer._top)
 		if variant.get('render',False):

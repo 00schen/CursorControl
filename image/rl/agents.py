@@ -8,6 +8,7 @@ from railrl.torch.distributions import Distribution
 from railrl.torch.distributions import OneHotCategorical as TorchOneHot
 from assistive_gym.envs import JacoReference
 import os,sys
+from collections import deque
 # import ppo.a2c_ppo_acktr
 # sys.modules['a2c_ppo_acktr'] = ppo.a2c_ppo_acktr
 # sys.path.append('a2c_ppo_acktr')
@@ -38,7 +39,6 @@ class UserInputOracle(Agent):
 			'down':		np.array([0,0,0,0,1,0]),
 			'noop':		np.array([0,0,0,0,0,0])
 		}[self.action]
-		print(self.action)
 		return action, user_info
 
 class KeyboardOracle(UserInputOracle):
@@ -89,63 +89,194 @@ class UserModelOracle(Agent):
 		super().__init__()
 		self.get_base_env = env.get_base_env
 		self.rng = env.rng
-		self.threshold = threshold
 		self.epsilon = epsilon
 		self.blank = blank
+		self.oracle = {
+			"Feeding": StraightLineOracle,
+			"Laptop": StraightLineOracle,
+			"LightSwitch": LightSwitchOracle,
+			"Circle": ReachOracle,
+			"Sin": ReachOracle,
+		}[env.env_name](self.get_base_env,threshold)
 	def get_action(self,obs,info=None):
-		rng = self.rng
+		rng = self.rng	
 		base_env = self.get_base_env()
-		# if self.prev_noop:
-		# 	prob = self.blank*(info['cos_error'] < self.threshold)
-		# 	# prob = (info['cos_error'] < self.threshold)*(1-info['cos_error']/(self.threshold+1)+1e-8)
-		# else:
-		# 	prob = .8
-		prob = self.blank*(info['frachet'] < self.threshold)
-		action = np.zeros(self.size)
-		if rng.random() < prob:
-			traj = base_env.target_pos-base_env.tool_pos
+		criterion,target_pos = self.oracle.query(obs,info)
+		action = np.zeros(self.size)	
+		if rng.random() < self.blank*criterion:
+			traj = target_pos-base_env.tool_pos
 			axis = np.argmax(np.abs(traj))
-			if rng.random() > self.epsilon:
-				index = 2*axis+(traj[axis]>0)
-			else:
+			index = 2*axis+(traj[axis]>0)
+			if rng.random() < self.epsilon:
 				index = rng.integers(6)
 			action[index] = 1
-
 		self.prev_noop = not np.count_nonzero(action)
 		return action, {}
 	def reset(self):
 		self.prev_noop = True
+		self.oracle.reset()
 
-class PPOModelOracle(Agent):
-	def __init__(self,env,):
+class StraightLineOracle(Agent):
+	def __init__(self,get_base_env,threshold):
+		self.get_base_env =get_base_env
+		self.threshold = threshold
+	def query(self,obs,info):
+		base_env = self.get_base_env()
+		criterion = info['cos_error'] < self.threshold
+		target_pos = base_env.target_pos
+		return criterion, target_pos
+
+class ReachOracle(Agent):
+	def __init__(self,get_base_env,threshold):
+		self.get_base_env =get_base_env
+		self.threshold = threshold
+	def query(self,obs,info):
+		base_env = self.get_base_env()
+		criterion = info['distance_to_target'] > self.threshold
+		target_pos = base_env.target_pos
+		return criterion, target_pos
+
+class LightSwitchOracle(Agent):
+	def __init__(self,get_base_env,threshold):
 		super().__init__()
-		self.get_base_env = env.get_base_env
-		self.ppo, self.ob_rms = th.load(os.path.join(os.path.abspath(''),'trained_models','ppo', env.env_name + ".pt"))
-		self.reference_arm = JacoReference(frame_skip=self.get_base_env().frame_skip,time_step=self.get_base_env().time_step)
-		
-	def get_action(self,obs,info=None):
-		obs = info.pop('recreate_full_obs')(obs)
-		self.ob_rms.update(obs)
-		obs = (obs - self.ob_rms.mean) / np.sqrt(self.ob_rms.var + 1e-8)
-		obs = th.tensor(obs).float()
+		self.get_base_env = get_base_env
+		self.threshold = threshold
+		# file_name = os.path.join(os.path.abspath(''),'li_oracle_params.pkl')
+		# self.policy = ArgmaxDiscretePolicy(
+		# 	qf1=th.load(file_name,map_location=th.device("cpu"))['trainer/qf1'],
+		# 	qf2=th.load(file_name,map_location=th.device("cpu"))['trainer/qf2'],
+		# )
 
-		_, action, _, _ = self.ppo.act(obs, th.zeros(1, self.ppo.recurrent_hidden_state_size), th.zeros(1, 1), deterministic=True)
-		action = action.squeeze()[0].detach().numpy()
-		self.reference_arm.step(action,info.pop('joint_pos'))
-		traj = self.reference_arm.tool_pos - self.get_base_env().tool_pos
-		axis = np.argmax(np.abs(traj))
-		index = 2*axis+(traj[axis]>0)
-		action = np.zeros(self.size)
-		action[index] = 1
-		return action, {}
+	def query(self,obs,info):
+		base_env = self.get_base_env()
+
+		target_indices = np.nonzero(np.not_equal(base_env.target_string,base_env.current_string))[0]
+		switches = np.array(base_env.switches)[target_indices]
+		target_poses1 = np.array(base_env.target_pos1)[target_indices]
+		target_poses = np.array(base_env.target_pos)[target_indices]
+
+		bad_contact =  np.any(np.logical_and(info['angle_dir'] != 0,
+							np.logical_or(np.logical_and(info['angle_dir'] < 0, base_env.target_string == 1),
+								np.logical_and(info['angle_dir'] > 0, base_env.target_string == 0))))
+		info['bad_contact'] = bad_contact
+		ineff_contact = (info['ineff_contact'] and np.all(np.abs(info['angle_dir']) < .005))\
+						and min(norm(np.array(base_env.target_pos)-base_env.tool_pos,axis=1)) < .2
+		info['ineff_contact'] = ineff_contact
+		self.ineff_contacts.append(ineff_contact)
+		self.bad_contacts.append(bad_contact)
+
+		if len(target_indices) == 0:
+			info['cos_error'] = 1
+			info['distance_to_target'] = 0
+			return False, np.zeros(3)
+
+		
+		if np.sum(self.bad_contacts) > 1:
+			tool_pos = base_env.tool_pos
+			on_off = base_env.target_string[target_indices[0]]
+
+			_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
+			target_pos2 = [0,.2,.1] if on_off == 0 else [0,.2,-.1]
+			target_pos2 = np.array(p.multiplyTransforms(target_poses[0], switch_orient, target_pos2, [0, 0, 0, 1])[0])
+
+			sphere_collision = -1
+			sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=.03, rgbaColor=[0, 1, 1, 1], physicsClientId=base_env.id)
+			target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos2,
+								useMaximalCoordinates=False, physicsClientId=base_env.id)
+
+			if ((base_env.tool_pos[2] < target_poses[0][2] and on_off == 0)
+				or (base_env.tool_pos[2] > target_poses[0][2] and on_off == 1)):
+				threshold = .5
+				target_pos = target_pos2
+			elif ((base_env.tool_pos[2] > target_poses[0][2] + .15 and on_off == 0)
+				or (base_env.tool_pos[2] < target_poses[0][2] - .15 and on_off == 1)):
+				threshold = 0
+				target_pos = target_poses1[0]
+			else:
+				threshold = .5
+				target_pos = tool_pos + np.array([0,0,1]) if on_off == 0 else tool_pos + np.array([0,0,-1])
+		elif np.sum(self.ineff_contacts) > 2:
+			on_off = base_env.target_string[target_indices[0]]
+			_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
+			target_pos = np.array(p.multiplyTransforms(target_poses[0], switch_orient, [0,1,0], [0, 0, 0, 1])[0])
+			threshold = .5
+		elif norm(base_env.tool_pos-target_poses1,axis=1)[0] < .25:
+			if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
+				threshold = self.threshold
+				target_pos = target_poses1[0]
+			else:
+				threshold = 0
+				target_pos = target_poses[0]
+		else:
+			threshold = .5
+			target_pos = target_poses1[0]
+
+			
+		old_traj = target_pos - info['old_tool_pos']
+		new_traj = base_env.tool_pos - info['old_tool_pos']
+		info['cos_error'] = np.dot(old_traj,new_traj)/(norm(old_traj)*norm(new_traj))
+		criterion = info['cos_error'] < threshold
+		info['distance_to_target'] = norm(base_env.tool_pos-target_pos)
+		return criterion, target_pos
+	def reset(self):
+		self.bad_contacts = deque(np.zeros(10),10)
+		self.ineff_contacts = deque(np.zeros(10),10)
+
+class LightSwitchTrainOracle(Agent):
+	def __init__(self,env,qf1, qf2, epsilon=.8):
+		super().__init__()
+		self.env = env
+		self.epsilon = epsilon
+		self.policy = ArgmaxDiscretePolicy(
+			qf1=qf1,
+			qf2=qf2,
+		)
+
+	def get_action(self, obs):
+		base_env = self.env.base_env
+		rng = self.env.rng
+
+		switches = np.array(base_env.switches)[np.nonzero(np.not_equal(base_env.target_string,base_env.current_string))]
+		target_poses = np.array(base_env.target_pos)[np.nonzero(np.not_equal(base_env.target_string,base_env.current_string))]
+		if len(target_poses) == 0:
+			return np.array([1,0,0,0,0,0])
+
+		if norm(target_poses[0]-base_env.tool_pos) < .12:
+			action,_info = self.policy.get_action(obs)
+		else:
+			action = np.zeros(6)
+			current_traj = [
+				np.array((-1,0,0)),
+				np.array((1,0,0)),
+				np.array((0,-1,0)),
+				np.array((0,1,0)),
+				np.array((0,0,-1)),
+				np.array((0,0,1)),
+			][self.current_index]
+			correct_traj = target_poses[0] - base_env.tool_pos
+			cos = np.dot(current_traj,correct_traj)/(norm(current_traj)*norm(correct_traj))
+			if cos < .5:
+				traj = target_poses[0]-base_env.tool_pos
+				axis = np.argmax(np.abs(traj))
+				self.current_index = index = 2*axis+(traj[axis]>0)
+				if rng.random() < self.epsilon:
+					index = rng.integers(6)
+				action[index] = 1
+			else:
+				action[self.current_index] = 1
+		return action,{}
+	def reset(self):
+		self.current_index = 0
 
 """Policies"""
 class TranslationPolicy(Agent):
 	def __init__(self,env,policy,**kwargs):
-		super().__init__()
+		super().__init__()	
+		self.smooth_alpha = kwargs['smooth_alpha']
 		self.policy = policy
 		def joint(action,ainfo={}):
-			ainfo['joint'] = action
+			self.action = self.smooth_alpha*action + (1-self.smooth_alpha)*self.action if np.count_nonzero(self.action) else action
+			ainfo['joint'] = self.action
 			return action,ainfo	
 		def target(coor,ainfo={}):
 			base_env = env.get_base_env()
@@ -189,6 +320,7 @@ class TranslationPolicy(Agent):
 		return self.translate(*self.policy.get_action(obs))
 
 	def reset(self):
+		self.action = np.zeros(7)
 		self.policy.reset()
 
 class OneHotCategorical(Distribution,TorchOneHot):
@@ -240,28 +372,21 @@ class BoltzmannPolicy(PyTorchModule):
 		pass
 
 class OverridePolicy:
-	def __init__(self,env,policy,max_overrides):
+	def __init__(self,env,policy):
 		self.policy = policy
 		self.rng = env.rng
 		self.env = env
-		self.max = max_overrides
 	def get_action(self,obs):
 		recommend = self.env.recommend
 		action,info = self.policy.get_action(obs)
 		if np.count_nonzero(recommend):
-			self.count += 1
-			if self.count <= self.max:
-				return recommend,info
-			else:
-				return action, info
+			return recommend,info
 		else:
-			self.count = 0
 			return action, info
 	def reset(self):
-		self.count = 0
 		self.policy.reset()
 
-from utils import RunningMeanStd
+# from utils import RunningMeanStd
 class ComparisonMergeArgPolicy:
 	def __init__(self, env, qf1, qf2, alpha=1):
 		super().__init__()
@@ -282,20 +407,20 @@ class ComparisonMergeArgPolicy:
 			q_values = th.min(self.qf1(obs),self.qf2(obs))
 			action = F.one_hot(q_values.argmax(0,keepdim=True),self.action_dim).flatten().detach()
 
-		# self.noop_rms.update(np.array([not np.count_nonzero(self.env.recommend)]))
 		# alpha = self.env.rng.normal(self.noop_rms.mean,np.sqrt(self.noop_rms.var))
 		# condition = alpha < .6
-		alpha = self.alpha
-		condition = self.env.rng.random() < self.alpha
-		if condition:
-			return action.cpu().numpy(), {"alpha": alpha}
-		else:
-			action,ainfo = self.follower.get_action(obs)
-			ainfo['alpha'] = alpha
-			return action,ainfo
+		# alpha = max(self.alpha,
+		# condition = self.env.rng.random() < self.alpha
+		# if condition:
+		# 	self.noop_rms.update(np.array([not np.count_nonzero(self.env.recommend)]))
+		# 	return action.cpu().numpy(), {"alpha": alpha}
+		# else:
+		# 	action,ainfo = self.follower.get_action(obs)
+		# 	ainfo['alpha'] = alpha
+		# 	return action,ainfo
 
 	def reset(self):
-		self.noop_rms = RunningMeanStd()
+		# self.noop_rms = RunningMeanStd()
 		self.follower.reset()
 
 class BayesianMergeArgPolicy:
@@ -339,21 +464,14 @@ class FollowerPolicy:
 	def reset(self):
 		self.action_index = 0
 
-class EpsilonPolicy:
+class RandomPolicy:
 	def __init__(self,env,epsilon=.25):
 		self.epsilon = epsilon
 		self.get_base_env = env.get_base_env
 		self.rng = env.rng
 	def get_action(self,obs):
 		rng = self.rng
-		base_env = self.get_base_env()
-		real_traj = base_env.target_pos-base_env.tool_pos
-		real_index = np.argmax(np.abs(real_traj))
-		real_index = real_index*2 + real_traj[real_index] > 0
-		if self.action_index == real_index:
-			self.action_index = rng.choice(6)
-		else:
-			self.action_index = self.action_index if rng.random() > self.epsilon else rng.choice(6)
+		self.action_index = self.action_index if rng.random() > self.epsilon else rng.choice(6)
 		action = np.zeros(6)
 		action[self.action_index] = 1
 		return action,{}
@@ -362,7 +480,7 @@ class EpsilonPolicy:
 
 class DemonstrationPolicy:
 	def __init__(self,env,lower_p=.5,upper_p=1):
-		self.polcies = [FollowerPolicy(env),EpsilonPolicy(env,epsilon=1/10)]
+		self.polcies = [FollowerPolicy(env),RandomPolicy(env,epsilon=1/10)]
 		self.lower_p = lower_p
 		self.upper_p = upper_p
 		self.rng = env.rng
