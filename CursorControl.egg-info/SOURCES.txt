@@ -1,6 +1,0 @@
-setup.py
-CursorControl.egg-info/PKG-INFO
-CursorControl.egg-info/SOURCES.txt
-CursorControl.egg-info/dependency_links.txt
-CursorControl.egg-info/requires.txt
-CursorControl.egg-info/top_level.txt
