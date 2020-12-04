@@ -33,3 +33,19 @@ class RunningMeanStd:
 		self.mean = new_mean
 		self.var = new_var
 		self.count = new_count
+
+def run_bc_batch(replay_buffer, policy, batch_size):
+	batch = get_batch_from_buffer(replay_buffer, batch_size)
+	o = batch["observations"]
+	u = batch["actions"]
+	og = o
+	dist = policy(og)
+	pred_u, log_pi = dist.rsample_and_logprob()
+	stats = dist.get_diagnostics()
+
+	mse = (pred_u - u) ** 2
+	mse_loss = mse.mean()
+
+	policy_logpp = dist.log_prob(u, )
+	logp_loss = -policy_logpp.mean()
+	policy_loss = logp_loss

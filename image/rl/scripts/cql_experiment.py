@@ -1,16 +1,16 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.envs.make_env import make
 from rlkit.torch.networks import ConcatMlp
-from rlkit.torch.sac.sac import SACTrainer
 from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy
-from rl.path_collectors import FullPathCollector
+from rl.path_collectors import FullPathCollector,NoPolicyPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
+from rl.trainers import CQLTrainer
 
 import os
 from pathlib import Path
@@ -101,7 +101,8 @@ def experiment(variant):
 	)
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
-		for _ in range(variant['num_pretrain_loops']):
+		from tqdm import tqdm
+		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			trainer.train(train_data)
 
@@ -174,7 +175,7 @@ if __name__ == "__main__":
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
 					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e5),
+		num_pretrain_loops=int(1e3),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,

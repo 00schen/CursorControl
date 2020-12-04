@@ -11,6 +11,7 @@ from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
+from rl.trainers import BCTrainer
 
 import os
 from pathlib import Path
@@ -56,7 +57,7 @@ def experiment(variant):
 		action_dim=action_dim,
 		hidden_sizes=[M,M,M],
 	)
-	eval_policy = MakeDeterministic(policy)
+	eval_policy = policy
 	eval_path_collector = FullPathCollector(
 		env,
 		eval_policy,
@@ -102,9 +103,13 @@ def experiment(variant):
 	)
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
-		for _ in range(variant['num_pretrain_loops']):
+		from tqdm import tqdm
+		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			trainer.train(train_data)
+	if variant['bc_pretrain']:
+		bc_trainer = BCTrainer(env,policy,**variant['bc_kwargs'])
+		bc_trainer.pretrain_policy_with_bc(replay_buffer)	
 
 	if variant.get('render',False):
 		env.render('human')
@@ -152,6 +157,7 @@ if __name__ == "__main__":
 			num_expl_steps_per_train_loop=path_length,
 			num_trains_per_train_loop=50,				
 		),
+
 		load_demos=True,
 		# demo_paths=[dict(
 		# 			path=os.path.join(os.path.abspath(''),"demos",demo),
@@ -162,7 +168,15 @@ if __name__ == "__main__":
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
 					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e5),
+		num_pretrain_loops=int(1e3),
+		bc_kwargs=dict(
+			policy_lr=1e-3,
+            policy_weight_decay=0,
+            optimizer_class=optim.Adam,
+
+            bc_num_pretrain_steps=int(1e3),
+            bc_batch_size=128,
+		),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,

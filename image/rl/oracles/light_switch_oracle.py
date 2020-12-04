@@ -27,35 +27,35 @@ class LightSwitchOracle(UserModelOracle):
 			info['distance_to_target'] = 0
 			return False, np.zeros(3)
 		
-		if np.sum(self.bad_contacts) > 2:
-			tool_pos = base_env.tool_pos
-			on_off = base_env.target_string[target_indices[0]]
+		# if np.sum(self.bad_contacts) > 2:
+		# 	tool_pos = base_env.tool_pos
+		# 	on_off = base_env.target_string[target_indices[0]]
 
-			_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
-			target_pos2 = [0,.2,.1] if on_off == 0 else [0,.2,-.1]
-			target_pos2 = np.array(p.multiplyTransforms(target_poses[0], switch_orient, target_pos2, [0, 0, 0, 1])[0])
+		# 	_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
+		# 	target_pos2 = [0,.2,.1] if on_off == 0 else [0,.2,-.1]
+		# 	target_pos2 = np.array(p.multiplyTransforms(target_poses[0], switch_orient, target_pos2, [0, 0, 0, 1])[0])
 
-			sphere_collision = -1
-			sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=.03, rgbaColor=[0, 1, 1, 1], physicsClientId=base_env.id)
-			target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos2,
-								useMaximalCoordinates=False, physicsClientId=base_env.id)
+		# 	sphere_collision = -1
+		# 	sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=.03, rgbaColor=[0, 1, 1, 1], physicsClientId=base_env.id)
+		# 	target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos2,
+		# 						useMaximalCoordinates=False, physicsClientId=base_env.id)
 
-			if ((base_env.tool_pos[2] < target_poses[0][2] and on_off == 0)
-				or (base_env.tool_pos[2] > target_poses[0][2] and on_off == 1)):
-				threshold = .5
-				target_pos = target_pos2
-			elif ((base_env.tool_pos[2] > target_poses[0][2] + .15 and on_off == 0)
-				or (base_env.tool_pos[2] < target_poses[0][2] - .15 and on_off == 1)):
-				threshold = 0
-				target_pos = target_poses1[0]
-			else:
-				threshold = .5
-				target_pos = tool_pos + np.array([0,0,1]) if on_off == 0 else tool_pos + np.array([0,0,-1])
-		elif np.sum(self.ineff_contacts) > 2:
-			on_off = base_env.target_string[target_indices[0]]
-			_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
-			target_pos = np.array(p.multiplyTransforms(target_poses[0], switch_orient, [0,1,0], [0, 0, 0, 1])[0])
-			threshold = .5
+		# 	if ((base_env.tool_pos[2] < target_poses[0][2] and on_off == 0)
+		# 		or (base_env.tool_pos[2] > target_poses[0][2] and on_off == 1)):
+		# 		threshold = .5
+		# 		target_pos = target_pos2
+		# 	elif ((base_env.tool_pos[2] > target_poses[0][2] + .15 and on_off == 0)
+		# 		or (base_env.tool_pos[2] < target_poses[0][2] - .15 and on_off == 1)):
+		# 		threshold = 0
+		# 		target_pos = target_poses1[0]
+		# 	else:
+		# 		threshold = .5
+		# 		target_pos = tool_pos + np.array([0,0,1]) if on_off == 0 else tool_pos + np.array([0,0,-1])
+		# elif np.sum(self.ineff_contacts) > 2:
+		# 	on_off = base_env.target_string[target_indices[0]]
+		# 	_,switch_orient = p.getBasePositionAndOrientation(base_env.wall, physicsClientId=base_env.id)
+		# 	target_pos = np.array(p.multiplyTransforms(target_poses[0], switch_orient, [0,1,0], [0, 0, 0, 1])[0])
+		# 	threshold = .5
 		# elif norm(base_env.tool_pos-target_poses1,axis=1)[0] < .25:
 		# 	if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
 		# 		threshold = self.threshold
@@ -63,15 +63,15 @@ class LightSwitchOracle(UserModelOracle):
 		# 	else:
 		# 		threshold = 0
 		# 		target_pos = target_poses[0]
-		else:
+		# else:
 			# threshold = .5
 			# target_pos = target_poses1[0]
-			if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
-				threshold = self.threshold
-				target_pos = target_poses1[0]
-			else:
-				threshold = 0
-				target_pos = target_poses[0]
+		if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
+			threshold = self.threshold
+			target_pos = target_poses1[0]
+		else:
+			threshold = 0
+			target_pos = target_poses[0]
 
 			
 		old_traj = target_pos - info['old_tool_pos']

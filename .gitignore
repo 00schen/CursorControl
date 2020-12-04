@@ -32,7 +32,8 @@
 *.npy
 *.h5
 legacy_code
-rl/oracle_training.py
+*/*/*/oracle_training.py
+*/*/oracle_training.py
 *demos
 */*demos
 */*/*demos

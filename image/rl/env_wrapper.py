@@ -69,7 +69,7 @@ class AssistiveWrapper(Env):
 			info['frachet'] = self.base_env.discrete_frachet/self.timesteps
 			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
 
-		done = self.base_env.task_success > 0
+		done = info['task_success']
 		info['target_pos'] = self.base_env.target_pos
 		return obs,r,done,info
 
@@ -197,11 +197,13 @@ class burst:
 		Burst defined as inputs separated by no more than 'space' steps """
 	def __init__(self,master_env,config):
 		self.space = config['space']+2
+		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		if np.count_nonzero(obs[-6:]):
+		oracle_size = self.master_env.oracle.size
+		if np.count_nonzero(obs[-oracle_size:]):
 			if self.timer < self.space:
-				obs[-6:] = np.zeros(6)
+				obs[-oracle_size:] = np.zeros(6)
 			self.timer = 0
 		self.timer += 1
 		return obs,r,done,info
@@ -239,9 +241,12 @@ class reward:
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		r = 0
-		r -= self.input_penalty*(np.count_nonzero(obs[-6:]) > 0)
-		r = np.clip(r,*self.range)
+		# r = 0
+		# oracle_size = self.master_env.oracle.size
+		# r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
+		# r = np.clip(r,*self.range)
+		r = -1
+		done = info['task_success']
 		return obs,r,done,info
 
 	def _reset(self,obs):
