@@ -69,7 +69,9 @@ class AssistiveWrapper(Env):
 			info['frachet'] = self.base_env.discrete_frachet/self.timesteps
 			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
 
-		done = info['task_success']
+		# done = info['task_success']
+		self.timesteps += 1
+		done = info['task_success'] or self.timesteps >= self.step_limit
 		info['target_pos'] = self.base_env.target_pos
 		return obs,r,done,info
 
@@ -242,10 +244,12 @@ class reward:
 
 	def _step(self,obs,r,done,info):
 		r = 0
-		oracle_size = self.master_env.oracle.size
-		r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
-		r = np.clip(r,*self.range)
-		done = info['task_success']
+		# oracle_size = self.master_env.oracle.size
+		# r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
+		# r = np.clip(r,*self.range)
+		# done = info['task_success']
+
+		r += info['task_success']
 		return obs,r,done,info
 
 	def _reset(self,obs):

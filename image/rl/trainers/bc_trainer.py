@@ -55,6 +55,13 @@ class BCTrainer(TorchTrainer):
         return policy_loss, logp_loss, mse_loss, stats
 
     def pretrain_policy_with_bc(self, train_buffer):
+        logger.remove_tabular_output(
+            'progress.csv', relative_to_snapshot_dir=True,
+        )
+        logger.add_tabular_output(
+            'pretrain_%s.csv' % label, relative_to_snapshot_dir=True,
+        )
+
         optimizer = self.policy_optimizer
         prev_time = time.time()
         for i in range(self.bc_num_pretrain_steps):
@@ -76,6 +83,13 @@ class BCTrainer(TorchTrainer):
                 logger.record_dict(stats)
                 logger.dump_tabular(with_prefix=True, with_timestamp=False)
                 prev_time = time.time()
+        
+        logger.remove_tabular_output(
+            'pretrain_%s.csv' % label, relative_to_snapshot_dir=True,
+        )
+        logger.add_tabular_output(
+            'progress.csv', relative_to_snapshot_dir=True,
+        )
 
     def get_diagnostics(self):
         stats = super().get_diagnostics()

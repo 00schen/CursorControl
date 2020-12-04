@@ -193,9 +193,9 @@ if __name__ == "__main__":
 			space=0,
 			num_obs=10,
 			num_nonnoop=10,
-			reward_max=0,
-			reward_min=-np.inf,
-			input_penalty=1,
+			reward_max=1,
+			reward_min=0,
+			input_penalty=0,
 		)},
 	)
 
@@ -204,8 +204,8 @@ if __name__ == "__main__":
 
 		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
-		'algorithm_args.num_trains_per_train_loop': [1],
-		'trainer_kwargs.qf_lr': [3e-3,5e-3],
+		'algorithm_args.num_trains_per_train_loop': [50],
+		'trainer_kwargs.qf_lr': [1e-4,5e-5],
 		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
 	}
 

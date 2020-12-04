@@ -6,8 +6,8 @@ from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy
-from rl.path_collectors import FullPathCollector,NoPolicyPathCollector
+from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,MaxQPolicy
+from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import CQLTrainer
@@ -63,13 +63,14 @@ def experiment(variant):
 		eval_policy,
 		save_env_in_snapshot=False,
 	)
-	expl_policy = policy
+	expl_policy = MaxQPolicy(policy,qf1)
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
 		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
-	expl_path_collector = NoPolicyPathCollector(
+	expl_path_collector = FullPathCollector(
 		env,
+		expl_policy,
 		save_env_in_snapshot=False
 	)
 	replay_buffer = EnvReplayBuffer(
@@ -133,7 +134,7 @@ if __name__ == "__main__":
 		exploration_strategy='',
 		replay_buffer_size=(num_epochs//2)*path_length,
 		trainer_kwargs=dict(
-			discount=0.99,
+			discount=0.999,
 			reward_scale=1.0,
 
 			policy_lr=1e-3,
@@ -180,14 +181,14 @@ if __name__ == "__main__":
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
 					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e3),
+		num_pretrain_loops=int(1),
 		bc_pretrain = True,
 		bc_kwargs=dict(
 			policy_lr=1e-3,
 			policy_weight_decay=0,
 			optimizer_class=optim.Adam,
 
-			bc_num_pretrain_steps=int(1e3),
+			bc_num_pretrain_steps=int(1),
 			bc_batch_size=128,
 		),
 
