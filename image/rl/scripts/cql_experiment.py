@@ -11,6 +11,7 @@ from rl.path_collectors import FullPathCollector,NoPolicyPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import CQLTrainer
+from rl.trainers import BCTrainer
 
 import os
 from pathlib import Path
@@ -56,7 +57,7 @@ def experiment(variant):
 		action_dim=action_dim,
 		hidden_sizes=[M,M,M],
 	)
-	eval_policy = MakeDeterministic(policy)
+	eval_policy = policy
 	eval_path_collector = FullPathCollector(
 		env,
 		eval_policy,
@@ -72,9 +73,9 @@ def experiment(variant):
 		save_env_in_snapshot=False
 	)
 	replay_buffer = EnvReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-    )
+		variant['replay_buffer_size'],
+		env,
+	)
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
@@ -105,6 +106,9 @@ def experiment(variant):
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			trainer.train(train_data)
+	if variant['bc_pretrain']:
+		bc_trainer = BCTrainer(env,policy,**variant['bc_kwargs'])
+		bc_trainer.pretrain_policy_with_bc(replay_buffer)
 
 	if variant.get('render',False):
 		env.render('human')
@@ -130,32 +134,32 @@ if __name__ == "__main__":
 		replay_buffer_size=(num_epochs//2)*path_length,
 		trainer_kwargs=dict(
 			discount=0.99,
-            reward_scale=1.0,
+			reward_scale=1.0,
 
-            policy_lr=1e-3,
-            qf_lr=1e-3,
-            optimizer_class=optim.Adam,
+			policy_lr=1e-3,
+			qf_lr=1e-3,
+			optimizer_class=optim.Adam,
 
-            soft_target_tau=1e-2,
-            plotter=None,
-            render_eval_paths=False,
+			soft_target_tau=1e-2,
+			plotter=None,
+			render_eval_paths=False,
 
-            use_automatic_entropy_tuning=True,
-            target_entropy=None,
-            policy_eval_start=0,
-            num_qs=2,
+			use_automatic_entropy_tuning=True,
+			target_entropy=None,
+			policy_eval_start=0,
+			num_qs=2,
 
-            # CQL
-            min_q_version=3,
-            temp=1.0,
-            min_q_weight=1.0,
+			# CQL
+			min_q_version=3,
+			temp=1.0,
+			min_q_weight=1.0,
 
-            ## sort of backup
-            max_q_backup=False,
-            deterministic_backup=True,
-            num_random=10,
-            with_lagrange=False,
-            lagrange_thresh=0.0,
+			## sort of backup
+			max_q_backup=False,
+			deterministic_backup=True,
+			num_random=10,
+			with_lagrange=False,
+			lagrange_thresh=0.0,
 		),
 		algorithm_args=dict(
 			batch_size=1024,
@@ -165,6 +169,7 @@ if __name__ == "__main__":
 			num_expl_steps_per_train_loop=path_length,
 			num_trains_per_train_loop=50,				
 		),
+
 		load_demos=True,
 		# demo_paths=[dict(
 		# 			path=os.path.join(os.path.abspath(''),"demos",demo),
@@ -176,6 +181,15 @@ if __name__ == "__main__":
 					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		pretrain=True,
 		num_pretrain_loops=int(1e3),
+		bc_pretrain = True,
+		bc_kwargs=dict(
+			policy_lr=1e-3,
+			policy_weight_decay=0,
+			optimizer_class=optim.Adam,
+
+			bc_num_pretrain_steps=int(1e3),
+			bc_batch_size=128,
+		),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,

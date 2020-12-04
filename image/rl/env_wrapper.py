@@ -241,11 +241,10 @@ class reward:
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		# r = 0
-		# oracle_size = self.master_env.oracle.size
-		# r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
-		# r = np.clip(r,*self.range)
-		r = -1
+		r = 0
+		oracle_size = self.master_env.oracle.size
+		r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
+		r = np.clip(r,*self.range)
 		done = info['task_success']
 		return obs,r,done,info
 

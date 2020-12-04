@@ -36,12 +36,12 @@ class BCTrainer(TorchTrainer):
         batch = np_to_pytorch_batch(batch)
         return batch
 
-    def run_bc_batch(self, replay_buffer, policy):
+    def run_bc_batch(self, replay_buffer):
         batch = self.get_batch_from_buffer(replay_buffer, self.bc_batch_size)
         o = batch["observations"]
         u = batch["actions"]
         og = o
-        dist = policy(og)
+        dist = self.policy(og)
         pred_u, log_pi = dist.rsample_and_logprob()
         stats = dist.get_diagnostics()
 
@@ -58,7 +58,7 @@ class BCTrainer(TorchTrainer):
         optimizer = self.policy_optimizer
         prev_time = time.time()
         for i in range(self.bc_num_pretrain_steps):
-            train_policy_loss, train_logp_loss, train_mse_loss, train_stats = self.run_bc_batch(train_buffer, policy)
+            train_policy_loss, train_logp_loss, train_mse_loss, train_stats = self.run_bc_batch(train_buffer)
             train_policy_loss = train_policy_loss
 
             optimizer.zero_grad()
@@ -82,8 +82,8 @@ class BCTrainer(TorchTrainer):
         stats.update(self.eval_statistics)
         return stats
 
-    def end_epoch(self, epoch):
-        self._need_to_update_eval_statistics = True
+    def train_from_torch(self,batch):
+        pass
 
     @property
     def networks(self):

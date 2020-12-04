@@ -141,7 +141,7 @@ if __name__ == "__main__":
             qf_lr=1e-3,
             optimizer_class=optim.Adam,
 
-            soft_target_tau=1e-2,
+            soft_target_tau=1e-3,
             target_update_period=1,
             plotter=None,
             render_eval_paths=False,
@@ -155,7 +155,7 @@ if __name__ == "__main__":
 			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=path_length,
-			num_trains_per_train_loop=50,				
+			# num_trains_per_train_loop=5,				
 		),
 
 		load_demos=True,
@@ -169,6 +169,7 @@ if __name__ == "__main__":
 					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		pretrain=True,
 		num_pretrain_loops=int(1e3),
+		bc_pretrain = True,
 		bc_kwargs=dict(
 			policy_lr=1e-3,
             policy_weight_decay=0,
@@ -202,7 +203,8 @@ if __name__ == "__main__":
 		'seedid': [2000,2001,2002],
 
 		'env_kwargs.config.smooth_alpha': [.8,],
-		'env_kwargs.config.oracle_kwargs.threshold': [.8,.5,.2,0]
+		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
+		'algorithm_args.num_trains_per_train_loop': [5,10,25]
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

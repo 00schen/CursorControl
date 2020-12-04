@@ -138,13 +138,22 @@ class CQLTrainer(TorchTrainer):
 
     def _get_policy_actions(self, obs, num_actions, network=None):
         obs_temp = obs.unsqueeze(1).repeat(1, num_actions, 1).view(obs.shape[0] * num_actions, obs.shape[1])
-        new_obs_actions, _, _, new_obs_log_pi, *_ = network(
-            obs_temp, reparameterize=True, return_log_prob=True,
-        )
+        dist = network(obs_temp)
+        new_obs_actions = dist.rsample()
+        policy_mean, policy_log_std = dist.normal_mean, dist.normal_std.log()
+        new_obs_log_pi = network.logprob(new_obs_actions,policy_mean,policy_log_std)
         if not self.discrete:
             return new_obs_actions, new_obs_log_pi.view(obs.shape[0], num_actions, 1)
         else:
             return new_obs_actions
+
+    def _get_policy_action_metrics(self,obs,network):
+        dist = network(obs)
+        actions = dist.rsample()
+        print(actions.size())
+        policy_mean, policy_log_std = dist.normal_mean, dist.normal_std.log()
+        log_pi = network.logprob(actions[0,:],policy_mean,policy_log_std)
+        return actions,policy_mean,policy_log_std,log_pi
 
     def train_from_torch(self, batch):
         self._current_epoch += 1
@@ -157,9 +166,8 @@ class CQLTrainer(TorchTrainer):
         """
         Policy and Alpha Loss
         """
-        new_obs_actions, policy_mean, policy_log_std, log_pi, *_ = self.policy(
-            obs, reparameterize=True, return_log_prob=True,
-        )
+        new_obs_actions, policy_mean, policy_log_std, log_pi =\
+            self._get_policy_action_metrics(obs,self.policy)
         
         if self.use_automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
@@ -197,12 +205,10 @@ class CQLTrainer(TorchTrainer):
         if self.num_qs > 1:
             q2_pred = self.qf2(obs, actions)
         
-        new_next_actions, _, _, new_log_pi, *_ = self.policy(
-            next_obs, reparameterize=True, return_log_prob=True,
-        )
-        new_curr_actions, _, _, new_curr_log_pi, *_ = self.policy(
-            obs, reparameterize=True, return_log_prob=True,
-        )
+        new_next_actions, _, _, new_log_pi =\
+            self._get_policy_action_metrics(next_obs,self.policy)
+        new_curr_actions, _, _, new_curr_log_p =\
+            self._get_policy_action_metrics(obs,self.policy)
 
         if not self.max_q_backup:
             if self.num_qs == 1:
