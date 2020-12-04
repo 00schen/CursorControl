@@ -134,15 +134,15 @@ if __name__ == "__main__":
 		exploration_strategy='',
 		replay_buffer_size=(num_epochs//2)*path_length,
 		trainer_kwargs=dict(
-			discount=0.99,
+			discount=0.999,
             reward_scale=1.0,
 
             policy_lr=1e-3,
-            qf_lr=1e-3,
+            # qf_lr=1e-3,
             optimizer_class=optim.Adam,
 
-            soft_target_tau=1e-3,
-            target_update_period=1,
+            # soft_target_tau=1e-3,
+            target_update_period=10,
             plotter=None,
             render_eval_paths=False,
 
@@ -200,11 +200,13 @@ if __name__ == "__main__":
 	)
 
 	search_space = {
-		'seedid': [2000,2001,2002],
+		'seedid': [2000,2001],
 
 		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
-		'algorithm_args.num_trains_per_train_loop': [5,10,25]
+		'algorithm_args.num_trains_per_train_loop': [1],
+		'trainer_kwargs.qf_lr': [3e-3,5e-3],
+		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

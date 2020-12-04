@@ -138,10 +138,7 @@ class CQLTrainer(TorchTrainer):
 
     def _get_policy_actions(self, obs, num_actions, network=None):
         obs_temp = obs.unsqueeze(1).repeat(1, num_actions, 1).view(obs.shape[0] * num_actions, obs.shape[1])
-        dist = network(obs_temp)
-        new_obs_actions = dist.rsample()
-        policy_mean, policy_log_std = dist.normal_mean, dist.normal_std.log()
-        new_obs_log_pi = network.logprob(new_obs_actions,policy_mean,policy_log_std)
+        new_obs_actions,_,_,new_obs_log_pi = self._get_policy_action_metrics(obs_temp,network)
         if not self.discrete:
             return new_obs_actions, new_obs_log_pi.view(obs.shape[0], num_actions, 1)
         else:
@@ -149,10 +146,8 @@ class CQLTrainer(TorchTrainer):
 
     def _get_policy_action_metrics(self,obs,network):
         dist = network(obs)
-        actions = dist.rsample()
-        print(actions.size())
+        actions,log_pi = dist.rsample_and_logprob()
         policy_mean, policy_log_std = dist.normal_mean, dist.normal_std.log()
-        log_pi = network.logprob(actions[0,:],policy_mean,policy_log_std)
         return actions,policy_mean,policy_log_std,log_pi
 
     def train_from_torch(self, batch):
@@ -170,10 +165,12 @@ class CQLTrainer(TorchTrainer):
             self._get_policy_action_metrics(obs,self.policy)
         
         if self.use_automatic_entropy_tuning:
+            self.log_alpha.requires_grad = True
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
             self.alpha_optimizer.zero_grad()
             alpha_loss.backward()
             self.alpha_optimizer.step()
+            self.log_alpha.requires_grad = False
             alpha = self.log_alpha.exp()
         else:
             alpha_loss = 0
@@ -187,8 +184,6 @@ class CQLTrainer(TorchTrainer):
                 self.qf2(obs, new_obs_actions),
             )
 
-        policy_loss = (alpha*log_pi - q_new_actions).mean()
-
         if self._current_epoch < self.policy_eval_start:
             """
             For the initial few epochs, try doing behaivoral cloning, if needed
@@ -197,6 +192,13 @@ class CQLTrainer(TorchTrainer):
             """
             policy_log_prob = self.policy.log_prob(obs, actions)
             policy_loss = (alpha * log_pi - policy_log_prob).mean()
+        else:
+            policy_loss = (alpha*log_pi - q_new_actions).mean()
+
+        self._num_policy_update_steps += 1
+        self.policy_optimizer.zero_grad()
+        policy_loss.backward(retain_graph=False)
+        self.policy_optimizer.step()
         
         """
         QF Loss
@@ -237,7 +239,7 @@ class CQLTrainer(TorchTrainer):
             qf2_loss = self.qf_criterion(q2_pred, q_target)
 
         ## add CQL
-        random_actions_tensor = torch.FloatTensor(q2_pred.shape[0] * self.num_random, actions.shape[-1]).uniform_(-1, 1) # .cuda()
+        random_actions_tensor = ptu.zeros(q2_pred.shape[0] * self.num_random, actions.shape[-1]).uniform_(-1, 1) # .cuda()
         curr_actions_tensor, curr_log_pis = self._get_policy_actions(obs, num_actions=self.num_random, network=self.policy)
         new_curr_actions_tensor, new_log_pis = self._get_policy_actions(next_obs, num_actions=self.num_random, network=self.policy)
         q1_rand = self._get_tensor_values(obs, random_actions_tensor, network=self.qf1)
@@ -286,9 +288,6 @@ class CQLTrainer(TorchTrainer):
         qf1_loss = qf1_loss + min_qf1_loss
         qf2_loss = qf2_loss + min_qf2_loss
 
-        """
-        Update networks
-        """
         # Update the Q-functions iff 
         self._num_q_update_steps += 1
         self.qf1_optimizer.zero_grad()
@@ -299,11 +298,6 @@ class CQLTrainer(TorchTrainer):
             self.qf2_optimizer.zero_grad()
             qf2_loss.backward(retain_graph=True)
             self.qf2_optimizer.step()
-
-        self._num_policy_update_steps += 1
-        self.policy_optimizer.zero_grad()
-        policy_loss.backward(retain_graph=False)
-        self.policy_optimizer.step()
 
         """
         Soft Updates

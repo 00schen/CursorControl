@@ -64,14 +64,14 @@ class LightSwitchOracle(UserModelOracle):
 		# 		threshold = 0
 		# 		target_pos = target_poses[0]
 		# else:
-			# threshold = .5
-			# target_pos = target_poses1[0]
-		if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
-			threshold = self.threshold
-			target_pos = target_poses1[0]
-		else:
-			threshold = 0
-			target_pos = target_poses[0]
+			# if norm(base_env.tool_pos-target_poses1,axis=1)[0] > .12:
+			# 	threshold = self.threshold
+			# 	target_pos = target_poses1[0]
+			# else:
+			# 	threshold = 0
+			# 	target_pos = target_poses[0]
+		threshold = self.threshold
+		target_pos = target_poses1[0]
 
 			
 		old_traj = target_pos - info['old_tool_pos']
@@ -83,3 +83,4 @@ class LightSwitchOracle(UserModelOracle):
 	def reset(self):
 		self.bad_contacts = deque(np.zeros(10),10)
 		self.ineff_contacts = deque(np.zeros(10),10)
+		
