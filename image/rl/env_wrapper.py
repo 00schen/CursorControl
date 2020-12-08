@@ -63,7 +63,6 @@ class AssistiveWrapper(Env):
 
 	def step(self,action):
 		obs,r,done,info = self.base_env.step(action)
-		
 		if self.env_name in ['Circle','Sin']:
 			self.timesteps += 1
 			info['frachet'] = self.base_env.discrete_frachet/self.timesteps
@@ -173,6 +172,7 @@ def oracle_factory(base):
 			else:
 				self.oracle = {
 					'keyboard': KeyboardOracle,
+					"Gaze": GazeOracle,
 					# 'mouse': MouseOracle,
 				}[config['oracle']](self)
 			self.observation_space = spaces.Box(-10,10,

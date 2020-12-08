@@ -1,5 +1,6 @@
 import numpy as np
 from .follower_policy import FollowerPolicy
+from .default_gaze_policy import DefaultGazePolicy
 
 class DemonstrationPolicy:
 	def __init__(self,env,p):
@@ -27,3 +28,9 @@ class RandomPolicy:
 		return action,{}
 	def reset(self):
 		self.action_index = 0
+
+
+class DemonstrationGazePolicy(DemonstrationPolicy):
+	def __init__(self, env, p):
+		super().__init__(env, p)
+		self.polcies = [DefaultGazePolicy(), RandomPolicy(env.rng, epsilon=1/10)]

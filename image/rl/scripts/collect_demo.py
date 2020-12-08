@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy
+from rl.policies import DemonstrationPolicy, DemonstrationGazePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -19,7 +19,8 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=.8),
+		DemonstrationGazePolicy(env, p=1)
+		#DemonstrationPolicy(env,p=.8),
 	)
 
 	if variant.get('render',False):
@@ -63,7 +64,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='model',
+			oracle='Gaze',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 
@@ -72,7 +73,7 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		only_success=True,
-		num_episodes=500,
+		num_episodes=50,
 		path_length=path_length,
 		# save_name=f"{args.env_name}_keyboardinput"
 		save_name=f"{args.env_name}_model_2000"
@@ -123,4 +124,4 @@ if __name__ == "__main__":
 		variant['seedid'] = current_time
 		process_args(variant)
 		paths = collect_demonstrations(variant)
-		np.save(os.path.join(main_dir,"demos",variant['demo_kwargs']['save_name']+f"_{variant['seedid']}"), paths)
+		np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)

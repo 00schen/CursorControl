@@ -67,7 +67,7 @@ def experiment(variant):
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
-		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
+		expl_policy = OverridePolicy(expl_policy,env.oracle.size)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 	num_epochs = int(5e3)
 	variant = dict(
 		layer_size=512,
-		exploration_strategy='',
+		exploration_strategy='',#'override',
 		replay_buffer_size=(num_epochs//2)*path_length,
 		trainer_kwargs=dict(
 			discount=0.999,
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 			batch_size=1024,
 			max_path_length=path_length,
 			num_epochs=num_epochs,
-			num_eval_steps_per_epoch=path_length,
+			num_eval_steps_per_epoch=0,
 			num_expl_steps_per_train_loop=path_length,
 			# num_trains_per_train_loop=5,				
 		),
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='model',
+			oracle='keyboard',
 			oracle_kwargs=dict(),
 			action_type='trajectory',
 
@@ -255,7 +255,7 @@ if __name__ == "__main__":
 		import time
 		current_time = time.time_ns()
 		variant = variants[0]
-		run_id=str(current_time)
+		run_id=current_time
 		save_path = os.path.join(main_dir,'logs')
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id)
 		process_args(variant)
