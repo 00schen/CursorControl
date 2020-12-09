@@ -1,6 +1,6 @@
 from rlkit.samplers.data_collector import MdpPathCollector
 
-class FullPathCollector(MdpPathCollector):
+class CustomPathCollector(MdpPathCollector):
 	def collect_new_paths(
 		self,
 		max_path_length,
@@ -19,9 +19,9 @@ class FullPathCollector(MdpPathCollector):
 			)
 			path_len = len(path['actions'])
 			num_steps_collected += path_len
-			paths.append(path)
+			if path_len == max_path_length or path['terminals'][-1]:
+				paths.append(path)
 		self._num_paths_total += len(paths)
 		self._num_steps_total += num_steps_collected
 		self._epoch_paths.extend(paths)
 		return paths
-		

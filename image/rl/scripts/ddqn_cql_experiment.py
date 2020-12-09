@@ -6,10 +6,10 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,ArgmaxPolicy
-from rl.path_collectors import FullPathCollector
+from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import DDQNTrainer
+from rl.trainers import DDQNCQLTrainer
 
 import os
 from pathlib import Path
@@ -18,42 +18,52 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 import numpy as np
 import torch.optim as optim
+import torch as th
 
 def experiment(variant):
+	from  rlkit.core import logger
+
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid'])
 
-	obs_dim = env.observation_space.low.size
-	action_dim = env.action_space.low.size
-	M = variant["layer_size"]
-	qf1 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
-	)
-	qf2 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
-	)
-	target_qf1 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
-	)
-	target_qf2 = Mlp(
-		input_size=obs_dim,
-		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
-	)
+	if not variant['from_pretrain']:
+		obs_dim = env.observation_space.low.size
+		action_dim = env.action_space.low.size
+		M = variant["layer_size"]
+		qf1 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			hidden_sizes=[M,M,M],
+			output_activation=Clamp(max=0),
+		)
+		qf2 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			hidden_sizes=[M,M,M],
+			output_activation=Clamp(max=0),
+		)
+		target_qf1 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			hidden_sizes=[M,M,M],
+			output_activation=Clamp(max=0),
+		)
+		target_qf2 = Mlp(
+			input_size=obs_dim,
+			output_size=action_dim,
+			hidden_sizes=[M,M,M],
+			output_activation=Clamp(max=0),
+		)
+	else:
+		pretrain_file_path = variant['pretrain_file_path']
+		qf1 = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf1']
+		qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf1']
+		target_qf1 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf1']
+		target_qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf2']
 	eval_policy = ArgmaxPolicy(
 		qf1,qf2,
 	)
-	eval_path_collector = FullPathCollector(
+	eval_path_collector = CustomPathCollector(
 		env,
 		eval_policy,
 		save_env_in_snapshot=False
@@ -76,16 +86,16 @@ def experiment(variant):
 		save_env_in_snapshot=False
 	)
 	replay_buffer = EnvReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-    )
+		variant['replay_buffer_size'],
+		env,
+	)
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
 			replay_buffer=replay_buffer,
 		)
 		path_loader.load_demos()
-	trainer = DDQNTrainer(
+	trainer = DDQNCQLTrainer(
 		qf1=qf1,
 		qf2=qf2,
 		target_qf1=target_qf1,
@@ -107,6 +117,8 @@ def experiment(variant):
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			trainer.train(train_data)
+		pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
+		th.save(trainer.get_snapshot(), pretrain_file_path)
 	if variant.get('render',False):
 		env.render('human')
 	algorithm.train()
@@ -123,9 +135,11 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
+	path_length = 200
 	num_epochs = int(5e3)
 	variant = dict(
+		from_pretrain=True,
+		pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
 		layer_size=512,
 		exploration_argmax=True,
 		exploration_strategy='',
@@ -135,16 +149,20 @@ if __name__ == "__main__":
 		replay_buffer_size=(num_epochs//2)*path_length,
 		trainer_kwargs=dict(
 			# qf_lr=1e-3,
-            soft_target_tau=1e-2,
-            target_update_period=1,
-            qf_criterion=None,
+			soft_target_tau=1e-2,
+			target_update_period=1,
+			qf_criterion=None,
 
-            discount=0.999,
-            reward_scale=1.0,
+			discount=0.999,
+			reward_scale=1.0,
+
+			temp=1.0,
+			min_q_weight=1.0,
 		),
 		algorithm_args=dict(
 			batch_size=256,
 			max_path_length=path_length,
+			eval_path_length=1,
 			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
@@ -152,15 +170,11 @@ if __name__ == "__main__":
 		),
 
 		load_demos=True,
-		# demo_paths=[dict(
-		# 			path=os.path.join(os.path.abspath(''),"demos",demo),
-		# 			obs_dict=False,
-		# 			is_demo=False,
-		# 			train_split=1,
-		# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
-		pretrain=True,
+					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
+		# demo_paths=[os.path.join(main_dir,"demos",demo)\
+		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
+		pretrain=False,
 		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
@@ -169,7 +183,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='model',
+			oracle='keyboard',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 
@@ -183,12 +197,14 @@ if __name__ == "__main__":
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000],
 
 		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
 		'algorithm_args.num_trains_per_train_loop': [50],
-		'trainer_kwargs.qf_lr': [1e-3,5e-4],
+		'trainer_kwargs.qf_lr': [1e-3],
+		# 'trainer_kwargs.temp': [1,1e-1,1e-2,1e1,1e2,1e3],
+		# 'trainer_kwargs.min_q_weight': [5,3,1,.5,.3,.1],
 		# 'trainer_kwargs.soft_target_tau': [.01,.05],
 	}
 
@@ -206,7 +222,6 @@ if __name__ == "__main__":
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
 			variant['render'] = args.no_render
-			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
 
 	if args.use_ray:
 		import ray
@@ -241,7 +256,7 @@ if __name__ == "__main__":
 		import time
 		current_time = time.time_ns()
 		variant = variants[0]
-		run_id=str(current_time)
+		run_id=0
 		save_path = os.path.join(main_dir,'logs')
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id)
 		process_args(variant)
