@@ -28,7 +28,6 @@ class DefaultGazePolicy:
                     'down': np.array([0, 0, 0, 0, 1, 0]),
                     'noop': np.array([0, 0, 0, 0, 0, 0])
                 }[inputs[key]]
-        print(self.action)
         return self.action, {}
 
     def reset(self):

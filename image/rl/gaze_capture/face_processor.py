@@ -2,7 +2,7 @@ import dlib
 import cv2
 import math
 import numpy as np
-from gaze_capture.ITrackerData import loadMetadata
+from rl.gaze_capture.ITrackerData import loadMetadata
 
 
 class FaceProcessor:
@@ -14,9 +14,12 @@ class FaceProcessor:
         self.left_eye_points = [42, 43, 44, 45, 46, 47]
         self.right_eye_points = [36, 37, 38, 39, 40, 41]
 
-        self.face_mean = loadMetadata('gaze_capture/data/mean_face_224.mat', silent=True)['image_mean']
-        self.left_eye_mean = loadMetadata('gaze_capture/data/mean_left_224.mat', silent=True)['image_mean']
-        self.right_eye_mean = loadMetadata('gaze_capture/data/mean_right_224.mat', silent=True)['image_mean']
+        self.face_mean = loadMetadata('image/rl/gaze_capture/model_files/mean_face_224.mat',
+                                      silent=True)['image_mean']
+        self.left_eye_mean = loadMetadata('image/rl/gaze_capture/model_files/mean_left_224.mat',
+                                          silent=True)['image_mean']
+        self.right_eye_mean = loadMetadata('image/rl/gaze_capture/model_files/mean_right_224.mat',
+                                           silent=True)['image_mean']
 
     def get_gaze_features(self, frame):
         height, width = frame.shape[:2]

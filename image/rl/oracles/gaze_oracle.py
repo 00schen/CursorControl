@@ -2,13 +2,13 @@ import pybullet as p
 import numpy as np
 import torch
 import cv2
-from gaze_capture.face_processor import FaceProcessor
-from gaze_capture.ITrackerModel import ITrackerModel
+from rl.gaze_capture.face_processor import FaceProcessor
+from rl.gaze_capture.ITrackerModel import ITrackerModel
 from .base_oracles import Oracle
 
 
 class GazeOracle(Oracle):
-    def __init__(self, env, predictor_path='./gaze_capture/data/shape_predictor_68_face_landmarks.dat'):
+    def __init__(self, env, predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
         super().__init__()
         self.size = 128
         self.env = env
@@ -19,10 +19,11 @@ class GazeOracle(Oracle):
         if torch.cuda.is_available():
             self.device = torch.device("cuda:0")
             self.i_tracker.cuda()
-            state = torch.load('gaze_capture/checkpoint.pth.tar')['state_dict']
+            state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar')['state_dict']
         else:
             self.device = "cpu"
-            state = torch.load('gaze_capture/checkpoint.pth.tar', map_location=torch.device('cpu'))['state_dict']
+            state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar',
+                               map_location=torch.device('cpu'))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
 
     def get_action(self, obs, info=None):
