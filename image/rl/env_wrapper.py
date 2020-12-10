@@ -68,9 +68,9 @@ class AssistiveWrapper(Env):
 			info['frachet'] = self.base_env.discrete_frachet/self.timesteps
 			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
 
-		# done = info['task_success']
-		self.timesteps += 1
-		done = info['task_success'] or self.timesteps >= self.step_limit
+		done = info['task_success']
+		# self.timesteps += 1
+		# done = info['task_success'] or self.timesteps >= self.step_limit
 		info['target_pos'] = self.base_env.target_pos
 		return obs,r,done,info
 
@@ -95,8 +95,8 @@ def action_factory(base):
 			super().__init__(config)
 			self.action_type = config['action_type']
 			self.action_space = {
-				"trajectory": spaces.Box(-1,1,(3,)),
-				"joint": spaces.Box(-1,1,(7,)),
+				"trajectory": spaces.Box(-.1,.1,(3,)),
+				"joint": spaces.Box(-.25,.25,(7,)),
 				"disc_traj": spaces.Box(0,1,(6,)),
 			}[config['action_type']]
 			self.translate = {
@@ -108,6 +108,8 @@ def action_factory(base):
 			self.smooth_alpha = config['smooth_alpha']
 
 		def joint(self,action,info={}):
+			clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
+			action = clip_by_norm(action,.25)
 			self.action = self.smooth_alpha*action + (1-self.smooth_alpha)*self.action if np.count_nonzero(self.action) else action
 			info['joint'] = self.action
 			return action,info	
@@ -123,11 +125,10 @@ def action_factory(base):
 			new_joint_positions = np.array(p.calculateInverseKinematics(base_env.robot, 13, new_pos, physicsClientId=base_env.id))
 			new_joint_positions = new_joint_positions[:7]
 			action = new_joint_positions - joint_positions
-
-			clip_by_norm = lambda traj,limit: traj/max(1e-4,norm(traj))*np.clip(norm(traj),None,limit)
-			action = clip_by_norm(action,.25)
 			return self.joint(action, info)
 		def trajectory(self,traj,info={}):
+			clip_by_norm = lambda traj,min_l=None,max_l=None: traj/max(1e-4,norm(traj))*np.clip(norm(traj),min_l,max_l)
+			traj = clip_by_norm(traj,.07,.1)
 			info['trajectory'] = traj
 			return self.target(self.base_env.tool_pos+traj,info)
 		def disc_traj(self,onehot,info={}):
@@ -140,7 +141,7 @@ def action_factory(base):
 				np.array((0,1,0)),
 				np.array((0,0,-1)),
 				np.array((0,0,1)),
-			][index]*.1
+			][index]
 			return self.trajectory(traj,info)
 		
 		def step(self,action):
@@ -164,7 +165,7 @@ def oracle_factory(base):
 			if config['oracle'] == 'model':
 				self.oracle = {
 					"Feeding": StraightLineOracle,
-					"Laptop": StraightLineOracle,
+					"Laptop": LaptopOracle,
 					"LightSwitch": LightSwitchOracle,
 					"Circle": TracingOracle,
 					"Sin": TracingOracle,
@@ -221,11 +222,15 @@ class stack:
 		self.history_shape = (config['num_obs'],get_dim(master_env.observation_space))
 		self.nonnoop_shape = (config['num_nonnoop'],get_dim(master_env.observation_space))
 		master_env.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
+		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
+		if len(self.history) == self.history.maxlen:
+			old_obs = self.history[0]
+			oracle_size = self.master_env.oracle.size
+			if np.count_nonzero(old_obs[-oracle_size:]) > 0:
+				self.prev_nonnoop.append(old_obs)
 		self.history.append(obs)
-		if not info.get('noop',True):
-			self.prev_nonnoop.append(obs)
 		# info['current_obs'] = obs
 		return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
 
@@ -244,12 +249,11 @@ class reward:
 
 	def _step(self,obs,r,done,info):
 		r = 0
-		# oracle_size = self.master_env.oracle.size
-		# r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
-		# r = np.clip(r,*self.range)
-		# done = info['task_success']
+		oracle_size = self.master_env.oracle.size
+		r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
+		r = np.clip(r,*self.range)
+		done = info['task_success']
 
-		r += info['task_success']
 		return obs,r,done,info
 
 	def _reset(self,obs):

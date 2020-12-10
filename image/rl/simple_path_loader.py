@@ -30,9 +30,8 @@ class SimplePathLoader:
 		obs = env.adapt_reset(obs)
 		for next_obs,action,r,done,info,ainfo in tran_iter:
 			info.update(ainfo)
-			next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
 			action = info.get(env.action_type,action)
-			done = info['task_success']
+			next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
 			processed_trans.append((obs,next_obs,action,r,done,info))
 			obs = next_obs
 
@@ -40,6 +39,8 @@ class SimplePathLoader:
 			['observations','next_observations','actions','rewards','terminals','env_infos'],
 			list(zip(*processed_trans))
 			))
+		# print(np.mean(np.array(new_path['observations'])[:,-6:],axis=0),np.mean(new_path['rewards']))
+		# print(new_path['actions'][10:15])
 		path.update(new_path)
 		path['observations'] = np.array(path['observations'])
 		path['next_observations'] = np.array(path['next_observations'])
@@ -47,4 +48,4 @@ class SimplePathLoader:
 		path['rewards'] = np.array(path['rewards'])[:,np.newaxis]
 		path['terminals'] = np.array(path['terminals'])[:,np.newaxis]
 		replay_buffer.add_path(path)
-        
+		

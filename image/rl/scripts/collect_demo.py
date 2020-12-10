@@ -19,8 +19,7 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationGazePolicy(env, p=1)
-		#DemonstrationPolicy(env,p=.8),
+		DemonstrationPolicy(env,p=.99),
 	)
 
 	if variant.get('render',False):
@@ -29,6 +28,9 @@ def collect_demonstrations(variant):
 	while len(paths) < variant['num_episodes']:
 		target_index = 0
 		while target_index < env.base_env.num_targets:
+			def set_target_index(self):
+				self.target_index = target_index
+			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
 			collected_paths = path_collector.collect_new_paths(
 				variant['path_length'],
 				variant['path_length'],
@@ -40,9 +42,6 @@ def collect_demonstrations(variant):
 					success_found = True
 			if success_found:
 				target_index += 1
-				def set_target_index(self):
-					self.target_index = target_index
-				env.base_env.target_index = MethodType(set_target_index,env.base_env)
 			print("total paths collected: ", len(paths))
 	return paths
 
@@ -56,7 +55,7 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
+	path_length = 400
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -75,7 +74,7 @@ if __name__ == "__main__":
 		only_success=True,
 		num_episodes=50,
 		path_length=path_length,
-		# save_name=f"{args.env_name}_keyboardinput"
+		# save_name=f"{args.env_name}_keyboard"
 		save_name=f"{args.env_name}_model_2000"
 	)
 	search_space = {
@@ -88,6 +87,8 @@ if __name__ == "__main__":
 
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
+		if not args.use_ray:
+			variant['num_episodes'] = 20
 
 	if args.use_ray:
 		import ray

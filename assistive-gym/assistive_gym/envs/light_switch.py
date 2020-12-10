@@ -15,9 +15,9 @@ class LightSwitchEnv(AssistiveEnv):
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.success_dist = success_dist
-		self.num_targets = 2
-		self.messages = ['0 0 0',]
-		# self.messages = ['0 1 0','0 1 1','0 0 0',]
+		# self.messages = ['0 0 0',]
+		self.messages = ['0 1 0','0 1 1','0 0 0',]
+		self.num_targets = 2*len(self.messages)
 		self.switch_p = 1
 
 	def step(self, action):
@@ -26,25 +26,25 @@ class LightSwitchEnv(AssistiveEnv):
 		self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 		angle_dirs = np.zeros(len(self.switches))
 		reward_switch = 0
-		lever_angle_diff = []
+		angle_diffs = []
 		for i,switch in enumerate(self.switches):
 			if self.target_string[i] == self.current_string[i]:
 				angle_dirs[i],angle_diff = 0,0
 			else:
-				angle_dirs[i],angle_diff = self.move_lever(switch,self.initial_string[i])
+				angle_dirs[i],angle_diff = self.move_lever(switch)
 
 			### Debugging: auto flip switch ###
-			tool_pos1 = np.array(p.getLinkState(self.tool, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-			if (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1)\
-				or (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1):
-				for switch1 in self.switches:
-					if self.target_string[i] == 0:
-						p.resetJointState(switch1, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
-					else:
-						p.resetJointState(switch1, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
+			# tool_pos1 = np.array(p.getLinkState(self.tool, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
+			# if (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1)\
+			# 	or (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1):
+			# 	# for switch1 in self.switches:
+			# 	if self.target_string[i] == 0:
+			# 		p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
+			# 	else:
+			# 		p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
 			lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
-			lever_angle_diff.append(angle_diff)
+			angle_diffs.append(angle_diff)
 			if lever_angle < LOW_LIMIT + .1:
 				self.current_string[i] = 0
 			elif lever_angle > HIGH_LIMIT - .1:
@@ -83,7 +83,7 @@ class LightSwitchEnv(AssistiveEnv):
 			'task_success': self.task_success,
 			'num_correct': np.count_nonzero(np.equal(self.target_string,self.current_string)),
 			'angle_dir': angle_dirs,
-			'angle_diff': lever_angle_diff,
+			'angle_diff': angle_diffs,
 			'old_tool_pos': old_tool_pos,
 			'ineff_contact': bad_contact_count,
 			'target_index': self.target_index,
@@ -92,7 +92,7 @@ class LightSwitchEnv(AssistiveEnv):
 
 		return obs, reward, done, info
 
-	def move_lever(self,switch,on_off):
+	def move_lever(self,switch):
 		old_j_pos = robot_joint_position = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
 		contacts = p.getContactPoints(bodyA=self.robot, bodyB=switch, linkIndexB=0, physicsClientId=self.id)
 		contacts += p.getContactPoints(bodyA=self.tool, bodyB=switch, linkIndexB=0, physicsClientId=self.id)
@@ -108,7 +108,6 @@ class LightSwitchEnv(AssistiveEnv):
 		k = .2
 		w = k*np.sign(c_F)*np.sqrt(abs(c_F))*norm(radius)
 
-		positive = bool(contacts[0][7][2] > 0)
 		for _ in range(self.frame_skip):
 			robot_joint_position += w
 			
@@ -165,8 +164,7 @@ class LightSwitchEnv(AssistiveEnv):
 		"""set up target and initial robot position (objects set up with target)"""
 		self.set_target_index() # instance override in demos
 		self.generate_target()
-		self.init_robot_arm(np.zeros(3))
-		# self.init_robot_arm(np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3))
+		self.init_robot_arm()
 
 		"""configure pybullet"""
 		p.setGravity(0, 0, -9.81, physicsClientId=self.id)
@@ -179,17 +177,16 @@ class LightSwitchEnv(AssistiveEnv):
 
 		return self._get_obs([0])
 	
-	def init_start_pos(self,og_init_pos):
+	def init_start_pos(self):
 		"""exchange this function for curriculum"""
+		# init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
 		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
-		init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
-		return init_pos
+		self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
-	def init_robot_arm(self,og_init_pos):
-		init_pos = self.init_pos = self.init_start_pos(og_init_pos)
-		init_orient = p.getQuaternionFromEuler(np.array([0, np.pi/2.0, 0]), physicsClientId=self.id)
-		
-		self.util.ik_random_restarts(self.robot, 11, init_pos, init_orient, self.world_creation, self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits,
+	def init_robot_arm(self):
+		self.init_start_pos()
+		init_orient = p.getQuaternionFromEuler(np.array([0, np.pi/2.0, 0]), physicsClientId=self.id)		
+		self.util.ik_random_restarts(self.robot, 11, self.init_pos, init_orient, self.world_creation, self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits,
 			ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=100, max_ik_random_restarts=10, random_restart_threshold=0.03, step_sim=True)
 		# for joint_i,joint_pos in zip(self.robot_right_arm_joint_indices,[-.5, 2.8, 2, 2.4, -2.5, 1.2, 0.7]):
 		# 	p.resetJointState(self.robot, jointIndex=joint_i, targetValue=joint_pos, physicsClientId=self.id)

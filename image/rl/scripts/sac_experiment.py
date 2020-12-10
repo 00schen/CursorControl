@@ -6,8 +6,9 @@ from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
+from rlkit.torch.core import np_to_pytorch_batch
 
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy
+from rl.policies import OverridePolicy,ComparisonMergePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -32,25 +33,21 @@ def experiment(variant):
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	target_qf1 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	target_qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	policy = TanhGaussianPolicy(
 		obs_dim=obs_dim,
@@ -74,9 +71,9 @@ def experiment(variant):
 		save_env_in_snapshot=False
 	)
 	replay_buffer = EnvReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-    )
+		variant['replay_buffer_size'],
+		env,
+	)
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
@@ -104,13 +101,13 @@ def experiment(variant):
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
 		from tqdm import tqdm
+		bc_trainer = BCTrainer(policy)
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.train(train_data)
-	if variant['bc_pretrain']:
-		bc_trainer = BCTrainer(env,policy,**variant['bc_kwargs'])
-		bc_trainer.pretrain_policy_with_bc(replay_buffer)	
-
+			for _ in range(10):
+				bc_batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+				bc_trainer.pretrain(bc_batch)
+			batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			trainer.train(batch)
 	if variant.get('render',False):
 		env.render('human')
 	algorithm.train()
@@ -127,33 +124,33 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
-	num_epochs = int(5e3)
+	path_length = 400
+	num_epochs = 5000
 	variant = dict(
 		layer_size=512,
-		exploration_strategy='',#'override',
-		replay_buffer_size=(num_epochs//2)*path_length,
+		exploration_strategy='',
+		replay_buffer_size=1000*path_length,
 		trainer_kwargs=dict(
 			discount=0.999,
-            reward_scale=1.0,
+			reward_scale=1.0,
 
-            policy_lr=1e-3,
-            # qf_lr=1e-3,
-            optimizer_class=optim.Adam,
+			policy_lr=1e-3,
+			# qf_lr=1e-3,
+			optimizer_class=optim.Adam,
 
-            # soft_target_tau=1e-3,
-            target_update_period=10,
-            plotter=None,
-            render_eval_paths=False,
+			soft_target_tau=1e-2,
+			target_update_period=1,
+			plotter=None,
+			render_eval_paths=False,
 
-            use_automatic_entropy_tuning=True,
-            target_entropy=None,
+			use_automatic_entropy_tuning=True,
+			target_entropy=None,
 		),
 		algorithm_args=dict(
-			batch_size=1024,
+			batch_size=256,
 			max_path_length=path_length,
 			num_epochs=num_epochs,
-			num_eval_steps_per_epoch=0,
+			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
 			# num_trains_per_train_loop=5,				
 		),
@@ -166,18 +163,18 @@ if __name__ == "__main__":
 		# 			train_split=1,
 		# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
+					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e3),
-		bc_pretrain = True,
-		bc_kwargs=dict(
-			policy_lr=1e-3,
-            policy_weight_decay=0,
-            optimizer_class=optim.Adam,
+		num_pretrain_loops=int(1e5),
+		# bc_pretrain = False,
+		# bc_kwargs=dict(
+		# 	policy_lr=1e-3,
+		# 	policy_weight_decay=0,
+		# 	optimizer_class=optim.Adam,
 
-            bc_num_pretrain_steps=int(1e3),
-            bc_batch_size=128,
-		),
+		# 	num_pretrain_steps=int(1e3),
+		# 	bc_batch_size=128,
+		# ),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -193,21 +190,21 @@ if __name__ == "__main__":
 			space=0,
 			num_obs=10,
 			num_nonnoop=10,
-			reward_max=1,
-			reward_min=0,
-			input_penalty=0,
+			reward_max=0,
+			reward_min=-1,
+			input_penalty=1,
 		)},
 	)
-
 	search_space = {
 		'seedid': [2000,2001],
 
 		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
-		'algorithm_args.num_trains_per_train_loop': [50],
-		'trainer_kwargs.qf_lr': [1e-4,5e-5],
-		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
+		'algorithm_args.num_trains_per_train_loop': [100],
+		'trainer_kwargs.qf_lr': [3e-5,5e-4,1e-4,5e-4],
+		# 'trainer_kwargs.policy_lr': [1e-3],
 	}
+
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,
@@ -217,6 +214,7 @@ if __name__ == "__main__":
 		variants.append(variant)
 
 	def process_args(variant):
+		variant['qf_lr'] = variant['trainer_kwargs']['qf_lr']
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
 			variant['render'] = args.no_render
@@ -239,6 +237,8 @@ if __name__ == "__main__":
 		@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.gpus else 0)
 		class Runner:
 			def run(self,variant):
+				import gtimer as gt
+				gt.reset_root()
 				ptu.set_gpu_mode(True)
 				process_args(variant)
 				iterator = ray.get_actor("global_iterator")

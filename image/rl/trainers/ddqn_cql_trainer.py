@@ -10,8 +10,12 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import Mlp
 from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
 
-class DDQNTrainer(DoubleDQNTrainer):
-	def __init__(self,qf1,qf2,target_qf1,target_qf2,**kwargs):
+class DDQNCQLTrainer(DoubleDQNTrainer):
+	def __init__(self,qf1,qf2,target_qf1,target_qf2,
+			temp=1.0,
+            min_q_weight=1.0,
+			**kwargs):
+		
 		super().__init__(qf1,target_qf1,**kwargs)
 		self.qf1 = self.qf
 		self.target_qf1 = self.target_qf
@@ -21,7 +25,9 @@ class DDQNTrainer(DoubleDQNTrainer):
 		self.qf2_optimizer = optim.Adam(
 			self.qf2.parameters(),
 			lr=self.learning_rate,
-		)		
+		)
+		self.temp = temp
+		self.min_q_weight = min_q_weight
 
 	def bc(self,batch):
 		batch = np_to_pytorch_batch(batch)
@@ -69,10 +75,21 @@ class DDQNTrainer(DoubleDQNTrainer):
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
-		y1_pred = th.sum(self.qf1(obs) * actions, dim=1, keepdim=True)
+		curr_qf1 = self.qf1(obs)
+		curr_qf2  = self.qf2(obs)
+		y1_pred = th.sum(curr_qf1 * actions, dim=1, keepdim=True)
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
-		y2_pred = th.sum(self.qf2(obs) * actions, dim=1, keepdim=True)
+		y2_pred = th.sum(curr_qf2 * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)	
+
+		"""CQL term"""
+		min_qf1_loss = th.logsumexp(curr_qf1 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
+		min_qf2_loss = th.logsumexp(curr_qf2 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
+		min_qf1_loss = min_qf1_loss - curr_qf1.mean() * self.min_q_weight
+		min_qf2_loss = min_qf2_loss - curr_qf2.mean() * self.min_q_weight
+
+		qf1_loss += min_qf1_loss
+		qf2_loss += min_qf2_loss
 
 		"""
 		Update Q networks
@@ -102,6 +119,8 @@ class DDQNTrainer(DoubleDQNTrainer):
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
 			self.eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
+			self.eval_statistics['QF1 OOD Loss'] = np.mean(ptu.get_numpy(qf1_loss))
+			self.eval_statistics['QF2 OOD Loss'] = np.mean(ptu.get_numpy(qf2_loss))
 			self.eval_statistics.update(create_stats_ordered_dict(
 				'Q1 Predictions',
 				ptu.get_numpy(y1_pred),
