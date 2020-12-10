@@ -15,6 +15,7 @@ import torch as th
 from types import MethodType
 def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
+	breakpoint()
 	env.seed(variant['seedid']+100)
 
 	path_collector = FullPathCollector(
@@ -72,7 +73,7 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		only_success=True,
-		num_episodes=50,
+		num_episodes=100,
 		path_length=path_length,
 		# save_name=f"{args.env_name}_keyboard"
 		save_name=f"{args.env_name}_model_2000"

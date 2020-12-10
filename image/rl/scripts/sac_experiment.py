@@ -8,7 +8,7 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.core import np_to_pytorch_batch
 
-from rl.policies import OverridePolicy,ComparisonMergePolicy
+from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy, OverrideGazePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='keyboard',
+			oracle='model',
 			oracle_kwargs=dict(),
 			action_type='trajectory',
 

@@ -145,6 +145,7 @@ def action_factory(base):
 			return self.trajectory(traj,info)
 		
 		def step(self,action):
+			print(action)
 			action,ainfo = self.translate(action)
 			obs,r,done,info = super().step(action)
 			info.update(ainfo)

@@ -5,3 +5,4 @@ from .merge_policy import ComparisonMergePolicy
 from .override_policy import OverridePolicy
 from .max_q_policy import MaxQPolicy
 from .argmax_policy import ArgmaxPolicy
+from .gaze_policy import DefaultGazePolicy, OverrideGazePolicy
