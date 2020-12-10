@@ -5,7 +5,7 @@ from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,ArgmaxPolicy
+from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,ArgmaxPolicy,OverrideGazePolicy
 from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -80,6 +80,8 @@ def experiment(variant):
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
 		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
+	elif variant['exploration_strategy'] == 'override_gaze':
+		expl_policy = OverrideGazePolicy(expl_policy)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -138,11 +140,11 @@ if __name__ == "__main__":
 	path_length = 200
 	num_epochs = int(5e3)
 	variant = dict(
-		from_pretrain=True,
+		from_pretrain=False,
 		pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
 		layer_size=512,
 		exploration_argmax=True,
-		exploration_strategy='',
+		exploration_strategy='override_gaze',
 		expl_kwargs=dict(
 			logit_scale=1000,
 		),
@@ -171,10 +173,10 @@ if __name__ == "__main__":
 
 		load_demos=True,
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
+					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
 		# demo_paths=[os.path.join(main_dir,"demos",demo)\
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
-		pretrain=False,
+		pretrain=True,
 		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
@@ -183,7 +185,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='keyboard',
+			oracle='Gaze',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 

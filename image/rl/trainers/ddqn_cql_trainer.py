@@ -76,17 +76,17 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		y_target = y_target.detach()
 		# actions is a one-hot vector
 		curr_qf1 = self.qf1(obs)
-		curr_qf2  = self.qf2(obs)
+		curr_qf2 = self.qf2(obs)
 		y1_pred = th.sum(curr_qf1 * actions, dim=1, keepdim=True)
 		qf1_loss = self.qf_criterion(y1_pred, y_target)
 		y2_pred = th.sum(curr_qf2 * actions, dim=1, keepdim=True)
 		qf2_loss = self.qf_criterion(y2_pred, y_target)	
 
 		"""CQL term"""
-		min_qf1_loss = th.logsumexp(curr_qf1 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
-		min_qf2_loss = th.logsumexp(curr_qf2 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
-		min_qf1_loss = min_qf1_loss - curr_qf1.mean() * self.min_q_weight
-		min_qf2_loss = min_qf2_loss - curr_qf2.mean() * self.min_q_weight
+		min_qf1_loss = (th.logsumexp(curr_qf1 / self.temp, dim=1, keepdim=True) * self.temp
+						- y1_pred).mean() * self.min_q_weight
+		min_qf2_loss = (th.logsumexp(curr_qf2 / self.temp, dim=1, keepdim=True) * self.temp
+						- y2_pred).mean() * self.min_q_weight
 
 		qf1_loss += min_qf1_loss
 		qf2_loss += min_qf2_loss
