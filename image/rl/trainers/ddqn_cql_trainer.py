@@ -11,21 +11,12 @@ from rlkit.torch.networks import Mlp
 from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
 
 class DDQNCQLTrainer(DoubleDQNTrainer):
-	def __init__(self,qf1,qf2,target_qf1,target_qf2,
+	def __init__(self, qf, target_qf,
 			temp=1.0,
             min_q_weight=1.0,
 			**kwargs):
 		
-		super().__init__(qf1,target_qf1,**kwargs)
-		self.qf1 = self.qf
-		self.target_qf1 = self.target_qf
-		self.qf2 = qf2
-		self.target_qf2 = target_qf2
-		self.qf1_optimizer = self.qf_optimizer
-		self.qf2_optimizer = optim.Adam(
-			self.qf2.parameters(),
-			lr=self.learning_rate,
-		)
+		super().__init__(qf,target_qf,**kwargs)
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 
@@ -35,21 +26,14 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		concat_obs = batch['observations']
 
 		target = actions.argmax(dim=1).squeeze()
-		qf1_loss = F.cross_entropy(self.qf1(concat_obs),target)
-		qf2_loss = F.cross_entropy(self.qf2(concat_obs),target)
+		qf_loss = F.cross_entropy(self.qf(concat_obs),target)
 
-		self.qf1_optimizer.zero_grad()
-		qf1_loss.backward()
-		self.qf1_optimizer.step()
-		self.qf2_optimizer.zero_grad()
-		qf2_loss.backward()
-		self.qf2_optimizer.step()
+		self.qf_optimizer.zero_grad()
+		qf_loss.backward()
+		self.qf_optimizer.step()
 
 		ptu.soft_update_from_to(
-			self.qf1, self.target_qf1, self.soft_target_tau
-		)
-		ptu.soft_update_from_to(
-			self.qf2, self.target_qf2, self.soft_target_tau
+			self.qf, self.target_qf, self.soft_target_tau
 		)
 
 	def train_from_torch(self, batch):
@@ -62,54 +46,37 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		Q loss
 		"""
-		best_action_idxs = th.min(self.qf1(next_obs),self.qf2(next_obs)).max(
+		best_action_idxs = self.qf(next_obs).max(
 			1, keepdim=True
 		)[1]
-		target_q_values = th.min(self.target_qf1(next_obs).gather(
-											1, best_action_idxs
-										),
-									self.target_qf2(next_obs).gather(
-											1, best_action_idxs
-										)
-								)
+		target_q_values = self.target_qf(next_obs).gather(1, best_action_idxs)
+
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
-		curr_qf1 = self.qf1(obs)
-		curr_qf2 = self.qf2(obs)
-		y1_pred = th.sum(curr_qf1 * actions, dim=1, keepdim=True)
-		qf1_loss = self.qf_criterion(y1_pred, y_target)
-		y2_pred = th.sum(curr_qf2 * actions, dim=1, keepdim=True)
-		qf2_loss = self.qf_criterion(y2_pred, y_target)	
+		curr_qf = self.qf(obs)
+		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
+		qf_loss = self.qf_criterion(y_pred, y_target)
 
 		"""CQL term"""
-		min_qf1_loss = (th.logsumexp(curr_qf1 / self.temp, dim=1, keepdim=True) * self.temp
-						- y1_pred).mean() * self.min_q_weight
-		min_qf2_loss = (th.logsumexp(curr_qf2 / self.temp, dim=1, keepdim=True) * self.temp
-						- y2_pred).mean() * self.min_q_weight
+		min_qf_loss = (th.logsumexp(curr_qf / self.temp, dim=1, keepdim=True) * self.temp
+						- y_pred).mean() * self.min_q_weight
 
-		qf1_loss += min_qf1_loss
-		qf2_loss += min_qf2_loss
+		qf_loss += min_qf_loss
 
 		"""
 		Update Q networks
 		"""
-		self.qf1_optimizer.zero_grad()
-		qf1_loss.backward()
-		self.qf1_optimizer.step()
-		self.qf2_optimizer.zero_grad()
-		qf2_loss.backward()
-		self.qf2_optimizer.step()
+		self.qf_optimizer.zero_grad()
+		qf_loss.backward()
+		self.qf_optimizer.step()
 
 		"""
 		Soft target network updates
 		"""
 		if self._n_train_steps_total % self.target_update_period == 0:
 			ptu.soft_update_from_to(
-				self.qf1, self.target_qf1, self.soft_target_tau
-			)
-			ptu.soft_update_from_to(
-				self.qf2, self.target_qf2, self.soft_target_tau
+				self.qf, self.target_qf, self.soft_target_tau
 			)
 
 		"""
@@ -117,33 +84,23 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		if self._need_to_update_eval_statistics:
 			self._need_to_update_eval_statistics = False
-			self.eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
-			self.eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
-			self.eval_statistics['QF1 OOD Loss'] = np.mean(ptu.get_numpy(qf1_loss))
-			self.eval_statistics['QF2 OOD Loss'] = np.mean(ptu.get_numpy(qf2_loss))
+			self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(qf_loss))
+			self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(qf_loss))
 			self.eval_statistics.update(create_stats_ordered_dict(
-				'Q1 Predictions',
-				ptu.get_numpy(y1_pred),
-			))
-			self.eval_statistics.update(create_stats_ordered_dict(
-				'Q2 Predictions',
-				ptu.get_numpy(y2_pred),
+				'Q Predictions',
+				ptu.get_numpy(y_pred),
 			))
 
 	@property
 	def networks(self):
 		nets = [
-			self.qf1,
-			self.target_qf1,
-			self.qf2,
-			self.target_qf2,
+			self.qf,
+			self.target_qf,
 		]
 		return nets
 
 	def get_snapshot(self):
 		return dict(
-			qf1 = self.qf1,
-			target_qf1 = self.target_qf1,
-			qf2 = self.qf2,
-			target_qf2 = self.target_qf2,
+			qf=self.qf,
+			target_qf=self.target_qf,
 		)

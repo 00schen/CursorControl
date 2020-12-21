@@ -3,66 +3,42 @@ import pybullet as p
 
 
 class DefaultGazePolicy:
-    def __init__(self):
+    def __init__(self, env, oracle_status, p):
+        self.oracle_status = oracle_status
         self.action = np.zeros(6)
+        self.rng = env.rng
+        self.p = p
 
     def get_action(self, obs):
-        keys = p.getKeyboardEvents()
-        inputs = {
-            p.B3G_LEFT_ARROW: 'left',
-            p.B3G_RIGHT_ARROW: 'right',
-            ord('r'): 'forward',
-            ord('f'): 'backward',
-            p.B3G_UP_ARROW: 'up',
-            p.B3G_DOWN_ARROW: 'down'
-        }
+        if self.rng.random() > self.p:
+            self.action = np.zeros(6)
+            self.action[self.rng.choice(6)] = 1
 
-        for key in inputs:
-            if key in keys and p.KEY_WAS_TRIGGERED:
-                self.action = {
-                    'left': np.array([0, 1, 0, 0, 0, 0]),
-                    'right': np.array([1, 0, 0, 0, 0, 0]),
-                    'forward': np.array([0, 0, 1, 0, 0, 0]),
-                    'backward': np.array([0, 0, 0, 1, 0, 0]),
-                    'up': np.array([0, 0, 0, 0, 0, 1]),
-                    'down': np.array([0, 0, 0, 0, 1, 0]),
-                    'noop': np.array([0, 0, 0, 0, 0, 0])
-                }[inputs[key]]
+        if np.count_nonzero(self.oracle_status.action) > 0:
+            self.action = self.oracle_status.action
+
         return self.action, {}
 
     def reset(self):
         self.action = np.zeros(6)
+        self.oracle_status.curr_intervention = False
+        self.oracle_status.new_intervention = False
 
 
 class OverrideGazePolicy:
-    def __init__(self, policy):
+    def __init__(self, policy, oracle_status):
         self.policy = policy
+        self.oracle_status = oracle_status
+        self.action = np.zeros(6)
 
     def get_action(self, obs):
-        keys = p.getKeyboardEvents()
-        inputs = {
-            p.B3G_LEFT_ARROW: 'left',
-            p.B3G_RIGHT_ARROW: 'right',
-            ord('r'): 'forward',
-            ord('f'): 'backward',
-            p.B3G_UP_ARROW: 'up',
-            p.B3G_DOWN_ARROW: 'down'
-        }
-
-        for key in inputs:
-            if key in keys and p.KEY_WAS_TRIGGERED:
-                action = {
-                    'left': np.array([0, 1, 0, 0, 0, 0]),
-                    'right': np.array([1, 0, 0, 0, 0, 0]),
-                    'forward': np.array([0, 0, 1, 0, 0, 0]),
-                    'backward': np.array([0, 0, 0, 1, 0, 0]),
-                    'up': np.array([0, 0, 0, 0, 0, 1]),
-                    'down': np.array([0, 0, 0, 0, 1, 0]),
-                    'noop': np.array([0, 0, 0, 0, 0, 0])
-                }[inputs[key]]
-                return action, {}
+        if np.count_nonzero(self.oracle_status.action) > 0:
+            return self.oracle_status.action, {}
 
         return self.policy.get_action(obs)
 
     def reset(self):
         self.policy.reset()
+        self.action = np.zeros(6)
+        self.oracle_status.curr_intervention = False
+        self.oracle_status.new_intervention = False

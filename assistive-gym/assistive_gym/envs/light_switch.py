@@ -17,7 +17,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.success_dist = success_dist
 		# self.messages = ['0 0 0',]
 		self.messages = ['0 1 0','0 1 1','0 0 0',]
-		self.num_targets = 2*len(self.messages)
+		self.num_targets = 1
 		self.switch_p = 1
 
 	def step(self, action):
@@ -171,9 +171,11 @@ class LightSwitchEnv(AssistiveEnv):
 		p.setGravity(0, 0, 0, body=self.robot, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
-		p.resetDebugVisualizerCamera(cameraDistance= .6, cameraYaw=180, cameraPitch=-45, cameraTargetPosition=[0, .1, 1], physicsClientId=self.id)
+		dist = 0.1
+		pitch = 0
+		p.resetDebugVisualizerCamera(cameraDistance=dist, cameraYaw=180, cameraPitch=pitch, cameraTargetPosition=[0, -0.7, 1], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
-		self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, .1, 1], .6, 180, -45, 0, 2)
+		self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, -0.7, 1], dist, 180, pitch, 0, 2)
 
 		return self._get_obs([0])
 	

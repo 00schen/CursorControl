@@ -145,7 +145,6 @@ def action_factory(base):
 			return self.trajectory(traj,info)
 		
 		def step(self,action):
-			print(action)
 			action,ainfo = self.translate(action)
 			obs,r,done,info = super().step(action)
 			info.update(ainfo)
@@ -171,10 +170,14 @@ def oracle_factory(base):
 					"Circle": TracingOracle,
 					"Sin": TracingOracle,
 				}[self.env_name](self.rng,self.base_env,**config['oracle_kwargs'])
+			elif config['oracle'] == 'gaze_model':
+				self.oracle = {
+					"LightSwitch": LightSwitchGazeOracle
+				}[self.env_name](rng=self.rng,base_env=self.base_env,**config['oracle_kwargs'])
 			else:
 				self.oracle = {
 					'keyboard': KeyboardOracle,
-					"Gaze": GazeOracle,
+					"gaze": GazeOracle,
 					# 'mouse': MouseOracle,
 				}[config['oracle']](self)
 			self.observation_space = spaces.Box(-10,10,
@@ -250,8 +253,7 @@ class reward:
 
 	def _step(self,obs,r,done,info):
 		r = 0
-		oracle_size = self.master_env.oracle.size
-		r -= self.input_penalty*(np.count_nonzero(obs[-oracle_size:]) > 0)
+		r -= self.input_penalty*self.master_env.oracle.status.new_intervention
 		r = np.clip(r,*self.range)
 		done = info['task_success']
 

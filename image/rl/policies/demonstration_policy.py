@@ -29,8 +29,3 @@ class RandomPolicy:
 	def reset(self):
 		self.action_index = 0
 
-
-class DemonstrationGazePolicy(DemonstrationPolicy):
-	def __init__(self, env, p):
-		super().__init__(env, p)
-		self.polcies = [DefaultGazePolicy(), RandomPolicy(env.rng, epsilon=1/10)]

@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, DemonstrationGazePolicy
+from rl.policies import DemonstrationPolicy, DefaultGazePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -15,12 +15,11 @@ import torch as th
 from types import MethodType
 def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
-	breakpoint()
 	env.seed(variant['seedid']+100)
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=.99),
+		DefaultGazePolicy(env, env.oracle.status, p=.99),
 	)
 
 	if variant.get('render',False):
@@ -64,11 +63,13 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='Gaze',
+			oracle='gaze_model',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
-
-			adapts = [],
+			adapts=['reward'],
+			reward_max=0,
+			reward_min=-1,
+			input_penalty=1,
 		)},
 		render = args.no_render and (not args.use_ray),
 

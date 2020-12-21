@@ -30,38 +30,25 @@ def experiment(variant):
 		obs_dim = env.observation_space.low.size
 		action_dim = env.action_space.low.size
 		M = variant["layer_size"]
-		qf1 = Mlp(
+		qf = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
 			output_activation=Clamp(max=0),
 		)
-		qf2 = Mlp(
+		target_qf = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
 			output_activation=Clamp(max=0),
 		)
-		target_qf1 = Mlp(
-			input_size=obs_dim,
-			output_size=action_dim,
-			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
-		)
-		target_qf2 = Mlp(
-			input_size=obs_dim,
-			output_size=action_dim,
-			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
-		)
+
 	else:
 		pretrain_file_path = variant['pretrain_file_path']
-		qf1 = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf1']
-		qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf1']
-		target_qf1 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf1']
-		target_qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf2']
+		qf = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf']
+		target_qf = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf']
 	eval_policy = ArgmaxPolicy(
-		qf1,qf2,
+		qf,qf,
 	)
 	eval_path_collector = CustomPathCollector(
 		env,
@@ -70,18 +57,18 @@ def experiment(variant):
 	)
 	if not variant['exploration_argmax']:
 		expl_policy = BoltzmannPolicy(
-			qf1,qf2,
+			qf,qf,
 			logit_scale=variant['expl_kwargs']['logit_scale'])
 	else:
 		expl_policy = ArgmaxPolicy(
-			qf1,qf2
+			qf,qf
 		)
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
 		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override_gaze':
-		expl_policy = OverrideGazePolicy(expl_policy)
+		expl_policy = OverrideGazePolicy(expl_policy, env.oracle.status)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -98,10 +85,8 @@ def experiment(variant):
 		)
 		path_loader.load_demos()
 	trainer = DDQNCQLTrainer(
-		qf1=qf1,
-		qf2=qf2,
-		target_qf1=target_qf1,
-		target_qf2=target_qf2,
+		qf=qf,
+		target_qf=target_qf,
 		**variant['trainer_kwargs']
 		)	
 	algorithm = TorchBatchRLAlgorithm(
@@ -177,7 +162,7 @@ if __name__ == "__main__":
 		# demo_paths=[os.path.join(main_dir,"demos",demo)\
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e4),
+		num_pretrain_loops=int(1e3),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -185,7 +170,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='Gaze',
+			oracle='gaze',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 
