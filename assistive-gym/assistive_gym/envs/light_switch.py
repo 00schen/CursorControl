@@ -10,13 +10,12 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco', success_dist=.05,frame_skip=5):
+	def __init__(self,num_messages=3,success_dist=.05,frame_skip=5,robot_type='jaco',):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.success_dist = success_dist
-		# self.messages = ['0 0 0',]
-		self.messages = ['0 1 0','0 1 1','0 0 0',]
+		self.messages = ['0 1 0','0 1 1','0 0 0',][-num_messages:]
 		self.num_targets = 2*len(self.messages)
 		self.switch_p = 1
 
@@ -79,14 +78,23 @@ class LightSwitchEnv(AssistiveEnv):
 			reward_dist = 0
 		reward = 10*reward_dist + 10*reward_switch + (-30+10*np.count_nonzero(np.equal(self.target_string,self.current_string)))
 
+		_,switch_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
 		info = {
 			'task_success': self.task_success,
 			'num_correct': np.count_nonzero(np.equal(self.target_string,self.current_string)),
 			'angle_dir': angle_dirs,
 			'angle_diff': angle_diffs,
+			'tool_pos': self.tool_pos,
 			'old_tool_pos': old_tool_pos,
 			'ineff_contact': bad_contact_count,
+
 			'target_index': self.target_index,
+			'lever_angle': lever_angle,
+			'target_string': self.target_string,
+			'current_string': self.current_string,
+			'switch_pos': self.target_pos,
+			'aux_switch_pos': self.target_pos1,
+			'switch_orient': switch_orient
 		}
 		done = False
 
@@ -268,6 +276,9 @@ class LightSwitchEnv(AssistiveEnv):
 	def tool_pos(self):
 		return np.array(p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)[0])
 
-class LightSwitchJacoEnv(LightSwitchEnv):
+class OneSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
-		super().__init__(robot_type='jaco',**kwargs)
+		super().__init__(num_messages=1,robot_type='jaco',**kwargs)
+class ThreeSwitchJacoEnv(LightSwitchEnv):
+	def __init__(self,**kwargs):
+		super().__init__(num_messages=3,robot_type='jaco',**kwargs)

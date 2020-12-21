@@ -1,4 +1,4 @@
-# from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy
+from rl.policies import BoltzmannPolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -15,17 +15,16 @@ def evaluation(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+10)
 
-	file_name = os.path.join(variant['eval_path'],'params.pkl')
-	# qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
-	# qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
+	file_name = os.path.join(variant['eval_path'])
+	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
+	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
 
-	# policy_kwargs = variant['policy_kwargs']
-	# policy = BoltzmannPolicy(
-	# 	qf1=qf1,
-	# 	qf2=qf2,
-	# 	**policy_kwargs,
-	# )
-	policy = th.load(file_name,map_location=th.device("cpu"))['trainer/policy']
+	policy = BoltzmannPolicy(
+		qf1=qf1,
+		qf2=qf2,
+		logit_scale=1e4,
+	)
+	# policy = th.load(file_name,map_location=th.device("cpu"))['trainer/policy']
 	eval_path_collector = FullPathCollector(
 		env,
 		policy,
@@ -55,11 +54,11 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
+	path_length = 400
 	variant = dict(
 		seedid=2002,
 		path_length=path_length,
-		eval_path=os.path.join(main_dir,'logs','testli_sac1_2020_12_03_01_22_32_0000--s-0'),
+		eval_path=os.path.join(main_dir,'logs','test-s3-rand-proj-5','test_s3_rand_proj_5_2020_12_18_10_49_22_0013--s-0','params.pkl'),
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
@@ -69,15 +68,17 @@ if __name__ == "__main__":
 
 			oracle='model',
 			oracle_kwargs=dict(),
-			action_type='trajectory',
+			action_type='disc_traj',
 
-			adapts = ['stack','reward'],
+			adapts = ['high_dim_user','reward'],
+			apply_projection=False,
 			space=0,
 			num_obs=10,
 			num_nonnoop=10,
 			reward_max=0,
 			reward_min=-np.inf,
 			input_penalty=1,
+			sparse_reward=False,
 		)},
 		render = args.no_render,
 	)

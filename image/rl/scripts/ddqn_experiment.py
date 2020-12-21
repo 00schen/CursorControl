@@ -6,7 +6,7 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,ArgmaxPolicy
-from rl.path_collectors import FullPathCollector
+from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNTrainer
@@ -18,8 +18,11 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 import numpy as np
 import torch.optim as optim
+import torch as th
 
 def experiment(variant):
+	from  rlkit.core import logger
+
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid'])
 
@@ -53,7 +56,7 @@ def experiment(variant):
 	eval_policy = ArgmaxPolicy(
 		qf1,qf2,
 	)
-	eval_path_collector = FullPathCollector(
+	eval_path_collector = CustomPathCollector(
 		env,
 		eval_policy,
 		save_env_in_snapshot=False
@@ -69,7 +72,7 @@ def experiment(variant):
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
-		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
+		expl_policy = OverridePolicy(expl_policy,env.oracle.size)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -82,6 +85,7 @@ def experiment(variant):
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
+			demo_path_proportion=variant['demo_path_proportions'],
 			replay_buffer=replay_buffer,
 		)
 		path_loader.load_demos()
@@ -107,6 +111,8 @@ def experiment(variant):
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			trainer.train(train_data)
+		pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
+		th.save(trainer.get_snapshot(), pretrain_file_path)
 	if variant.get('render',False):
 		env.render('human')
 	algorithm.train()
@@ -124,7 +130,7 @@ if __name__ == "__main__":
 	print(main_dir)
 
 	path_length = 400
-	num_epochs = int(5e3)
+	num_epochs = int(1e6)
 	variant = dict(
 		layer_size=512,
 		exploration_argmax=True,
@@ -132,7 +138,7 @@ if __name__ == "__main__":
 		expl_kwargs=dict(
 			logit_scale=1000,
 		),
-		replay_buffer_size=(num_epochs//2)*path_length,
+		replay_buffer_size=int(5e4)*path_length,
 		trainer_kwargs=dict(
 			# qf_lr=1e-3,
             soft_target_tau=1e-2,
@@ -145,22 +151,20 @@ if __name__ == "__main__":
 		algorithm_args=dict(
 			batch_size=256,
 			max_path_length=path_length,
+			eval_path_length=1,
 			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
-			# num_trains_per_train_loop=5,				
+			# num_trains_per_train_loop=50,				
 		),
 
-		load_demos=True,
-		# demo_paths=[dict(
-		# 			path=os.path.join(os.path.abspath(''),"demos",demo),
-		# 			obs_dict=False,
-		# 			is_demo=False,
-		# 			train_split=1,
-		# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
-		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
-		pretrain=True,
+		load_demos=False,
+		# demo_paths=[os.path.join(main_dir,"demos",demo)\
+		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
+		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000.npy")],
+		demo_path_proportions=[.01,.01],
+		pretrain=False,
 		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
@@ -172,24 +176,27 @@ if __name__ == "__main__":
 			oracle='model',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
+			smooth_alpha = .8,
 
-			adapts = ['stack','reward'],
+			adapts = ['high_dim_user','reward'],
 			space=0,
 			num_obs=10,
 			num_nonnoop=10,
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
+			sparse_reward=False,
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000,2001,2002],
 
-		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
-		'algorithm_args.num_trains_per_train_loop': [50],
-		'trainer_kwargs.qf_lr': [1e-3,5e-4],
-		# 'trainer_kwargs.soft_target_tau': [.01,.05],
+		'env_kwargs.config.apply_projection': [False],
+		'trainer_kwargs.qf_lr': [1e-3,1e-4],
+		'algorithm_args.num_trains_per_train_loop': [1],				
+
+		# 'env_kwargs.config.sparse_reward': [False,True],
 	}
 
 
@@ -206,7 +213,6 @@ if __name__ == "__main__":
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
 			variant['render'] = args.no_render
-			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
 
 	if args.use_ray:
 		import ray
@@ -225,6 +231,8 @@ if __name__ == "__main__":
 		@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.gpus else 0)
 		class Runner:
 			def run(self,variant):
+				import gtimer as gt
+				gt.reset_root()
 				ptu.set_gpu_mode(True)
 				process_args(variant)
 				iterator = ray.get_actor("global_iterator")
@@ -241,7 +249,7 @@ if __name__ == "__main__":
 		import time
 		current_time = time.time_ns()
 		variant = variants[0]
-		run_id=str(current_time)
+		run_id=0
 		save_path = os.path.join(main_dir,'logs')
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id)
 		process_args(variant)

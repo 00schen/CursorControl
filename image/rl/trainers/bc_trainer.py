@@ -25,7 +25,7 @@ class BCTrainer:
         bc_batch = np_to_pytorch_batch(bc_batch)
         obs = bc_batch["observations"]
         actions = bc_batch["actions"]
-        dist = policy(obs)
+        dist = self.policy(obs)
         bc_loss = -dist.log_prob(actions).mean()
         self.policy_optimizer.zero_grad()
         bc_loss.backward()

@@ -1,23 +1,21 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.envs.make_env import make
 from rlkit.torch.networks import ConcatMlp
+from rlkit.torch.sac.sac import SACTrainer
 from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
-from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
-
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy,MaxQPolicy
-from rl.path_collectors import FullPathCollector
+from rlkit.torch.core import np_to_pytorch_batch
+from rl.policies import OverridePolicy,ComparisonMergePolicy,MaxQPolicy
+from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import CQLTrainer
-from rl.trainers import BCTrainer
+from rl.trainers import BCTrainer,CQLTrainer
 
-import os
+import argparse, os
 from pathlib import Path
 from rlkit.launchers.launcher_util import setup_logger,reset_execution_environment
 import rlkit.util.hyperparameter as hyp
-import argparse
 import numpy as np
 import torch.optim as optim
 
@@ -32,25 +30,21 @@ def experiment(variant):
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	target_qf1 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	target_qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
 		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
 	)
 	policy = TanhGaussianPolicy(
 		obs_dim=obs_dim,
@@ -58,12 +52,13 @@ def experiment(variant):
 		hidden_sizes=[M,M,M],
 	)
 	eval_policy = policy
-	eval_path_collector = FullPathCollector(
+	eval_path_collector = CustomPathCollector(
 		env,
 		eval_policy,
 		save_env_in_snapshot=False,
 	)
-	expl_policy = MaxQPolicy(policy,qf1)
+	# expl_policy = MaxQPolicy(policy,qf1)
+	expl_policy = policy
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
@@ -80,20 +75,30 @@ def experiment(variant):
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
+			demo_path_proportion=variant['demo_path_proportions'],
 			replay_buffer=replay_buffer,
 		)
 	path_loader.load_demos() 
-	trainer = CQLTrainer(
-		env=env,
-		policy=policy,
-		qf1=qf1,
-		qf2=qf2,
-		target_qf1=target_qf1,
-		target_qf2=target_qf2,
-		**variant['trainer_kwargs']
-	)
+	# trainer = SACTrainer(
+	# 	env=env,
+	# 	policy=policy,
+	# 	qf1=qf1,
+	# 	qf2=qf2,
+	# 	target_qf1=target_qf1,
+	# 	target_qf2=target_qf2,
+	# 	**variant['sac_kwargs']
+	# )
+	cql_trainer = CQLTrainer(
+			env=env,
+			policy=policy,
+			qf1=qf1,
+			qf2=qf2,
+			target_qf1=target_qf1,
+			target_qf2=target_qf2,
+			**variant['trainer_kwargs']
+		)
 	algorithm = TorchBatchRLAlgorithm(
-		trainer=trainer,
+		trainer=cql_trainer,
 		exploration_env=env,
 		evaluation_env=env,
 		exploration_data_collector=expl_path_collector,
@@ -104,13 +109,14 @@ def experiment(variant):
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
 		from tqdm import tqdm
+		bc_trainer = BCTrainer(policy)
+		
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.train(train_data)
-	if variant['bc_pretrain']:
-		bc_trainer = BCTrainer(env,policy,**variant['bc_kwargs'])
-		bc_trainer.pretrain_policy_with_bc(replay_buffer)
-
+			bc_batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			bc_trainer.pretrain(bc_batch)
+		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
+			batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			cql_trainer.train(batch)
 	if variant.get('render',False):
 		env.render('human')
 	algorithm.train()
@@ -127,18 +133,18 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
-	num_epochs = int(5e3)
+	path_length = 400
+	num_epochs = 10
 	variant = dict(
 		layer_size=512,
 		exploration_strategy='',
-		replay_buffer_size=(num_epochs//2)*path_length,
+		replay_buffer_size=10000*path_length,
 		trainer_kwargs=dict(
 			discount=0.999,
 			reward_scale=1.0,
 
 			policy_lr=1e-3,
-			qf_lr=1e-3,
+			qf_lr=1e-4,
 			optimizer_class=optim.Adam,
 
 			soft_target_tau=1e-2,
@@ -152,8 +158,8 @@ if __name__ == "__main__":
 
 			# CQL
 			min_q_version=3,
-			temp=1.0,
-			min_q_weight=1.0,
+			# temp=1.0,
+			# min_q_weight=1.0,
 
 			## sort of backup
 			max_q_backup=False,
@@ -162,35 +168,38 @@ if __name__ == "__main__":
 			with_lagrange=False,
 			lagrange_thresh=0.0,
 		),
+		sac_kwargs=dict(
+			discount=0.999,
+			reward_scale=1.0,
+
+			policy_lr=1e-3,
+			qf_lr=1e-4,
+			optimizer_class=optim.Adam,
+
+			soft_target_tau=1e-2,
+			target_update_period=1,
+			plotter=None,
+			render_eval_paths=False,
+
+			use_automatic_entropy_tuning=True,
+			target_entropy=None,
+		),
 		algorithm_args=dict(
-			batch_size=1024,
+			batch_size=256,
 			max_path_length=path_length,
+			eval_path_length=1,
 			num_epochs=num_epochs,
-			num_eval_steps_per_epoch=path_length,
+			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
-			num_trains_per_train_loop=50,				
+			num_trains_per_train_loop=100,				
 		),
 
 		load_demos=True,
-		# demo_paths=[dict(
-		# 			path=os.path.join(os.path.abspath(''),"demos",demo),
-		# 			obs_dict=False,
-		# 			is_demo=False,
-		# 			train_split=1,
-		# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
-		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model" in demo],
+		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000.npy")],
+		# demo_path_proportions=[.5,.5],
 		pretrain=True,
-		num_pretrain_loops=int(1),
-		bc_pretrain = True,
-		bc_kwargs=dict(
-			policy_lr=1e-3,
-			policy_weight_decay=0,
-			optimizer_class=optim.Adam,
-
-			bc_num_pretrain_steps=int(1),
-			bc_batch_size=128,
-		),
+		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -201,22 +210,25 @@ if __name__ == "__main__":
 			oracle='model',
 			oracle_kwargs=dict(),
 			action_type='trajectory',
+			smooth_alpha = .8,
 
-			adapts = ['stack','reward'],
+			adapts = ['high_dim_user','reward'],
 			space=0,
 			num_obs=10,
 			num_nonnoop=10,
 			reward_max=0,
-			reward_min=-np.inf,
+			reward_min=-1,
 			input_penalty=1,
 		)},
 	)
-
 	search_space = {
-		'seedid': [2000,2001,2002],
+		'seedid': [2000,2001],
 
-		'env_kwargs.config.smooth_alpha': [.8,],
-		'env_kwargs.config.oracle_kwargs.threshold': [.8,.5,.2,0]
+		'trainer_kwargs.temp': [.1,1],
+		'trainer_kwargs.min_q_weight': [1,.5],
+		'env_kwargs.config.apply_projection': [False],
+		'env_kwargs.config.sparse_reward': [False,True],
+		'demo_path_proportions': [[0,1],[.2,.8],[.4,.6],[.6,.4],[.8,.2],[1,0]]
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -227,10 +239,10 @@ if __name__ == "__main__":
 		variants.append(variant)
 
 	def process_args(variant):
+		variant['qf_lr'] = variant['trainer_kwargs']['qf_lr']
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
 			variant['render'] = args.no_render
-			variant['algorithm_args']['num_eval_steps_per_epoch'] = 0
 
 	if args.use_ray:
 		import ray
@@ -249,6 +261,8 @@ if __name__ == "__main__":
 		@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.gpus else 0)
 		class Runner:
 			def run(self,variant):
+				import gtimer as gt
+				gt.reset_root()
 				ptu.set_gpu_mode(True)
 				process_args(variant)
 				iterator = ray.get_actor("global_iterator")
@@ -265,7 +279,7 @@ if __name__ == "__main__":
 		import time
 		current_time = time.time_ns()
 		variant = variants[0]
-		run_id=str(current_time)
+		run_id=0
 		save_path = os.path.join(main_dir,'logs')
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id)
 		process_args(variant)

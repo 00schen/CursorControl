@@ -9,7 +9,7 @@ from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.core import np_to_pytorch_batch
 
 from rl.policies import OverridePolicy,ComparisonMergePolicy
-from rl.path_collectors import FullPathCollector
+from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import BCTrainer
@@ -55,7 +55,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M],
 	)
 	eval_policy = policy
-	eval_path_collector = FullPathCollector(
+	eval_path_collector = CustomPathCollector(
 		env,
 		eval_policy,
 		save_env_in_snapshot=False,
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 	print(main_dir)
 
 	path_length = 400
-	num_epochs = 5000
+	num_epochs = 500
 	variant = dict(
 		layer_size=512,
 		exploration_strategy='',
@@ -163,18 +163,9 @@ if __name__ == "__main__":
 		# 			train_split=1,
 		# 			) for demo in os.listdir(os.path.join(os.path.abspath(''),"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[os.path.join(main_dir,"demos",demo)\
-					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
+					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_2000" in demo],
 		pretrain=True,
-		num_pretrain_loops=int(1e5),
-		# bc_pretrain = False,
-		# bc_kwargs=dict(
-		# 	policy_lr=1e-3,
-		# 	policy_weight_decay=0,
-		# 	optimizer_class=optim.Adam,
-
-		# 	num_pretrain_steps=int(1e3),
-		# 	bc_batch_size=128,
-		# ),
+		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -196,15 +187,15 @@ if __name__ == "__main__":
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000,2001,2002],
 
 		'env_kwargs.config.smooth_alpha': [.8,],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
 		'algorithm_args.num_trains_per_train_loop': [100],
-		'trainer_kwargs.qf_lr': [3e-5,5e-4,1e-4,5e-4],
+		'trainer_kwargs.qf_lr': [1e-4],
+		'env_kwargs.config.sparse_reward': [False,True],
 		# 'trainer_kwargs.policy_lr': [1e-3],
 	}
-
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,

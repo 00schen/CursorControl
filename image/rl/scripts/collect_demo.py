@@ -25,6 +25,8 @@ def collect_demonstrations(variant):
 	if variant.get('render',False):
 		env.render('human')
 	paths = []
+	success_count = 0
+	# while len(paths) < variant['num_episodes'] or success_count < 0:
 	while len(paths) < variant['num_episodes']:
 		target_index = 0
 		while target_index < env.base_env.num_targets:
@@ -37,9 +39,13 @@ def collect_demonstrations(variant):
 			)
 			success_found = False
 			for path in collected_paths:
+				# print(len(path['actions']),path['env_infos'][-1]['task_success'])
+
 				if path['env_infos'][-1]['task_success'] or (not variant['only_success']):
 					paths.append(path)
 					success_found = True
+				# if not path['env_infos'][-1]['task_success']:
+				# 	paths.append(path)
 			if success_found:
 				target_index += 1
 			print("total paths collected: ", len(paths))
@@ -72,22 +78,23 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		only_success=True,
-		num_episodes=500,
+		num_episodes=5000,
 		path_length=path_length,
 		# save_name=f"{args.env_name}_keyboard"
-		save_name=f"{args.env_name}_model_2000"
+		save_name=f"{args.env_name}_model_on_policy_5000"
 	)
 	search_space = {
 		'seedid': 2000,
 		'env_kwargs.config.smooth_alpha': .8,
 		'env_kwargs.config.oracle_kwargs.threshold': .5,
+		'env_kwargs.config.oracle_kwargs.epsilon': 0,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)
 
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
-		if not args.use_ray:
+		if variant['render']:
 			variant['num_episodes'] = 20
 
 	if args.use_ray:

@@ -83,13 +83,13 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		qf2_loss = self.qf_criterion(y2_pred, y_target)	
 
 		"""CQL term"""
-		min_qf1_loss = th.logsumexp(curr_qf1 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
-		min_qf2_loss = th.logsumexp(curr_qf2 / self.temp, dim=1,).mean() * self.min_q_weight * self.temp
-		min_qf1_loss = min_qf1_loss - curr_qf1.mean() * self.min_q_weight
-		min_qf2_loss = min_qf2_loss - curr_qf2.mean() * self.min_q_weight
+		min_qf1_loss = th.logsumexp(curr_qf1 / self.temp, dim=1,).mean() * self.temp
+		min_qf2_loss = th.logsumexp(curr_qf2 / self.temp, dim=1,).mean() * self.temp
+		min_qf1_loss = min_qf1_loss - y1_pred.mean()
+		min_qf2_loss = min_qf2_loss - y2_pred.mean()
 
-		qf1_loss += min_qf1_loss
-		qf2_loss += min_qf2_loss
+		qf1_loss += min_qf1_loss * self.min_q_weight
+		qf2_loss += min_qf2_loss * self.min_q_weight
 
 		"""
 		Update Q networks

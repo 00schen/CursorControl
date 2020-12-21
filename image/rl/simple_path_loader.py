@@ -2,17 +2,18 @@ import numpy as np
 from rlkit.util.io import load_local_or_remote_file
 
 class SimplePathLoader:
-	def __init__(self,demo_path,replay_buffer,):
+	def __init__(self,demo_path,demo_path_proportion,replay_buffer,):
 		self.demo_path = demo_path
+		self.demo_path_proportion = demo_path_proportion
 		self.replay_buffer = replay_buffer
 	
 	def load_demos(self):
 		if type(self.demo_path) is not list:
 			self.demo_path = [self.demo_path]
-		for demo_path in self.demo_path:
+		for demo_path,proportion in zip(self.demo_path,self.demo_path_proportion):
 			data = list(load_local_or_remote_file(demo_path))
 			print("using", len(data), "paths for training")
-			for path in data:
+			for path in data[:int(len(data)*proportion)]:
 				self.load_path(path, self.replay_buffer)
 
 	def load_path(self, path, replay_buffer, obs_dict=None):

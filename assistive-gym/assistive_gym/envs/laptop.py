@@ -46,6 +46,11 @@ class LaptopEnv(AssistiveEnv):
 			'ineff_contact': 0,
 			'target_index': self.target_index,
 			'lid_open': lever_angle >= HIGH_LIMIT-.2,
+
+			'tool_pos': self.tool_pos,
+			'target_pos': self.target_pos,
+			'lid_pos': self.lid_pos,
+			'lever_angle': lever_angle,
 		}
 		done = False
 
