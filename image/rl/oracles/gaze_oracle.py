@@ -94,6 +94,7 @@ class LightSwitchGazeOracle(LightSwitchOracle):
         super().__init__(**kwargs)
         self.data = h5py.File(data_path, 'r')
         self.status = OracleStatus()
+        self.size = 128
 
     def get_action(self, obs, info=None):
         action, user_info = super().get_action(obs, info)

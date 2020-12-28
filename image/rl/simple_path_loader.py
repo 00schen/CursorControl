@@ -31,7 +31,7 @@ class SimplePathLoader:
 		for next_obs,action,r,done,info,ainfo in tran_iter:
 			info.update(ainfo)
 			action = info.get(env.action_type,action)
-			next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
+			next_obs,_,done,info = env.adapt_step(next_obs,r,done,info)
 			processed_trans.append((obs,next_obs,action,r,done,info))
 			obs = next_obs
 

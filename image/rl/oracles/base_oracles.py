@@ -19,7 +19,7 @@ class UserModelOracle(Oracle):
 		
 	def get_action(self,obs,info=None):
 		criterion,target_pos = self._query(obs,info)
-		action = np.zeros(self.size)	
+		action = np.zeros(6)
 		if self.rng.random() < self.blank*criterion:
 			traj = target_pos-self.base_env.tool_pos
 			axis = np.argmax(np.abs(traj))

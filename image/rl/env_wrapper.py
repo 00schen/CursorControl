@@ -195,7 +195,7 @@ def oracle_factory(base):
 
 		def _predict(self,obs,info):
 			recommend,_info = self.oracle.get_action(obs,info)
-			info['noop'] = not np.count_nonzero(recommend)
+			info['noop'] = not self.oracle.status.new_intervention
 			return np.concatenate((obs,recommend))
 	return Oracle
 
@@ -221,26 +221,19 @@ class burst:
 		return obs
 
 class stack:
-	""" 'num_obs' most recent steps and 'num_nonnoop' most recent input steps stacked """
+	""" 'num_obs' most recent steps"""
 	def __init__(self,master_env,config):
 		self.history_shape = (config['num_obs'],get_dim(master_env.observation_space))
-		self.nonnoop_shape = (config['num_nonnoop'],get_dim(master_env.observation_space))
-		master_env.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape)+np.prod(self.nonnoop_shape),))
+		master_env.observation_space = spaces.Box(-np.inf,np.inf,(np.prod(self.history_shape),))
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		if len(self.history) == self.history.maxlen:
-			old_obs = self.history[0]
-			oracle_size = self.master_env.oracle.size
-			if np.count_nonzero(old_obs[-oracle_size:]) > 0:
-				self.prev_nonnoop.append(old_obs)
 		self.history.append(obs)
 		# info['current_obs'] = obs
-		return np.concatenate((*self.prev_nonnoop,*self.history,)),r,done,info
+		return np.concatenate(self.history),r,done,info
 
 	def _reset(self,obs):
 		self.history = deque(np.zeros(self.history_shape),self.history_shape[0])
-		self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape),self.nonnoop_shape[0])
 		obs,_r,_d,_i = self._step(obs,0,False,{})
 		return obs
 

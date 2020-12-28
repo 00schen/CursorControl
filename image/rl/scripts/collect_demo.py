@@ -16,7 +16,6 @@ from types import MethodType
 def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+100)
-
 	path_collector = FullPathCollector(
 		env,
 		DefaultGazePolicy(env, env.oracle.status, p=.99),
@@ -90,7 +89,7 @@ if __name__ == "__main__":
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
-			variant['num_episodes'] = 20
+			variant['num_episodes'] = 100
 
 	if args.use_ray:
 		import ray

@@ -16,7 +16,6 @@ class DefaultGazePolicy:
 
         if np.count_nonzero(self.oracle_status.action) > 0:
             self.action = self.oracle_status.action
-
         return self.action, {}
 
     def reset(self):
