@@ -20,6 +20,7 @@ from rlkit.launchers.launcher_util import setup_logger, reset_execution_environm
 import rlkit.util.hyperparameter as hyp
 import argparse
 import torch as th
+from torch.nn import functional as F
 
 
 def experiment(variant):

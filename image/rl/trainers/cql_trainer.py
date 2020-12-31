@@ -22,6 +22,7 @@ class CQLTrainer(TorchTrainer):
 
             discount=0.99,
             reward_scale=1.0,
+            reward_update_period=1,
 
             policy_lr=1e-3,
             qf_lr=1e-3,
@@ -47,7 +48,8 @@ class CQLTrainer(TorchTrainer):
             num_random=10,
             with_lagrange=False,
             lagrange_thresh=0.0,
-    ):
+    ):  
+        self.reward_update_period = reward_update_period
         super().__init__()
         self.env = env
         self.policy = policy

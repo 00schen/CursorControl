@@ -14,16 +14,19 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 	def __init__(self, qf, target_qf,
 			temp=1.0,
             min_q_weight=1.0,
+			reward_update_period=1,
 			**kwargs):
 		
 		super().__init__(qf,target_qf,**kwargs)
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 
-	def bc(self,batch):
+	def pretrain_rf(self,batch):
 		batch = np_to_pytorch_batch(batch)
+		noop = th.clamp(batch['rewards']+1,0,1)
 		actions = batch['actions']
-		concat_obs = batch['observations']
+		obs = batch['observations']
+		next_obs = batch['next_observations']
 
 		target = actions.argmax(dim=1).squeeze()
 		qf_loss = F.cross_entropy(self.qf(concat_obs),target)
@@ -37,11 +40,20 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		)
 
 	def train_from_torch(self, batch):
-		rewards = batch['rewards']
+		noop = th.clamp(batch['rewards']+1,0,1)
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
 		next_obs = batch['next_observations']
+
+		"""
+		Reward and R loss
+		"""
+		noop_prop = noop.mean().item()
+		noop_prop = max(1e-4,1-noop_prop)/noop_prop
+		pred_reward = th.sum(self.rf(obs,next_obs)*actions, dim=1, keepdim=True)
+		rf_loss = F.binary_cross_entropy_with_logits(pred_reward,noop,pos_weight=ptu.tensor([noop_prop]))
+		rewards = pred_reward.clone().detach()
 
 		"""
 		Q loss

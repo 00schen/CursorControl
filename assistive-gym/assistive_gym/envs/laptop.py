@@ -34,7 +34,6 @@ class LaptopEnv(AssistiveEnv):
 		self.task_success = task_success
 		obs = self._get_obs([0])
 
-		# reward_distance = old_dist - new_dist
 		reward = np.dot([1,1], # ignored in user penalty setting
 			[lever_reward,task_success])
 
@@ -46,6 +45,11 @@ class LaptopEnv(AssistiveEnv):
 			'ineff_contact': 0,
 			'target_index': self.target_index,
 			'lid_open': lever_angle >= HIGH_LIMIT-.2,
+
+			'tool_pos': self.tool_pos,
+			'target_pos': self.target_pos,
+			'lid_pos': self.lid_pos,
+			'lever_angle': lever_angle,
 		}
 		done = False
 
@@ -195,7 +199,6 @@ class LaptopEnv(AssistiveEnv):
 		self.update_targets()
 
 	def update_targets(self):
-		pass
 		self.lid_pos = []
 		for i,inc in enumerate(np.linspace(-.15,.15,num=3)):
 			lid_pos,lid_orient = p.getLinkState(self.laptop, 0, computeForwardKinematics=True, physicsClientId=self.id)[:2]

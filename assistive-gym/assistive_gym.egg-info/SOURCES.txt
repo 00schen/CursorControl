@@ -23,6 +23,7 @@ assistive_gym/envs/human_creation.py
 assistive_gym/envs/human_testing.py
 assistive_gym/envs/laptop.py
 assistive_gym/envs/light_switch.py
+assistive_gym/envs/maze.py
 assistive_gym/envs/object_testing.py
 assistive_gym/envs/reach.py
 assistive_gym/envs/reference_arm.py

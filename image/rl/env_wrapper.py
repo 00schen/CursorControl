@@ -16,7 +16,7 @@ from rlkit.envs.env_utils import get_dim
 from .oracles import *
 
 def default_overhead(config):
-	factories = [oracle_factory,action_factory]
+	factories = [action_factory]
 	wrapper = reduce(lambda value,func: func(value), factories, AssistiveWrapper)
 	
 	class Overhead(wrapper):
@@ -25,10 +25,12 @@ def default_overhead(config):
 			super().__init__(config)
 			adapt_map = {
 				'burst': burst,
+				'high_dim_user': high_dim_user,
 				'stack': stack,
 				'reward': reward,
 			}
 			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
+			self.adapts = [oracle] + self.adapts
 			self.adapts = [adapt(self,config) for adapt in self.adapts]
 			self.adapt_step = lambda obs,r,done,info:reduce(lambda sub_tran,adapt:adapt._step(*sub_tran),
 														self.adapts,(obs,r,done,info))
@@ -52,7 +54,9 @@ class AssistiveWrapper(Env):
 		self.base_env,self.env_name = {
 			"Feeding": (ag.FeedingJacoEnv, 'Feeding'),
 			"Laptop": (ag.LaptopJacoEnv, 'Laptop'),
-			"LightSwitch": (ag.LightSwitchJacoEnv, 'LightSwitch'),
+			"OneSwitch": (ag.OneSwitchJacoEnv, 'OneSwitch'),
+			"ThreeSwitch": (ag.ThreeSwitchJacoEnv, 'ThreeSwitch'),
+			"Bottle": (ag.BottleJacoEnv, 'Bottle'),
 			"Circle": (ag.CircleJacoEnv, 'Circle'),
 			"Sin": (ag.SinJacoEnv, 'Sin'),
 		}[config['env_name']]
@@ -158,46 +162,87 @@ def action_factory(base):
 
 	return Action
 
-def oracle_factory(base):
-	class Oracle(base):
-		def __init__(self,config):
-			super().__init__(config)
-			if config['oracle'] == 'model':
-				self.oracle = {
-					"Feeding": StraightLineOracle,
-					"Laptop": LaptopOracle,
-					"LightSwitch": LightSwitchOracle,
-					"Circle": TracingOracle,
-					"Sin": TracingOracle,
-				}[self.env_name](self.rng,self.base_env,**config['oracle_kwargs'])
-			elif config['oracle'] == 'gaze_model':
-				self.oracle = {
-					"LightSwitch": LightSwitchGazeOracle
-				}[self.env_name](rng=self.rng,base_env=self.base_env,**config['oracle_kwargs'])
-			else:
-				self.oracle = {
-					'keyboard': KeyboardOracle,
-					"gaze": GazeOracle,
-					# 'mouse': MouseOracle,
-				}[config['oracle']](self)
-			self.observation_space = spaces.Box(-10,10,
-									(get_dim(self.observation_space)+self.oracle.size,))
+class oracle:
+	def __init__(self,master_env,config):
+		self.oracle_type = config['oracle']
+		self.input_in_obs = config.get('input_in_obs',False)
+		if self.oracle_type == 'model':
+			self.oracle = master_env.oracle = {
+				"Feeding": StraightLineOracle,
+				"Laptop": LaptopOracle,
+				"OneSwitch": OneSwitchOracle,
+				"ThreeSwitch": ThreeSwitchOracle,
+				"Bottle": BottleOracle,
+				"Circle": TracingOracle,
+				"Sin": TracingOracle,
+			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
+		else:
+			self.oracle = master_env.oracle = {
+				'keyboard': KeyboardOracle,
+				# 'mouse': MouseOracle,
+			}[config['oracle']](master_env)
+		if self.input_in_obs:
+			master_env.observation_space = spaces.Box(-10,10,
+								(get_dim(master_env.observation_space)+self.oracle.size,))
+		else:
+			master_env.observation_space = spaces.Box(-10,10,
+								(get_dim(master_env.observation_space),))
+		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
+		self.master_env = master_env
 
-		def step(self,action):
-			obs,r,done,info = super().step(action)
+	def _step(self,obs,r,done,info):
+		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+			obs = obs[:-self.oracle.size]
+		if obs.size < self.full_obs_size and self.input_in_obs:
 			obs = self._predict(obs,info)
-			return obs,r,done,info
+		else:
+			self._predict(obs,info)
+		return obs,r,done,info
 
-		def reset(self):
-			obs = super().reset()
+	def _reset(self,obs):
+		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+			obs = obs[:-self.oracle.size]
+		if obs.size < self.full_obs_size and self.input_in_obs:
 			self.oracle.reset()
-			return np.concatenate((obs,np.zeros(self.oracle.size)))
+			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
+		else:
+			self.oracle.reset()
+		return obs
 
-		def _predict(self,obs,info):
-			recommend,_info = self.oracle.get_action(obs,info)
-			info['noop'] = not self.oracle.status.new_intervention
-			return np.concatenate((obs,recommend))
-	return Oracle
+	def _predict(self,obs,info):
+		recommend,_info = self.oracle.get_action(obs,info)
+		info['noop'] = not self.oracle.status.new_intervention
+		return np.concatenate((obs,recommend))
+
+class high_dim_user:
+	def __init__(self,master_env,config):
+		master_env.observation_space = spaces.Box(-np.inf,np.inf,(get_dim(master_env.observation_space)+50,))
+		self.env_name = master_env.env_name
+		self.random_projection = master_env.rng.normal(0,10,(50,50))
+		self.random_projection,*_ = np.linalg.qr(self.random_projection)
+		self.apply_projection = config['apply_projection']
+
+	def _step(self,obs,r,done,info):
+		state_func = {
+			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
+					['lever_angle','target_string','current_string',
+					'switch_pos','aux_switch_pos','tool_pos',]]),
+			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
+					['lever_angle','target_string','current_string',
+					 'switch_pos','aux_switch_pos','tool_pos',]]),
+			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
+					['target_pos','lid_pos','tool_pos','lever_angle',]]),
+			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
+					['target_pos','target1_pos','target1_reached','tool_pos','lever_angle',]]),
+		}[self.env_name]()
+		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
+		if self.apply_projection:
+			state_func = state_func @ self.random_projection
+		obs = np.concatenate((state_func,obs))
+		return obs,r,done,info
+
+	def _reset(self,obs):
+		return np.concatenate((np.zeros(50),obs,))
 
 class burst:
 	""" Remove user input from observation and reward if input is in bursts
@@ -243,6 +288,7 @@ class reward:
 		self.range = (config['reward_min'],config['reward_max'])
 		self.input_penalty = config['input_penalty']
 		self.master_env = master_env
+		self.reward_type = config['reward_type']
 
 	def _step(self,obs,r,done,info):
 		r = 0

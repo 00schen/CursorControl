@@ -9,19 +9,18 @@ class Oracle:
 		pass
 
 class UserModelOracle(Oracle):
-	def __init__(self,rng,base_env,threshold=.5,epsilon=0,blank=1):
+	def __init__(self,rng,threshold=.5,epsilon=0,blank=1):
 		super().__init__()
-		self.base_env = base_env
 		self.rng = rng
 		self.epsilon = epsilon
 		self.blank = blank
 		self.threshold = threshold
 		
-	def get_action(self,obs,info=None):
+	def get_action(self,obs,info):
 		criterion,target_pos = self._query(obs,info)
 		action = np.zeros(6)
 		if self.rng.random() < self.blank*criterion:
-			traj = target_pos-self.base_env.tool_pos
+			traj = target_pos-info['tool_pos']
 			axis = np.argmax(np.abs(traj))
 			index = 2*axis+(traj[axis]>0)
 			if self.rng.random() < self.epsilon:

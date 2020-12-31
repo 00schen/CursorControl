@@ -18,12 +18,14 @@ def collect_demonstrations(variant):
 	env.seed(variant['seedid']+100)
 	path_collector = FullPathCollector(
 		env,
-		DefaultGazePolicy(env, env.oracle.status, p=.99),
+		DefaultGazePolicy(env, env.oracle.status, p=variant['p']),
 	)
 
 	if variant.get('render',False):
 		env.render('human')
 	paths = []
+	success_count = 0
+	# while len(paths) < variant['num_episodes'] or success_count < 0:
 	while len(paths) < variant['num_episodes']:
 		target_index = 0
 		while target_index < env.base_env.num_targets:
@@ -36,7 +38,9 @@ def collect_demonstrations(variant):
 			)
 			success_found = False
 			for path in collected_paths:
-				if path['env_infos'][-1]['task_success'] or (not variant['only_success']):
+				# print(len(path['actions']),path['env_infos'][-1]['task_success'])
+
+				if path['env_infos'][-1]['task_success'] == variant['successes']:
 					paths.append(path)
 					success_found = True
 			if success_found:
@@ -54,7 +58,7 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
+	path_length = 200
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -64,6 +68,7 @@ if __name__ == "__main__":
 
 			oracle='gaze_model',
 			oracle_kwargs=dict(),
+			input_in_obs=True,
 			action_type='disc_traj',
 			adapts=['reward'],
 			reward_max=0,
@@ -73,15 +78,17 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		only_success=True,
+		p=.99,
 		num_episodes=100,
 		path_length=path_length,
 		# save_name=f"{args.env_name}_keyboard"
-		save_name=f"{args.env_name}_model_2000"
+		save_name=f"{args.env_name}_model_off_policy_5000"
 	)
 	search_space = {
 		'seedid': 2000,
 		'env_kwargs.config.smooth_alpha': .8,
 		'env_kwargs.config.oracle_kwargs.threshold': .5,
+		'env_kwargs.config.oracle_kwargs.epsilon': 0,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)

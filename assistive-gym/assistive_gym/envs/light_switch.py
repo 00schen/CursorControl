@@ -10,14 +10,13 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco', success_dist=.05,frame_skip=5):
+	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.success_dist = success_dist
-		# self.messages = ['0 0 0',]
-		self.messages = ['0 1 0','0 1 1','0 0 0',]
-		self.num_targets = 1
+		self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
+		self.num_targets = len(self.messages)
 		self.switch_p = 1
 
 	def step(self, action):
@@ -79,14 +78,23 @@ class LightSwitchEnv(AssistiveEnv):
 			reward_dist = 0
 		reward = 10*reward_dist + 10*reward_switch + (-30+10*np.count_nonzero(np.equal(self.target_string,self.current_string)))
 
+		_,switch_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
 		info = {
 			'task_success': self.task_success,
 			'num_correct': np.count_nonzero(np.equal(self.target_string,self.current_string)),
 			'angle_dir': angle_dirs,
 			'angle_diff': angle_diffs,
+			'tool_pos': self.tool_pos,
 			'old_tool_pos': old_tool_pos,
 			'ineff_contact': bad_contact_count,
+
 			'target_index': self.target_index,
+			'lever_angle': lever_angle,
+			'target_string': self.target_string,
+			'current_string': self.current_string,
+			'switch_pos': self.target_pos,
+			'aux_switch_pos': self.target_pos1,
+			'switch_orient': switch_orient
 		}
 		done = False
 
@@ -105,7 +113,7 @@ class LightSwitchEnv(AssistiveEnv):
 		axis,_ = p.multiplyTransforms(np.zeros(3),p.getLinkState(switch,0)[1], [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
-		k = .2
+		k = -.2
 		w = k*np.sign(c_F)*np.sqrt(abs(c_F))*norm(radius)
 
 		for _ in range(self.frame_skip):
@@ -167,8 +175,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.init_robot_arm()
 
 		"""configure pybullet"""
-		p.setGravity(0, 0, -9.81, physicsClientId=self.id)
-		p.setGravity(0, 0, 0, body=self.robot, physicsClientId=self.id)
+		# p.setGravity(0, 0, -9.81, physicsClientId=self.id)
+		p.setGravity(0, 0, 0, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
 		dist = 0.1
@@ -201,7 +209,8 @@ class LightSwitchEnv(AssistiveEnv):
 
 	def generate_target(self): 
 		# Place a switch on a wall
-		wall_index = self.target_index % 2
+		# wall_index = self.target_index % 2
+		wall_index = 0
 		walls = [
 			(np.array([0,-1.1,1]),[0,0,0,1]),
 			(np.array([.65,-.4,1]),p.getQuaternionFromEuler([0, 0, np.pi/2])),
@@ -270,6 +279,9 @@ class LightSwitchEnv(AssistiveEnv):
 	def tool_pos(self):
 		return np.array(p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)[0])
 
-class LightSwitchJacoEnv(LightSwitchEnv):
+class OneSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
-		super().__init__(robot_type='jaco',**kwargs)
+		super().__init__(message_indices=[0],robot_type='jaco',**kwargs)
+class ThreeSwitchJacoEnv(LightSwitchEnv):
+	def __init__(self,**kwargs):
+		super().__init__(message_indices=[0,1,2],robot_type='jaco',**kwargs)
