@@ -31,8 +31,7 @@ def collect_demonstrations(variant):
 		target_index = 0
 		while target_index < env.base_env.num_targets:
 			def set_target_index(self):
-				# self.target_index = target_index
-				self.target_index = 3
+				self.target_index = target_index
 			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
 			collected_paths = path_collector.collect_new_paths(
 				variant['path_length'],
