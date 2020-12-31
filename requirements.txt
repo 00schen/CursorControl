@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 pybullet @ git+https://github.com/Zackory/bullet3.git
-# -e ./assistive-gym
+-e ./assistive-gym
 -e ./rlkit
 -e ./image
 # -e ./multiworld

@@ -19,7 +19,7 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=.99),
+		DemonstrationPolicy(env,p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -31,7 +31,8 @@ def collect_demonstrations(variant):
 		target_index = 0
 		while target_index < env.base_env.num_targets:
 			def set_target_index(self):
-				self.target_index = target_index
+				# self.target_index = target_index
+				self.target_index = 3
 			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
 			collected_paths = path_collector.collect_new_paths(
 				variant['path_length'],
@@ -41,11 +42,9 @@ def collect_demonstrations(variant):
 			for path in collected_paths:
 				# print(len(path['actions']),path['env_infos'][-1]['task_success'])
 
-				if path['env_infos'][-1]['task_success'] or (not variant['only_success']):
+				if path['env_infos'][-1]['task_success'] == variant['successes']:
 					paths.append(path)
 					success_found = True
-				# if not path['env_infos'][-1]['task_success']:
-				# 	paths.append(path)
 			if success_found:
 				target_index += 1
 			print("total paths collected: ", len(paths))
@@ -61,7 +60,7 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
+	path_length = 200
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -71,17 +70,19 @@ if __name__ == "__main__":
 
 			oracle='model',
 			oracle_kwargs=dict(),
+			input_in_obs=True,
 			action_type='disc_traj',
 
 			adapts = [],
 		)},
 		render = args.no_render and (not args.use_ray),
 
-		only_success=True,
+		successes=True,
+		p=.99,
 		num_episodes=5000,
 		path_length=path_length,
 		# save_name=f"{args.env_name}_keyboard"
-		save_name=f"{args.env_name}_model_on_policy_5000"
+		save_name=f"{args.env_name}_model_off_policy_5000"
 	)
 	search_space = {
 		'seedid': 2000,

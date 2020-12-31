@@ -56,6 +56,7 @@ class AssistiveWrapper(Env):
 			"Laptop": (ag.LaptopJacoEnv, 'Laptop'),
 			"OneSwitch": (ag.OneSwitchJacoEnv, 'OneSwitch'),
 			"ThreeSwitch": (ag.ThreeSwitchJacoEnv, 'ThreeSwitch'),
+			"Bottle": (ag.BottleJacoEnv, 'Bottle'),
 			"Circle": (ag.CircleJacoEnv, 'Circle'),
 			"Sin": (ag.SinJacoEnv, 'Sin'),
 		}[config['env_name']]
@@ -165,40 +166,48 @@ def action_factory(base):
 class oracle:
 	def __init__(self,master_env,config):
 		self.oracle_type = config['oracle']
+		self.input_in_obs = config.get('input_in_obs',False)
 		if self.oracle_type == 'model':
 			self.oracle = master_env.oracle = {
 				"Feeding": StraightLineOracle,
 				"Laptop": LaptopOracle,
 				"OneSwitch": OneSwitchOracle,
 				"ThreeSwitch": ThreeSwitchOracle,
+				"Bottle": BottleOracle,
 				"Circle": TracingOracle,
 				"Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
 		else:
-			self.oracle = {
+			self.oracle = master_env.oracle = {
 				'keyboard': KeyboardOracle,
 				# 'mouse': MouseOracle,
 			}[config['oracle']](master_env)
-		master_env.observation_space = spaces.Box(-10,10,
+		if self.input_in_obs:
+			master_env.observation_space = spaces.Box(-10,10,
 								(get_dim(master_env.observation_space)+self.oracle.size,))
-		self.full_obs_size = get_dim(master_env.observation_space)
+		else:
+			master_env.observation_space = spaces.Box(-10,10,
+								(get_dim(master_env.observation_space),))
+		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
 		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
-		if obs.size < self.full_obs_size:
-			# obs = self._predict(obs,info)
+		if obs.size < self.full_obs_size and self.input_in_obs:
+			obs = self._predict(obs,info)
+		else:
 			self._predict(obs,info)
-			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
 		return obs,r,done,info
 
 	def _reset(self,obs):
 		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
-		if obs.size < self.full_obs_size:
+		if obs.size < self.full_obs_size and self.input_in_obs:
 			self.oracle.reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
+		else:
+			self.oracle.reset()
 		return obs
 
 	def _predict(self,obs,info):
@@ -219,18 +228,19 @@ class high_dim_user:
 		state_func = {
 			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['lever_angle','target_string','current_string',
-					'switch_pos','aux_switch_pos','tool_pos','old_tool_pos',]]),
+					'switch_pos','aux_switch_pos','tool_pos',]]),
 			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['lever_angle','target_string','current_string',
-					 'switch_pos','aux_switch_pos','tool_pos','old_tool_pos',]]),
+					 'switch_pos','aux_switch_pos','tool_pos',]]),
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','lid_pos','old_tool_pos','lever_angle',]]),
+					['target_pos','lid_pos','tool_pos','lever_angle',]]),
+			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
+					['target_pos','target1_pos','target1_reached','tool_pos','lever_angle',]]),
 		}[self.env_name]()
 		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
 		if self.apply_projection:
 			state_func = state_func @ self.random_projection
 		obs = np.concatenate((state_func,obs))
-		print(obs)
 		return obs,r,done,info
 
 	def _reset(self,obs):
@@ -287,14 +297,26 @@ class reward:
 		self.range = (config['reward_min'],config['reward_max'])
 		self.input_penalty = config['input_penalty']
 		self.master_env = master_env
-		self.sparse_reward = config['sparse_reward']
+		self.reward_type = config['reward_type']
 
 	def _step(self,obs,r,done,info):
-		if not self.sparse_reward:
+		if self.reward_type == 'user_penalty':
 			r = 0
 			oracle_size = self.master_env.oracle.size
 			r -= self.input_penalty*(not info['noop'])
 			r = np.clip(r,*self.range)
+		elif self.reward_type == 'custom':
+			r = 0
+			target_indices = np.nonzero(np.not_equal(info['target_string'],info['current_string']))[0]
+			if len(target_indices) != 0:
+				if min(norm(np.array(info['switch_pos'])-info['tool_pos'],axis=1))  > .2:
+					target_pos = np.array(info['switch_pos'])[target_indices[0]]
+					r += -1 + 10*(norm(info['old_tool_pos']-info['target_pos'])-norm(info['tool_pos']-info['target_pos']))
+				for i in target_indices:
+					if info['target_string'][i] == 0:
+						r += -1 - 5*info['angle_diff'][i]
+					else:
+						r += -1 + 5*info['angle_diff'][i]
 		else:
 			r = -1 + info['task_success']
 		done = info['task_success']

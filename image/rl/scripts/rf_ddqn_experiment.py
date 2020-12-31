@@ -19,6 +19,7 @@ import argparse
 import numpy as np
 import torch.optim as optim
 import torch as th
+from torch.nn import functional as F
 
 def experiment(variant):
 	from  rlkit.core import logger
@@ -32,31 +33,42 @@ def experiment(variant):
 	qf1 = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
+		output_activation=Clamp(max=0,min=-5000),
 	)
 	qf2 = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
+		output_activation=Clamp(max=0,min=-5000),
 	)
 	target_qf1 = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
+		output_activation=Clamp(max=0,min=-5000),
 	)
 	target_qf2 = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
-		hidden_sizes=[M,M,M],
-		output_activation=Clamp(max=0),
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
+		output_activation=Clamp(max=0,min=-5000),
 	)
 	rf = ConcatMlp(
 		input_size=obs_dim *2,
 		output_size=action_dim,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
+		output_activation=Clamp(max=0,min=-50),
 	)
 	eval_policy = ArgmaxPolicy(
 		qf1,qf2,
@@ -95,27 +107,6 @@ def experiment(variant):
 		variant['replay_buffer_size'],
 		env,
 	)
-	if variant.get('load_demos', False):
-		path_loader = SimplePathLoader(
-			demo_path=variant['demo_paths'],
-			demo_path_proportion=variant['demo_path_proportions'],
-			replay_buffer=replay_buffer,
-		)
-		path_loader.load_demos()
-	if variant['pretrain_rf']:
-		from tqdm import tqdm
-		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.pretrain_rf(train_data)
-	if variant['pretrain']:
-		from tqdm import tqdm
-		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.train(train_data)
-		pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
-		th.save(trainer.get_snapshot(), pretrain_file_path)
-	if variant.get('render',False):
-		env.render('human')
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
 		exploration_env=env,
@@ -126,6 +117,40 @@ def experiment(variant):
 		**variant['algorithm_args']
 	)
 	algorithm.to(ptu.device)
+	if variant['pretrain_rf']:
+		path_loader = SimplePathLoader(
+			demo_path=variant['demo_paths'],
+			demo_path_proportion=[1,1],
+			replay_buffer=replay_buffer,
+		)
+		path_loader.load_demos()
+		from tqdm import tqdm
+		for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
+			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			trainer.pretrain_rf(train_data)
+		algorithm.replay_buffer = None
+		del replay_buffer
+		replay_buffer = EnvReplayBuffer(
+			variant['replay_buffer_size'],
+			env,
+		)
+		algorithm.replay_buffer = replay_buffer
+	if variant.get('load_demos', False):
+		path_loader = SimplePathLoader(
+			demo_path=variant['demo_paths'],
+			demo_path_proportion=variant['demo_path_proportions'],
+			replay_buffer=replay_buffer,
+		)
+		path_loader.load_demos()
+	if variant['pretrain']:
+		from tqdm import tqdm
+		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
+			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			trainer.train(train_data)
+		pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
+		th.save(trainer.get_snapshot(), pretrain_file_path)
+	if variant.get('render',False):
+		env.render('human')
 	algorithm.train()
 
 if __name__ == "__main__":
@@ -149,11 +174,12 @@ if __name__ == "__main__":
 		expl_kwargs=dict(
 			logit_scale=1000,
 		),
-		replay_buffer_size=int(5e4)*path_length,
+		replay_buffer_size=int(1e4)*path_length,
 		trainer_kwargs=dict(
 			# qf_lr=1e-3,
 			soft_target_tau=1e-2,
 			target_update_period=1,
+			# reward_update_period=int(1e8),
 			qf_criterion=None,
 
 			discount=0.999,
@@ -169,7 +195,7 @@ if __name__ == "__main__":
 			# num_trains_per_train_loop=50,				
 		),
 
-		load_demos=False,
+		load_demos=True,
 		# demo_paths=[os.path.join(main_dir,"demos",demo)\
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
@@ -177,7 +203,7 @@ if __name__ == "__main__":
 		demo_path_proportions=[1,1],
 		pretrain_rf=True,
 		pretrain=False,
-		num_pretrain_loops=int(1e4),
+		num_pretrain_loops=int(1e5),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -197,7 +223,7 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			sparse_reward=False,
+			reward_type='user_penalty',
 		)},
 	)
 	search_space = {
@@ -205,8 +231,11 @@ if __name__ == "__main__":
 
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
 		'env_kwargs.config.apply_projection': [False],
-		'trainer_kwargs.qf_lr': [1e-3,1e-4],
-		'algorithm_args.num_trains_per_train_loop': [1],				
+		'trainer_kwargs.qf_lr': [1e-3],
+		'algorithm_args.num_trains_per_train_loop': [5],
+		'trainer_kwargs.reward_update_period':[10],
+		'trainer_kwargs.ground_truth':[True,False]
+		# 'demo_path_proportions': [[1,.2],[1,.5],[1,1],],
 
 		# 'env_kwargs.config.sparse_reward': [False,True],
 	}

@@ -1,6 +1,6 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.envs.make_env import make
-from rlkit.torch.networks import Mlp
+from rlkit.torch.networks import Mlp,ConcatMlp
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
@@ -21,6 +21,7 @@ from copy import deepcopy
 import numpy as np
 import torch.optim as optim
 import torch as th
+from torch.nn import functional as F
 
 def experiment(variant):
 	from  rlkit.core import logger
@@ -36,25 +37,41 @@ def experiment(variant):
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
+			hidden_activation=F.leaky_relu,
+			layer_norm=True,
+			output_activation=Clamp(max=0,min=-5000),
 		)
 		qf2 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
+			hidden_activation=F.leaky_relu,
+			layer_norm=True,
+			output_activation=Clamp(max=0,min=-5000),
 		)
 		target_qf1 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
+			hidden_activation=F.leaky_relu,
+			layer_norm=True,
+			output_activation=Clamp(max=0,min=-5000),
 		)
 		target_qf2 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
 			hidden_sizes=[M,M,M],
-			output_activation=Clamp(max=0),
+			hidden_activation=F.leaky_relu,
+			layer_norm=True,
+			output_activation=Clamp(max=0,min=-5000),
+		)
+		rf = ConcatMlp(
+			input_size=obs_dim *2,
+			output_size=action_dim,
+			hidden_sizes=[M,M,M],
+			hidden_activation=F.leaky_relu,
+			layer_norm=True,
+			output_activation=Clamp(max=0,min=-50),
 		)
 	else:
 		pretrain_file_path = variant['pretrain_file_path']
@@ -62,6 +79,7 @@ def experiment(variant):
 		qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['qf1']
 		target_qf1 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf1']
 		target_qf2 = th.load(pretrain_file_path,map_location=th.device("cpu"))['target_qf2']
+		rf = th.load(pretrain_file_path,map_location=th.device("cpu"))['rf']
 	eval_policy = ArgmaxPolicy(
 		qf1,qf2,
 	)
@@ -88,24 +106,18 @@ def experiment(variant):
 		expl_policy,
 		save_env_in_snapshot=False
 	)
-	replay_buffer = EnvReplayBuffer(
-		variant['replay_buffer_size'],
-		env,
-	)
-	if variant.get('load_demos', False):
-		path_loader = SimplePathLoader(
-			demo_path=variant['demo_paths'],
-			demo_path_proportion=variant['demo_path_proportions'],
-			replay_buffer=replay_buffer,
-		)
-		path_loader.load_demos()
 	trainer = DDQNCQLTrainer(
 		qf1=qf1,
 		qf2=qf2,
 		target_qf1=target_qf1,
 		target_qf2=target_qf2,
+		rf=rf,
 		**variant['trainer_kwargs']
 		)	
+	replay_buffer = EnvReplayBuffer(
+		variant['replay_buffer_size'],
+		env,
+	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
 		exploration_env=env,
@@ -116,6 +128,31 @@ def experiment(variant):
 		**variant['algorithm_args']
 	)
 	algorithm.to(ptu.device)
+	if variant['pretrain_rf']:
+		path_loader = SimplePathLoader(
+			demo_path=variant['demo_paths'],
+			demo_path_proportion=[1,1],
+			replay_buffer=replay_buffer,
+		)
+		path_loader.load_demos()
+		from tqdm import tqdm
+		for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
+			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+			trainer.pretrain_rf(train_data)
+		algorithm.replay_buffer = None
+		del replay_buffer
+		replay_buffer = EnvReplayBuffer(
+			variant['replay_buffer_size'],
+			env,
+		)
+		algorithm.replay_buffer = replay_buffer
+	if variant.get('load_demos', False):
+		path_loader = SimplePathLoader(
+			demo_path=variant['demo_paths'],
+			demo_path_proportion=variant['demo_path_proportions'],
+			replay_buffer=replay_buffer,
+		)
+		path_loader.load_demos()
 	if variant['pretrain']:
 		from tqdm import tqdm
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
@@ -140,7 +177,7 @@ if __name__ == "__main__":
 	print(main_dir)
 
 	path_length = 400
-	num_epochs = 10
+	num_epochs = int(1e6)
 	variant = dict(
 		from_pretrain=False,
 		# pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
@@ -150,11 +187,12 @@ if __name__ == "__main__":
 		expl_kwargs=dict(
 			logit_scale=1000,
 		),
-		replay_buffer_size=10000*path_length,
+		replay_buffer_size=int(2e4)*path_length,
 		trainer_kwargs=dict(
-			qf_lr=1e-4,
+			# qf_lr=1e-3,
 			soft_target_tau=1e-2,
 			target_update_period=1,
+			# reward_update_period=int(1e8),
 			qf_criterion=None,
 
 			discount=0.999,
@@ -170,7 +208,7 @@ if __name__ == "__main__":
 			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
-			num_trains_per_train_loop=50,				
+			# num_trains_per_train_loop=50,				
 		),
 
 		load_demos=True,
@@ -178,7 +216,8 @@ if __name__ == "__main__":
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
 					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000.npy")],
-		# demo_path_proportions=[.5,.5],
+		demo_path_proportions=[1,1],
+		pretrain_rf=True,
 		pretrain=True,
 		num_pretrain_loops=int(1e4),
 
@@ -200,22 +239,22 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			# sparse_reward=False,
+			sparse_reward=True,
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000,2001,2002],
 
 		'trainer_kwargs.temp': [1],
 		'trainer_kwargs.min_q_weight': [1],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
 		'env_kwargs.config.apply_projection': [False],
-		# 'env_kwargs.config.oracle_kwargs.epsilon': [0,.25],
-		# 'env_kwargs.config.oracle_kwargs.threshold': [.2,0]
+		'trainer_kwargs.qf_lr': [1e-3,1e-4],
+		'algorithm_args.num_trains_per_train_loop': [5],
+		'trainer_kwargs.reward_update_period':[10],
 
-		'env_kwargs.config.sparse_reward': [False,True],
-		'demo_path_proportions': [[0,1],[.2,.8],[.4,.6],[.6,.4],[.8,.2],[1,0]]
-		# 'demo_paths':[[os.path.join(main_dir,"demos",f"{args.env_name}_model_long.npy")],[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_500.npy")]],
+		# 'env_kwargs.config.sparse_reward': [False,True],
+		# 'demo_path_proportions': [[0,1],[.2,.8],[.4,.6],[.6,.4],[.8,.2],[1,0]]
 	}
 	# True: 1,1 False: .1,1
 	# other_spaces = [

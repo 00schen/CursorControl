@@ -10,12 +10,12 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self,num_messages=3,success_dist=.05,frame_skip=5,robot_type='jaco',):
+	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.success_dist = success_dist
-		self.messages = ['0 1 0','0 1 1','0 0 0',][-num_messages:]
+		self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
 		self.num_targets = 2*len(self.messages)
 		self.switch_p = 1
 
@@ -113,7 +113,7 @@ class LightSwitchEnv(AssistiveEnv):
 		axis,_ = p.multiplyTransforms(np.zeros(3),p.getLinkState(switch,0)[1], [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
-		k = .2
+		k = -.2
 		w = k*np.sign(c_F)*np.sqrt(abs(c_F))*norm(radius)
 
 		for _ in range(self.frame_skip):
@@ -175,8 +175,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.init_robot_arm()
 
 		"""configure pybullet"""
-		p.setGravity(0, 0, -9.81, physicsClientId=self.id)
-		p.setGravity(0, 0, 0, body=self.robot, physicsClientId=self.id)
+		# p.setGravity(0, 0, -9.81, physicsClientId=self.id)
+		p.setGravity(0, 0, 0, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
 		p.resetDebugVisualizerCamera(cameraDistance= .6, cameraYaw=180, cameraPitch=-45, cameraTargetPosition=[0, .1, 1], physicsClientId=self.id)
@@ -278,7 +278,7 @@ class LightSwitchEnv(AssistiveEnv):
 
 class OneSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
-		super().__init__(num_messages=1,robot_type='jaco',**kwargs)
+		super().__init__(message_indices=[3],robot_type='jaco',**kwargs)
 class ThreeSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
 		super().__init__(num_messages=3,robot_type='jaco',**kwargs)

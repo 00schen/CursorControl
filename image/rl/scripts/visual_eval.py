@@ -58,7 +58,7 @@ if __name__ == "__main__":
 	variant = dict(
 		seedid=2002,
 		path_length=path_length,
-		eval_path=os.path.join(main_dir,'logs','test-s3-rand-proj-5','test_s3_rand_proj_5_2020_12_18_10_49_22_0013--s-0','params.pkl'),
+		eval_path=os.path.join(main_dir,'logs','test-s3-rand-proj-17','test-s3-rand-proj-17_2020_12_24_11_14_46_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
