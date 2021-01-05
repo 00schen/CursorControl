@@ -1,19 +1,19 @@
 import numpy as np
 from rlkit.util.io import load_local_or_remote_file
 
+
 class SimplePathLoader:
-	def __init__(self,demo_path,demo_path_proportion,replay_buffer,):
+	def __init__(self,demo_path,replay_buffer):
 		self.demo_path = demo_path
-		self.demo_path_proportion = demo_path_proportion
 		self.replay_buffer = replay_buffer
-	
+
 	def load_demos(self):
 		if type(self.demo_path) is not list:
 			self.demo_path = [self.demo_path]
-		for demo_path,proportion in zip(self.demo_path,self.demo_path_proportion):
+		for demo_path in self.demo_path:
 			data = list(load_local_or_remote_file(demo_path))
 			print("using", len(data), "paths for training")
-			for path in data[:int(len(data)*proportion)]:
+			for path in data:
 				self.load_path(path, self.replay_buffer)
 
 	def load_path(self, path, replay_buffer, obs_dict=None):
@@ -32,7 +32,7 @@ class SimplePathLoader:
 		for next_obs,action,r,done,info,ainfo in tran_iter:
 			info.update(ainfo)
 			action = info.get(env.action_type,action)
-			next_obs,_,done,info = env.adapt_step(next_obs,r,done,info)
+			next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
 			processed_trans.append((obs,next_obs,action,r,done,info))
 			obs = next_obs
 
@@ -49,4 +49,3 @@ class SimplePathLoader:
 		path['rewards'] = np.array(path['rewards'])[:,np.newaxis]
 		path['terminals'] = np.array(path['terminals'])[:,np.newaxis]
 		replay_buffer.add_path(path)
-		

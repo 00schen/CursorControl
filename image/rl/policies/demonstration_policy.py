@@ -1,6 +1,6 @@
 import numpy as np
 from .follower_policy import FollowerPolicy
-from .gaze_policy import DefaultGazePolicy
+from .gaze_policy import DefaultPolicy
 
 class DemonstrationPolicy:
 	def __init__(self,env,p):

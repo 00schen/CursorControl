@@ -4,18 +4,11 @@ import torch
 import cv2
 from rl.gaze_capture.face_processor import FaceProcessor
 from rl.gaze_capture.ITrackerModel import ITrackerModel
-from .base_oracles import Oracle
-from .light_switch_oracle import LightSwitchOracle
+from .base_oracles import Oracle, OracleStatus
+from .three_switch_oracle import ThreeSwitchOracle
 import threading
-import h5py
 import random
-
-
-class OracleStatus:
-    def __init__(self):
-        self.action = None
-        self.curr_intervention = False
-        self.new_intervention = False
+import h5py
 
 
 class GazeOracle(Oracle):
@@ -89,7 +82,7 @@ class GazeOracle(Oracle):
         return self.input, {}
 
 
-class LightSwitchGazeOracle(LightSwitchOracle):
+class LightSwitchGazeOracle(ThreeSwitchOracle):
     def __init__(self, data_path='image/rl/gaze_capture/gaze_data.h5', **kwargs):
         super().__init__(**kwargs)
         self.data = h5py.File(data_path, 'r')
@@ -109,7 +102,7 @@ class LightSwitchGazeOracle(LightSwitchOracle):
         #     self.status.new_intervention = False
         #     self.status.curr_intervention = False
 
-        target_indices = np.nonzero(np.not_equal(self.base_env.target_string, self.base_env.current_string))[0]
+        target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
         if len(target_indices) > 0:
             target_index = target_indices[0]
         else:

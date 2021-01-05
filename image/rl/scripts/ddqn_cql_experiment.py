@@ -8,7 +8,7 @@ from rl.trainers.reward_trainer import RewardTrainer
 import torch
 import numpy as np
 
-from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy, OverrideGazePolicy
+from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy, OverridePolicy
 from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -47,7 +47,7 @@ def experiment(variant):
         )
         rew_net = Mlp(
             input_size=obs_dim,
-            output_size=action_dim,
+            output_size=1,
             hidden_sizes=[M, M],
             output_activation=Sigmoid()
         )
@@ -79,7 +79,7 @@ def experiment(variant):
     elif variant['exploration_strategy'] == 'override':
         expl_policy = OverridePolicy(env, expl_policy, env.oracle.size)
     elif variant['exploration_strategy'] == 'override_gaze':
-        expl_policy = OverrideGazePolicy(expl_policy, env.oracle.status)
+        expl_policy = OverridePolicy(expl_policy, env.oracle.status)
     expl_path_collector = FullPathCollector(
         env,
         expl_policy,
@@ -92,7 +92,7 @@ def experiment(variant):
     if variant.get('load_demos', False):
         path_loader = SimplePathLoader(
             demo_path=variant['demo_paths'],
-            replay_buffer=replay_buffer,
+            replay_buffer=replay_buffer
         )
         path_loader.load_demos()
     trainer = DDQNCQLTrainer(
@@ -118,11 +118,9 @@ def experiment(variant):
     if variant['pretrain']:
         from tqdm import tqdm
 
-        rew_trainer.rew_net.train(True)
         for _ in tqdm(range(variant['num_pretrain_loops']), miniters=10, mininterval=10):  # TODO: create separate arg for this
             train_data = replay_buffer.random_balanced_batch(variant['algorithm_args']['batch_size'])
             rew_trainer.train(train_data)
-        rew_trainer.rew_net.train(False)
         pretrain_rew_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain_rew.pkl')
         th.save(rew_trainer.get_snapshot(), pretrain_rew_file_path)
 
@@ -131,8 +129,9 @@ def experiment(variant):
             train_data['rewards'] = np.log(np.sum(rew_trainer.rew_net(torch.from_numpy(train_data['observations']
                                                                                        .astype(np.float32))).detach()
                                                   .numpy() * train_data['actions'], axis=1, keepdims=True))
+            train_data['rewards'] = np.log(rew_trainer.rew_net(torch.from_numpy(
+                train_data['next_observations'].astype(np.float32))).detach().numpy())
             train_data['rewards'] = np.maximum(train_data['rewards'], -5)  # TODO: set min reward param
-
             trainer.train(train_data)
 
         pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
@@ -192,8 +191,6 @@ if __name__ == "__main__":
         load_demos=True,
         demo_paths=[os.path.join(main_dir, "demos", demo) \
                     for demo in os.listdir(os.path.join(main_dir, "demos")) if f"{args.env_name}_model" in demo],
-        # demo_paths=[os.path.join(main_dir,"demos",demo)\
-        # 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_model_dqn" in demo],
         pretrain=True,
         num_pretrain_loops=int(1e3),
 
@@ -204,13 +201,13 @@ if __name__ == "__main__":
             # env_kwargs=dict(path_length=path_length,frame_skip=5),
 
             oracle='gaze_model',
+            input_in_obs=True,
             oracle_kwargs=dict(),
             action_type='disc_traj',
 
-            adapts=['stack', 'reward'],
+            adapts=['high_dim_user', 'stack', 'reward'],
             space=0,
             num_obs=10,
-            num_nonnoop=10,
             reward_max=0,
             reward_min=-1,
             input_penalty=1,
@@ -221,6 +218,7 @@ if __name__ == "__main__":
 
         'env_kwargs.config.smooth_alpha': [.8, ],
         'env_kwargs.config.oracle_kwargs.threshold': [.5, ],
+        'env_kwargs.config.apply_projection': [False],
         'algorithm_args.num_trains_per_train_loop': [50],
         'trainer_kwargs.qf_lr': [1e-3],
         # 'trainer_kwargs.temp': [1,1e-1,1e-2,1e1,1e2,1e3],

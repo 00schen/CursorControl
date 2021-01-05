@@ -2,7 +2,7 @@ import numpy as np
 import pybullet as p
 
 
-class DefaultGazePolicy:
+class DefaultPolicy:
     def __init__(self, env, oracle_status, p):
         self.oracle_status = oracle_status
         self.action = np.zeros(6)
@@ -13,7 +13,6 @@ class DefaultGazePolicy:
         if self.rng.random() > self.p:
             self.action = np.zeros(6)
             self.action[self.rng.choice(6)] = 1
-
         if np.count_nonzero(self.oracle_status.action) > 0:
             self.action = self.oracle_status.action
         return self.action, {}
@@ -24,7 +23,7 @@ class DefaultGazePolicy:
         self.oracle_status.new_intervention = False
 
 
-class OverrideGazePolicy:
+class OverridePolicy:
     def __init__(self, policy, oracle_status):
         self.policy = policy
         self.oracle_status = oracle_status

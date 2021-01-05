@@ -176,18 +176,20 @@ class oracle:
 				"Circle": TracingOracle,
 				"Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
+		elif self.oracle_type == 'gaze_model':
+			self.oracle = master_env.oracle = LightSwitchGazeOracle(rng=master_env.rng, **config['oracle_kwargs'])
 		else:
 			self.oracle = master_env.oracle = {
 				'keyboard': KeyboardOracle,
 				# 'mouse': MouseOracle,
 			}[config['oracle']](master_env)
+		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
 		if self.input_in_obs:
 			master_env.observation_space = spaces.Box(-10,10,
 								(get_dim(master_env.observation_space)+self.oracle.size,))
 		else:
 			master_env.observation_space = spaces.Box(-10,10,
 								(get_dim(master_env.observation_space),))
-		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
@@ -210,9 +212,13 @@ class oracle:
 		return obs
 
 	def _predict(self,obs,info):
-		recommend,_info = self.oracle.get_action(obs,info)
-		info['noop'] = not self.oracle.status.new_intervention
-		return np.concatenate((obs,recommend))
+		# if oracle input not added yet (new data)
+		if 'oracle_input' not in info:
+			recommend,_info = self.oracle.get_action(obs,info)
+			info['oracle_input'] = recommend
+			info['noop'] = not self.oracle.status.new_intervention
+			return np.concatenate((obs,info['oracle_input']))
+		return obs
 
 class high_dim_user:
 	def __init__(self,master_env,config):
@@ -228,7 +234,7 @@ class high_dim_user:
 					['lever_angle','target_string','current_string',
 					'switch_pos','aux_switch_pos','tool_pos',]]),
 			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['lever_angle','target_string','current_string',
+					['lever_angle','current_string',
 					 'switch_pos','aux_switch_pos','tool_pos',]]),
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['target_pos','lid_pos','tool_pos','lever_angle',]]),
@@ -243,6 +249,7 @@ class high_dim_user:
 
 	def _reset(self,obs):
 		return np.concatenate((np.zeros(50),obs,))
+
 
 class burst:
 	""" Remove user input from observation and reward if input is in bursts
@@ -288,11 +295,11 @@ class reward:
 		self.range = (config['reward_min'],config['reward_max'])
 		self.input_penalty = config['input_penalty']
 		self.master_env = master_env
-		self.reward_type = config['reward_type']
+		# self.reward_type = config['reward_type']
 
 	def _step(self,obs,r,done,info):
 		r = 0
-		r -= self.input_penalty*self.master_env.oracle.status.new_intervention
+		r -= self.input_penalty*(not info['noop'])
 		r = np.clip(r,*self.range)
 		done = info['task_success']
 

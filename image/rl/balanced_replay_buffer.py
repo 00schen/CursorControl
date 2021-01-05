@@ -12,6 +12,7 @@ class BalancedReplayBuffer(EnvReplayBuffer):
         n_neg = len(neg_idx)
         neg_rand_idx = neg_idx[np.random.choice(n_neg, size=half_size, replace=self._replace or n_neg < half_size)]
         idx = np.concatenate((pos_rand_idx, neg_rand_idx))
+        np.random.shuffle(idx)
         batch = dict(
             observations=self._observations[idx],
             actions=self._actions[idx],

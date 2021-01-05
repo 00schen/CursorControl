@@ -40,7 +40,8 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		)
 
 	def train_from_torch(self, batch):
-		noop = th.clamp(batch['rewards']+1,0,1)
+		# noop = th.clamp(batch['rewards']+1,0,1)
+		rewards = batch['rewards']
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
@@ -49,11 +50,11 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		Reward and R loss
 		"""
-		noop_prop = noop.mean().item()
-		noop_prop = max(1e-4,1-noop_prop)/noop_prop
-		pred_reward = th.sum(self.rf(obs,next_obs)*actions, dim=1, keepdim=True)
-		rf_loss = F.binary_cross_entropy_with_logits(pred_reward,noop,pos_weight=ptu.tensor([noop_prop]))
-		rewards = pred_reward.clone().detach()
+		# noop_prop = noop.mean().item()
+		# noop_prop = max(1e-4,1-noop_prop)/noop_prop
+		# pred_reward = th.sum(self.qf(obs,next_obs)*actions, dim=1, keepdim=True)
+		# rf_loss = F.binary_cross_entropy_with_logits(pred_reward,noop,pos_weight=ptu.tensor([noop_prop]))
+		# rewards = pred_reward.clone().detach()
 
 		"""
 		Q loss

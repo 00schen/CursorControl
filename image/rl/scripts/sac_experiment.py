@@ -8,7 +8,7 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.core import np_to_pytorch_batch
 
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy, OverrideGazePolicy
+from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy, OverridePolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader

@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, DefaultGazePolicy
+from rl.policies import DemonstrationPolicy, DefaultPolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -18,7 +18,7 @@ def collect_demonstrations(variant):
 	env.seed(variant['seedid']+100)
 	path_collector = FullPathCollector(
 		env,
-		DefaultGazePolicy(env, env.oracle.status, p=variant['p']),
+		DefaultPolicy(env, env.oracle.status, p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 		)},
 		render = args.no_render and (not args.use_ray),
 
-		only_success=True,
+		successes=True,
 		p=.99,
 		num_episodes=100,
 		path_length=path_length,
@@ -96,7 +96,7 @@ if __name__ == "__main__":
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if not args.use_ray:
-			variant['num_episodes'] = 100
+			variant['num_episodes'] = 500
 
 	if args.use_ray:
 		import ray
