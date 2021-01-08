@@ -4,6 +4,7 @@ from torch.nn import Sigmoid, Dropout
 from torch.nn import functional as F
 from rl.balanced_replay_buffer import BalancedReplayBuffer
 from rl.torch_rew_rl_algorithm import TorchBatchRewRLAlgorithm
+from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rl.trainers.reward_trainer import RewardTrainer
 import torch
 import numpy as np
@@ -56,7 +57,7 @@ def experiment(variant):
         pretrain_file_path = variant['pretrain_file_path']
         qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['qf']
         target_qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['target_qf']
-        rew_net = th.load(pretrain_file_path, map_location=th.device("cpu"))['rew_net']  # TODO: fix path arg
+        # rew_net = th.load(pretrain_file_path, map_location=th.device("cpu"))['rew_net']  # TODO: fix path arg
 
     eval_policy = ArgmaxPolicy(
         qf, qf,
@@ -100,12 +101,13 @@ def experiment(variant):
         target_qf=target_qf,
         **variant['trainer_kwargs']
     )
-    rew_trainer = RewardTrainer(
-        rew_net=rew_net,
-        learning_rate=variant['qf_lr']  # TODO: create separate arg for this
-    )
-    algorithm = TorchBatchRewRLAlgorithm(
-        rew_trainer=rew_trainer,
+    # rew_trainer = RewardTrainer(
+    #     rew_net=rew_net,
+    #     learning_rate=variant['qf_lr']  # TODO: create separate arg for this
+    # )
+    algorithm = TorchBatchRLAlgorithm(
+    # algorithm = TorchBatchRewRLAlgorithm(
+        # rew_trainer=rew_trainer,
         trainer=trainer,
         exploration_env=env,
         evaluation_env=env,
@@ -118,20 +120,20 @@ def experiment(variant):
     if variant['pretrain']:
         from tqdm import tqdm
 
-        for _ in tqdm(range(variant['num_pretrain_loops']), miniters=10, mininterval=10):  # TODO: create separate arg for this
-            train_data = replay_buffer.random_balanced_batch(variant['algorithm_args']['batch_size'])
-            rew_trainer.train(train_data)
-        pretrain_rew_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain_rew.pkl')
-        th.save(rew_trainer.get_snapshot(), pretrain_rew_file_path)
+        # for _ in tqdm(range(variant['num_pretrain_loops']), miniters=10, mininterval=10):  # TODO: create separate arg for this
+        #     train_data = replay_buffer.random_balanced_batch(variant['algorithm_args']['batch_size'])
+        #     rew_trainer.train(train_data)
+        # pretrain_rew_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain_rew.pkl')
+        # th.save(rew_trainer.get_snapshot(), pretrain_rew_file_path)
 
         for _ in tqdm(range(variant['num_pretrain_loops']), miniters=10, mininterval=10):
             train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-            train_data['rewards'] = np.log(np.sum(rew_trainer.rew_net(torch.from_numpy(train_data['observations']
-                                                                                       .astype(np.float32))).detach()
-                                                  .numpy() * train_data['actions'], axis=1, keepdims=True))
-            train_data['rewards'] = np.log(rew_trainer.rew_net(torch.from_numpy(
-                train_data['next_observations'].astype(np.float32))).detach().numpy())
-            train_data['rewards'] = np.maximum(train_data['rewards'], -5)  # TODO: set min reward param
+            # train_data['rewards'] = np.log(np.sum(rew_trainer.rew_net(torch.from_numpy(train_data['observations']
+            #                                                                            .astype(np.float32))).detach()
+            #                                       .numpy() * train_data['actions'], axis=1, keepdims=True))
+            # train_data['rewards'] = np.log(rew_trainer.rew_net(torch.from_numpy(
+            #     train_data['next_observations'].astype(np.float32))).detach().numpy())
+            # train_data['rewards'] = np.maximum(train_data['rewards'], -5)  # TODO: set min reward param
             trainer.train(train_data)
 
         pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
@@ -153,11 +155,11 @@ if __name__ == "__main__":
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 200
-    num_epochs = int(5e2)
+    path_length = 100
+    num_epochs = int(5e1)
     variant = dict(
-        from_pretrain=False,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'pretrain-cql', 'pretrain_cql_2020_12_07_17_15_47_0000--s-0',
+        from_pretrain=True,
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'a-test', 'a-test_2021_01_04_13_16_48_0000--s-0',
                                         'pretrain.pkl'),
         layer_size=64,
         exploration_argmax=True,
@@ -191,7 +193,7 @@ if __name__ == "__main__":
         load_demos=True,
         demo_paths=[os.path.join(main_dir, "demos", demo) \
                     for demo in os.listdir(os.path.join(main_dir, "demos")) if f"{args.env_name}_model" in demo],
-        pretrain=True,
+        pretrain=False,
         num_pretrain_loops=int(1e3),
 
         env_kwargs={'config': dict(

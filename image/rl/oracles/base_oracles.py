@@ -8,6 +8,9 @@ class Oracle:
         pass
     def reset(self):
         pass
+    def get_action(self,obs,info):
+        pass
+
 
 
 class OracleStatus:

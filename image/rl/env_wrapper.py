@@ -166,7 +166,7 @@ class oracle:
 	def __init__(self,master_env,config):
 		self.oracle_type = config['oracle']
 		self.input_in_obs = config.get('input_in_obs',False)
-		if self.oracle_type == 'model':
+		if 'model' in self.oracle_type:
 			self.oracle = master_env.oracle = {
 				"Feeding": StraightLineOracle,
 				"Laptop": LaptopOracle,
@@ -176,12 +176,15 @@ class oracle:
 				"Circle": TracingOracle,
 				"Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
-		elif self.oracle_type == 'gaze_model':
-			self.oracle = master_env.oracle = LightSwitchGazeOracle(rng=master_env.rng, **config['oracle_kwargs'])
+			if 'sim_gaze' in self.oracle_type:
+				self.oracle = master_env.oracle = SimGazeOracle(base_oracle=self.oracle)
+			elif 'gaze' in self.oracle_type:
+				self.oracle = master_env.oracle = GazeModelOracle(base_oracle=self.oracle)
 		else:
 			self.oracle = master_env.oracle = {
 				'keyboard': KeyboardOracle,
 				# 'mouse': MouseOracle,
+				'gaze': GazeOracle,
 			}[config['oracle']](master_env)
 		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
 		if self.input_in_obs:

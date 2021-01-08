@@ -12,7 +12,7 @@ import h5py
 
 
 class GazeOracle(Oracle):
-    def __init__(self, env,
+    def __init__(self,
                  predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
         super().__init__()
         self.size = 128
@@ -82,17 +82,17 @@ class GazeOracle(Oracle):
         return self.input, {}
 
 
-class LightSwitchGazeOracle(ThreeSwitchOracle):
-    def __init__(self, data_path='image/rl/gaze_capture/gaze_data.h5', **kwargs):
-        super().__init__(**kwargs)
+class SimGazeOracle(Oracle):
+    def __init__(self, base_oracle, data_path='image/rl/gaze_capture/gaze_data.h5'):
+        super().__init__()
         self.data = h5py.File(data_path, 'r')
         self.status = OracleStatus()
         self.size = 128
+        self.base_oracle = base_oracle
 
     def get_action(self, obs, info=None):
-        action, user_info = super().get_action(obs, info)
+        action, user_info = self.base_oracle.get_action(obs, info)
         self.status.action = action
-
         self.status.new_intervention = np.count_nonzero(action) > 0
 
         # if np.count_nonzero(action) > 0:
@@ -109,3 +109,34 @@ class LightSwitchGazeOracle(ThreeSwitchOracle):
             target_index = np.random.choice(len(self.data.keys()))
         gaze_input = random.choice(self.data[str(target_index)][()])
         return gaze_input, user_info
+
+    def reset(self):
+        self.base_oracle.reset()
+
+
+class GazeModelOracle(GazeOracle):
+    def __init__(self, base_oracle, predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
+        super().__init__(predictor_path)
+        self.base_oracle = base_oracle
+
+    def get_action(self, obs, info=None):
+        if self.gaze_thread is None or not self.gaze_thread.is_alive():
+            self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
+            self.gaze_thread.start()
+
+        action, user_info = self.base_oracle.get_action(obs, info)
+        self.status.action = action
+
+        self.status.new_intervention = np.count_nonzero(action) > 0
+
+        # if np.count_nonzero(action) > 0:
+        #     self.status.new_intervention = not self.status.curr_intervention
+        #     self.status.curr_intervention = True
+        # else:
+        #     self.status.new_intervention = False
+        #     self.status.curr_intervention = False
+
+        return self.input, user_info
+
+    def reset(self):
+        self.base_oracle.reset()
