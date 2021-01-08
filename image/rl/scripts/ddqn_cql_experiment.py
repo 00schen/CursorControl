@@ -155,10 +155,10 @@ if __name__ == "__main__":
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 100
-    num_epochs = int(5e1)
+    path_length = 200
+    num_epochs = int(5e2)
     variant = dict(
-        from_pretrain=True,
+        from_pretrain=False,
         pretrain_file_path=os.path.join(main_dir, 'logs', 'a-test', 'a-test_2021_01_04_13_16_48_0000--s-0',
                                         'pretrain.pkl'),
         layer_size=64,
@@ -193,7 +193,7 @@ if __name__ == "__main__":
         load_demos=True,
         demo_paths=[os.path.join(main_dir, "demos", demo) \
                     for demo in os.listdir(os.path.join(main_dir, "demos")) if f"{args.env_name}_model" in demo],
-        pretrain=False,
+        pretrain=True,
         num_pretrain_loops=int(1e3),
 
         env_kwargs={'config': dict(
@@ -202,7 +202,7 @@ if __name__ == "__main__":
             env_kwargs=dict(success_dist=.03, frame_skip=5),
             # env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-            oracle='gaze_model',
+            oracle='sim_gaze_model',
             input_in_obs=True,
             oracle_kwargs=dict(),
             action_type='disc_traj',

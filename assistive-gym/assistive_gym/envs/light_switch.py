@@ -245,12 +245,13 @@ class LightSwitchEnv(AssistiveEnv):
                                       physicsClientId=self.id)
         # self.wall = p.createMultiBody(basePosition=wall_pos,baseOrientation=wall_orient,baseVisualShapeIndex=wall_visual,physicsClientId=self.id)
 
-        self.target_string = np.array(self.messages[self.target_index // 2].split(' ')).astype(int)
+        self.target_string = np.array(self.messages[self.target_index].split(' ')).astype(int)
         mask = self.np_random.choice([0, 1], len(self.target_string), p=[1 - self.switch_p, self.switch_p])
         if not np.count_nonzero(mask):
             mask = np.equal(np.arange(len(self.target_string)), self.np_random.choice(len(self.target_string))).astype(
                 int)
-        self.initial_string = np.not_equal(self.target_string, mask).astype(int)
+        self.initial_string = np.array([0, 0, 0])
+        # self.initial_string = np.not_equal(self.target_string, mask).astype(int)
         self.current_string = self.initial_string.copy()
         wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
         switch_center = np.array([-.05 - .15 * (len(self.target_string) // 2), .1, 0]) + np.array(
@@ -271,7 +272,7 @@ class LightSwitchEnv(AssistiveEnv):
             p.setCollisionFilterPair(switch, self.wall, 0, -1, 0, physicsClientId=self.id)
             p.setCollisionFilterPair(switch, self.wall, -1, -1, 0, physicsClientId=self.id)
             if not on_off:
-                p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT + .2, physicsClientId=self.id)
+                p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
 
         sphere_collision = -1
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist, rgbaColor=[0, 1, 1, 1],

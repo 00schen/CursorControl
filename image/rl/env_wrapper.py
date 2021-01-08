@@ -196,7 +196,7 @@ class oracle:
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+		if 'model' in self.oracle_type and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
 		if obs.size < self.full_obs_size and self.input_in_obs:
 			obs = self._predict(obs,info)
@@ -205,7 +205,7 @@ class oracle:
 		return obs,r,done,info
 
 	def _reset(self,obs):
-		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+		if 'model' in self.oracle_type and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
 		if obs.size < self.full_obs_size and self.input_in_obs:
 			self.oracle.reset()
@@ -220,8 +220,8 @@ class oracle:
 			recommend,_info = self.oracle.get_action(obs,info)
 			info['oracle_input'] = recommend
 			info['noop'] = not self.oracle.status.new_intervention
-			return np.concatenate((obs,info['oracle_input']))
-		return obs
+
+		return np.concatenate((obs,info['oracle_input']))
 
 class high_dim_user:
 	def __init__(self,master_env,config):

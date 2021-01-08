@@ -18,6 +18,7 @@ def collect_demonstrations(variant):
 	env.seed(variant['seedid']+100)
 	path_collector = FullPathCollector(
 		env,
+		#DemonstrationPolicy(env, p=variant['p'])
 		DefaultPolicy(env, env.oracle.status, p=variant['p']),
 	)
 
@@ -66,9 +67,9 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='gaze_model',
+			oracle='sim_gaze_model',
 			oracle_kwargs=dict(),
-			input_in_obs=True,
+			input_in_obs=False,
 			action_type='disc_traj',
 			adapts=['reward'],
 			reward_max=0,
