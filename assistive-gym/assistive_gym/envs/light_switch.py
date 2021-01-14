@@ -10,14 +10,16 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',):
+	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',capture_frames=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.success_dist = success_dist
 		self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
-		self.num_targets = 2*len(self.messages)
+		# self.num_targets = 2*len(self.messages)
+		self.num_targets = 3
 		self.switch_p = 1
+		self.capture_frames = capture_frames
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -26,6 +28,7 @@ class LightSwitchEnv(AssistiveEnv):
 		angle_dirs = np.zeros(len(self.switches))
 		reward_switch = 0
 		angle_diffs = []
+		lever_angles = []
 		for i,switch in enumerate(self.switches):
 			if self.target_string[i] == self.current_string[i]:
 				angle_dirs[i],angle_diff = 0,0
@@ -43,6 +46,7 @@ class LightSwitchEnv(AssistiveEnv):
 			# 		p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
 			lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
+			lever_angles.append(lever_angle)
 			angle_diffs.append(angle_diff)
 			if lever_angle < LOW_LIMIT + .1:
 				self.current_string[i] = 0
@@ -89,13 +93,16 @@ class LightSwitchEnv(AssistiveEnv):
 			'ineff_contact': bad_contact_count,
 
 			'target_index': self.target_index,
-			'lever_angle': lever_angle,
+			'lever_angle': lever_angles,
 			'target_string': self.target_string,
 			'current_string': self.current_string,
 			'switch_pos': self.target_pos,
 			'aux_switch_pos': self.target_pos1,
-			'switch_orient': switch_orient
+			'switch_orient': switch_orient,
 		}
+		if self.capture_frames:
+			frame = self.get_frame()
+			info['frame'] = frame
 		done = False
 
 		return obs, reward, done, info
@@ -179,16 +186,21 @@ class LightSwitchEnv(AssistiveEnv):
 		p.setGravity(0, 0, 0, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
-		p.resetDebugVisualizerCamera(cameraDistance= .6, cameraYaw=180, cameraPitch=-45, cameraTargetPosition=[0, .1, 1], physicsClientId=self.id)
+		p.resetDebugVisualizerCamera(cameraDistance= .3, cameraYaw=180, cameraPitch=-10, cameraTargetPosition=[0, 0, 1.2], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
-		self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, .1, 1], .6, 180, -45, 0, 2)
+		self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, 0, 1.2], .3, 180, -10, 0, 2)
+		fov = 60
+		aspect = (self.width/4)/(self.height/3)
+		nearPlane = 0.01
+		farPlane = 100
+		self.projMatrix = p.computeProjectionMatrixFOV(fov,aspect,nearPlane,farPlane)
 
 		return self._get_obs([0])
 	
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
 		# init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
-		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
+		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[self.target_index], physicsClientId=self.id)
 		self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
 	def init_robot_arm(self):
@@ -207,7 +219,8 @@ class LightSwitchEnv(AssistiveEnv):
 
 	def generate_target(self): 
 		# Place a switch on a wall
-		wall_index = self.target_index % 2
+		# wall_index = self.target_index % 2
+		wall_index = 0
 		walls = [
 			(np.array([0,-1.1,1]),[0,0,0,1]),
 			(np.array([.65,-.4,1]),p.getQuaternionFromEuler([0, 0, np.pi/2])),
@@ -219,7 +232,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.wall = p.createMultiBody(basePosition=wall_pos,baseOrientation=wall_orient,baseCollisionShapeIndex=wall_collision,baseVisualShapeIndex=wall_visual,physicsClientId=self.id)
 		# self.wall = p.createMultiBody(basePosition=wall_pos,baseOrientation=wall_orient,baseVisualShapeIndex=wall_visual,physicsClientId=self.id)
 
-		self.target_string = np.array(self.messages[self.target_index//2].split(' ')).astype(int)
+		self.target_string = np.array(self.messages[self.target_index].split(' ')).astype(int)
+		# self.target_string = np.array(self.messages[self.target_index//2].split(' ')).astype(int)
 		mask = self.np_random.choice([0,1],len(self.target_string),p=[1-self.switch_p,self.switch_p])
 		if not np.count_nonzero(mask):
 			mask = np.equal(np.arange(len(self.target_string)),self.np_random.choice(len(self.target_string))).astype(int)
@@ -238,8 +252,11 @@ class LightSwitchEnv(AssistiveEnv):
 			p.setCollisionFilterPair(switch, switch, 0, -1, 0, physicsClientId=self.id)
 			p.setCollisionFilterPair(switch, self.wall, 0, -1, 0, physicsClientId=self.id)
 			p.setCollisionFilterPair(switch, self.wall, -1, -1, 0, physicsClientId=self.id)
-			if not on_off:
-				p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT+.2, physicsClientId=self.id)
+			# if not on_off:
+			if False:
+				p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT+.099, physicsClientId=self.id)
+			else:
+				p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT-.099, physicsClientId=self.id)
 
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
@@ -278,7 +295,7 @@ class LightSwitchEnv(AssistiveEnv):
 
 class OneSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
-		super().__init__(message_indices=[3],robot_type='jaco',**kwargs)
+		super().__init__(message_indices=[3,5,6],robot_type='jaco',**kwargs)
 class ThreeSwitchJacoEnv(LightSwitchEnv):
 	def __init__(self,**kwargs):
-		super().__init__(num_messages=3,robot_type='jaco',**kwargs)
+		super().__init__(num_messages=[0,1,2],robot_type='jaco',**kwargs)

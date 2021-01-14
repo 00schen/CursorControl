@@ -33,45 +33,51 @@ def experiment(variant):
 		obs_dim = env.observation_space.low.size
 		action_dim = env.action_space.low.size
 		M = variant["layer_size"]
+		upper_q = variant['env_kwargs']['config']['reward_max']*variant['env_kwargs']['config']['step_limit']
+		lower_q = variant['env_kwargs']['config']['reward_min']*variant['env_kwargs']['config']['step_limit']
 		qf1 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
-			hidden_sizes=[M,M,M],
+			hidden_sizes=[M,M,M,M],
 			hidden_activation=F.leaky_relu,
 			layer_norm=True,
-			output_activation=Clamp(max=0,min=-5000),
+			# output_activation=Clamp(max=0,min=-5e3),
+			output_activation=Clamp(max=upper_q,min=lower_q),
 		)
 		qf2 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
-			hidden_sizes=[M,M,M],
+			hidden_sizes=[M,M,M,M],
 			hidden_activation=F.leaky_relu,
 			layer_norm=True,
-			output_activation=Clamp(max=0,min=-5000),
+			# output_activation=Clamp(max=0,min=-5e3),
+			output_activation=Clamp(max=upper_q,min=lower_q),
 		)
 		target_qf1 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
-			hidden_sizes=[M,M,M],
+			hidden_sizes=[M,M,M,M],
 			hidden_activation=F.leaky_relu,
 			layer_norm=True,
-			output_activation=Clamp(max=0,min=-5000),
+			# output_activation=Clamp(max=0,min=-5e3),
+			output_activation=Clamp(max=upper_q,min=lower_q),
 		)
 		target_qf2 = Mlp(
 			input_size=obs_dim,
 			output_size=action_dim,
-			hidden_sizes=[M,M,M],
+			hidden_sizes=[M,M,M,M],
 			hidden_activation=F.leaky_relu,
 			layer_norm=True,
-			output_activation=Clamp(max=0,min=-5000),
+			# output_activation=Clamp(max=0,min=-5e3),
+			output_activation=Clamp(max=upper_q,min=lower_q),
 		)
 		rf = ConcatMlp(
 			input_size=obs_dim *2,
-			output_size=action_dim,
-			hidden_sizes=[M,M,M],
+			output_size=1,
+			hidden_sizes=[M,M,M,M],
 			hidden_activation=F.leaky_relu,
 			layer_norm=True,
-			output_activation=Clamp(max=0,min=-50),
+			output_activation=Clamp(max=-1e-2,min=-5),
 		)
 	else:
 		pretrain_file_path = variant['pretrain_file_path']
@@ -128,24 +134,24 @@ def experiment(variant):
 		**variant['algorithm_args']
 	)
 	algorithm.to(ptu.device)
-	if variant['pretrain_rf']:
-		path_loader = SimplePathLoader(
-			demo_path=variant['demo_paths'],
-			demo_path_proportion=[1,1],
-			replay_buffer=replay_buffer,
-		)
-		path_loader.load_demos()
-		from tqdm import tqdm
-		for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.pretrain_rf(train_data)
-		algorithm.replay_buffer = None
-		del replay_buffer
-		replay_buffer = EnvReplayBuffer(
-			variant['replay_buffer_size'],
-			env,
-		)
-		algorithm.replay_buffer = replay_buffer
+	# if variant['pretrain_rf']:
+	# 	path_loader = SimplePathLoader(
+	# 		demo_path=variant['demo_paths'],
+	# 		demo_path_proportion=[1,1],
+	# 		replay_buffer=replay_buffer,
+	# 	)
+	# 	path_loader.load_demos()
+	# 	from tqdm import tqdm
+	# 	for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
+	# 		train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+	# 		trainer.pretrain_rf(train_data)
+	# 	algorithm.replay_buffer = None
+	# 	del replay_buffer
+	# 	replay_buffer = EnvReplayBuffer(
+	# 		variant['replay_buffer_size'],
+	# 		env,
+	# 	)
+	# 	algorithm.replay_buffer = replay_buffer
 	if variant.get('load_demos', False):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
@@ -153,11 +159,50 @@ def experiment(variant):
 			replay_buffer=replay_buffer,
 		)
 		path_loader.load_demos()
-	if variant['pretrain']:
+	from rlkit.core import logger
+	if variant['pretrain_rf']:
+		logger.remove_tabular_output(
+			'progress.csv', relative_to_snapshot_dir=True,
+		)
+		logger.add_tabular_output(
+			'pretrain_rf.csv', relative_to_snapshot_dir=True,
+		)
 		from tqdm import tqdm
-		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
+		for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
 			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.train(train_data)
+			trainer.pretrain_rf(train_data)
+		logger.remove_tabular_output(
+			'pretrain_rf.csv', relative_to_snapshot_dir=True,
+		)
+		logger.add_tabular_output(
+			'progress.csv', relative_to_snapshot_dir=True,
+		)
+
+	if variant['pretrain']:
+		logger.remove_tabular_output(
+			'progress.csv', relative_to_snapshot_dir=True,
+		)
+		logger.add_tabular_output(
+			'pretrain.csv', relative_to_snapshot_dir=True,
+		)
+		bc_algorithm = TorchBatchRLAlgorithm(
+			trainer=trainer,
+			exploration_env=env,
+			evaluation_env=env,
+			exploration_data_collector=expl_path_collector,
+			evaluation_data_collector=eval_path_collector,
+			replay_buffer=replay_buffer,
+			**variant['bc_args']
+		)
+		bc_algorithm.to(ptu.device)
+		bc_algorithm.train()
+		gt.reset_root()
+		logger.remove_tabular_output(
+			'pretrain.csv', relative_to_snapshot_dir=True,
+		)
+		logger.add_tabular_output(
+			'progress.csv', relative_to_snapshot_dir=True,
+		)
 		pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
 		th.save(trainer.get_snapshot(), pretrain_file_path)
 	if variant.get('render',False):
@@ -176,12 +221,12 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
-	num_epochs = int(1e6)
+	path_length = 200
+	num_epochs = int(1e4)
 	variant = dict(
 		from_pretrain=False,
 		# pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
-		layer_size=512,
+		layer_size=1024,
 		exploration_argmax=True,
 		exploration_strategy='',
 		expl_kwargs=dict(
@@ -195,7 +240,7 @@ if __name__ == "__main__":
 			# reward_update_period=int(1e8),
 			qf_criterion=None,
 
-			discount=0.999,
+			discount=1-(1/path_length),
 			reward_scale=1.0,
 
 			# temp=1.0,
@@ -210,16 +255,34 @@ if __name__ == "__main__":
 			num_expl_steps_per_train_loop=path_length,
 			# num_trains_per_train_loop=50,				
 		),
+		bc_args=dict(
+			batch_size=256,
+			max_path_length=path_length,
+			num_epochs=int(1e4),
+			num_eval_steps_per_epoch=path_length,
+			num_expl_steps_per_train_loop=0,
+			collect_new_paths=False,
+			num_trains_per_train_loop=100,				
+		),
 
 		load_demos=True,
 		# demo_paths=[os.path.join(main_dir,"demos",demo)\
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
-		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000.npy")],
-		demo_path_proportions=[1,1],
+		demo_paths=[
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_1.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_2.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_3.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_4.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000_all_4.npy"),
+
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_5.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_6.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_7.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_8.npy"),
+					],
+		# demo_path_proportions=[1]*9,
 		pretrain_rf=True,
 		pretrain=True,
-		num_pretrain_loops=int(1e4),
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -232,42 +295,32 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha = .8,
 
-			adapts = ['high_dim_user','reward'],
+			adapts = ['high_dim_user','stack','reward'],
 			space=0,
 			num_obs=10,
-			num_nonnoop=10,
+			num_nonnoop=0,
 			reward_max=0,
-			reward_min=-1,
-			input_penalty=1,
-			sparse_reward=True,
+			reward_min=-5,
+			# input_penalty=1,
+			reward_type='user_penalty',
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001,2002],
+		'seedid': [2000],
 
 		'trainer_kwargs.temp': [1],
-		'trainer_kwargs.min_q_weight': [1],
-		'env_kwargs.config.oracle_kwargs.threshold': [.5,],
+		'trainer_kwargs.min_q_weight': [1,.5,2],
+		'env_kwargs.config.oracle_kwargs.threshold': [.5],
 		'env_kwargs.config.apply_projection': [False],
-		'trainer_kwargs.qf_lr': [1e-3,1e-4],
+		# 'env_kwargs.config.input_penalty':[1e-2,1e-3,1e-4],
+		'env_kwargs.config.input_penalty':[1],
+		'demo_path_proportions':[[1]*5,],
+		'trainer_kwargs.qf_lr': [1e-5],
 		'algorithm_args.num_trains_per_train_loop': [5],
 		'trainer_kwargs.reward_update_period':[10],
-
-		# 'env_kwargs.config.sparse_reward': [False,True],
-		# 'demo_path_proportions': [[0,1],[.2,.8],[.4,.6],[.6,.4],[.8,.2],[1,0]]
+		'trainer_kwargs.ground_truth':[True,False],
+		'trainer_kwargs.add_ood_term':[-1],
 	}
-	# True: 1,1 False: .1,1
-	# other_spaces = [
-	# 	{
-	# 		'env_kwargs.config.sparse_reward': False,
-	# 		'trainer_kwargs.temp': 1e-1,
-	# 	},
-	# 	{
-	# 		'env_kwargs.config.sparse_reward': True,
-	# 		'trainer_kwargs.temp': 1,
-	# 	},
-	# ]
-	# other_spaces = [ppp.dot_map_dict_to_nested_dict(space) for space in other_spaces]
 
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -276,11 +329,6 @@ if __name__ == "__main__":
 	variants = []
 	for variant in sweeper.iterate_hyperparameters():
 		variants.append(variant)
-	# variants = sum([[ppp.merge_recursive_dicts(
-	# 					deepcopy(variant),
-	# 					deepcopy(space),
-	# 					ignore_duplicate_keys_in_second_dict=True,
-	# 				) for variant in variants] for space in other_spaces],[])
 
 	def process_args(variant):
 		variant['trainer_kwargs']['learning_rate'] = variant['trainer_kwargs'].pop('qf_lr')
@@ -314,8 +362,7 @@ if __name__ == "__main__":
 				run_id = ray.get(iterator.next.remote())
 				save_path = os.path.join(main_dir,'logs')
 				reset_execution_environment()
-				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,
-							tensorboard=True,)
+				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,)
 				experiment(variant)
 		runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
 		runner_pool = ActorPool(runners)

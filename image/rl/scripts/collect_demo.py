@@ -19,14 +19,13 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=variant['p']),
+		DemonstrationPolicy(env,p=variant['p_on'] if variant['on_policy'] else variant['p_off']),
 	)
 
 	if variant.get('render',False):
 		env.render('human')
 	paths = []
 	success_count = 0
-	# while len(paths) < variant['num_episodes'] or success_count < 0:
 	while len(paths) < variant['num_episodes']:
 		target_index = 0
 		while target_index < env.base_env.num_targets:
@@ -39,9 +38,8 @@ def collect_demonstrations(variant):
 			)
 			success_found = False
 			for path in collected_paths:
-				# print(len(path['actions']),path['env_infos'][-1]['task_success'])
-
-				if path['env_infos'][-1]['task_success'] == variant['successes']:
+				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
+				if True:
 					paths.append(path)
 					success_found = True
 			if success_found:
@@ -59,13 +57,12 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
+	path_length = 100
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
-			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
 			oracle='model',
 			oracle_kwargs=dict(),
@@ -76,15 +73,15 @@ if __name__ == "__main__":
 		)},
 		render = args.no_render and (not args.use_ray),
 
-		successes=True,
-		p=.99,
+		on_policy=False,
+		p_on=.99,
+		p_off=.5,
 		num_episodes=5000,
 		path_length=path_length,
-		# save_name=f"{args.env_name}_keyboard"
-		save_name=f"{args.env_name}_model_off_policy_5000"
+		save_name_suffix="all_8"
 	)
 	search_space = {
-		'seedid': 2000,
+		'seedid': 1000,
 		'env_kwargs.config.smooth_alpha': .8,
 		'env_kwargs.config.oracle_kwargs.threshold': .5,
 		'env_kwargs.config.oracle_kwargs.epsilon': 0,
@@ -96,6 +93,9 @@ if __name__ == "__main__":
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
 		if variant['render']:
 			variant['num_episodes'] = 20
+		variant['save_name'] = f"{args.env_name}_{variant['env_kwargs']['config']['oracle']}"\
+								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}"\
+								+ "_" + variant['save_name_suffix']
 
 	if args.use_ray:
 		import ray

@@ -12,12 +12,13 @@ import pybullet as p
 import assistive_gym as ag
 from gym import spaces,Env
 from rlkit.envs.env_utils import get_dim
+import gym
 
 from .oracles import *
 
 def default_overhead(config):
 	factories = [action_factory]
-	wrapper = reduce(lambda value,func: func(value), factories, AssistiveWrapper)
+	wrapper = reduce(lambda value,func: func(value), factories, LibraryWrapper)
 	
 	class Overhead(wrapper):
 		def __init__(self,config):
@@ -47,7 +48,7 @@ def default_overhead(config):
 			return obs
 	return Overhead(config)
 
-class AssistiveWrapper(Env):
+class LibraryWrapper(Env):
 	def __init__(self,config):
 		self.env_name = config['env_name']
 		
@@ -57,8 +58,9 @@ class AssistiveWrapper(Env):
 			"OneSwitch": (ag.OneSwitchJacoEnv, 'OneSwitch'),
 			"ThreeSwitch": (ag.ThreeSwitchJacoEnv, 'ThreeSwitch'),
 			"Bottle": (ag.BottleJacoEnv, 'Bottle'),
-			"Circle": (ag.CircleJacoEnv, 'Circle'),
-			"Sin": (ag.SinJacoEnv, 'Sin'),
+			"Kitchen": (ag.KitchenJacoEnv, 'Kitchen'),
+			# "Circle": (ag.CircleJacoEnv, 'Circle'),
+			# "Sin": (ag.SinJacoEnv, 'Sin'),
 		}[config['env_name']]
 		self.base_env = self.base_env(**config['env_kwargs'])
 		self.observation_space = self.base_env.observation_space
@@ -74,9 +76,7 @@ class AssistiveWrapper(Env):
 			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
 
 		done = info['task_success']
-		# self.timesteps += 1
-		# done = info['task_success'] or self.timesteps >= self.step_limit
-		info['target_pos'] = self.base_env.target_pos
+		# info['target_pos'] = self.base_env.target_pos
 		return obs,r,done,info
 
 	def reset(self):
@@ -174,8 +174,10 @@ class oracle:
 				"OneSwitch": OneSwitchOracle,
 				"ThreeSwitch": ThreeSwitchOracle,
 				"Bottle": BottleOracle,
-				"Circle": TracingOracle,
-				"Sin": TracingOracle,
+				"Kitchen": StraightLineOracle,
+
+				# "Circle": TracingOracle,
+				# "Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
 		else:
 			self.oracle = master_env.oracle = {
@@ -302,8 +304,9 @@ class reward:
 	def _step(self,obs,r,done,info):
 		if self.reward_type == 'user_penalty':
 			r = 0
-			oracle_size = self.master_env.oracle.size
 			r -= self.input_penalty*(not info['noop'])
+			if info['task_success']:
+				r = 1
 			r = np.clip(r,*self.range)
 		elif self.reward_type == 'custom':
 			r = 0
@@ -319,7 +322,11 @@ class reward:
 						r += -1 + 5*info['angle_diff'][i]
 		else:
 			r = -1 + info['task_success']
-		done = info['task_success']
+
+		if self.range[1] <= 0:
+			done = info['task_success']
+		else:
+			done = False
 
 		return obs,r,done,info
 

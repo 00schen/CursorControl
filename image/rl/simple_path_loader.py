@@ -11,7 +11,7 @@ class SimplePathLoader:
 		if type(self.demo_path) is not list:
 			self.demo_path = [self.demo_path]
 		for demo_path,proportion in zip(self.demo_path,self.demo_path_proportion):
-			data = list(load_local_or_remote_file(demo_path))
+			data = load_local_or_remote_file(demo_path)
 			print("using", len(data), "paths for training")
 			for path in data[:int(len(data)*proportion)]:
 				self.load_path(path, self.replay_buffer)

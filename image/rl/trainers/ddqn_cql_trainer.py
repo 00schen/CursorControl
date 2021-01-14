@@ -9,17 +9,24 @@ from rlkit.core.eval_util import create_stats_ordered_dict
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import Mlp
 from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
+from rlkit.core import logger
 
 class DDQNCQLTrainer(DoubleDQNTrainer):
 	def __init__(self,qf1,qf2,target_qf1,target_qf2,rf,
 			temp=1.0,
-            min_q_weight=1.0,
-			reward_update_period=1,
+			min_q_weight=1.0,
+			reward_update_period=.1,
+			add_ood_term=-1,
+			alpha = .4,
+			ground_truth=False,
 			**kwargs):
 		super().__init__(qf1,target_qf1,**kwargs)
 		self.reward_update_period = reward_update_period
 		self.temp = temp
 		self.min_q_weight = min_q_weight
+		self.add_ood_term = add_ood_term
+		self.alpha = alpha
+		self.ground_truth = ground_truth
 		self.qf1 = self.qf
 		self.target_qf1 = self.target_qf
 		self.qf2 = qf2
@@ -41,6 +48,18 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			weight_decay=1e-5,
 		)
 
+	def mixup(self,obs,next_obs,noop):
+		lambd = np.random.beta(self.alpha, self.alpha, obs.size(0))
+		lambd = np.concatenate([lambd[:,None], 1-lambd[:,None]], 1).max(1)
+		lambd = obs.new(lambd)
+		shuffle = th.randperm(obs.size(0)).to(obs.device)
+		obs1,next_obs1,noop1 = obs[shuffle], next_obs[shuffle], noop[shuffle]
+
+		obs1 = (obs * lambd.view(lambd.size(0),1) + obs1 * (1-lambd).view(lambd.size(0),1))
+		next_obs1 = (next_obs * lambd.view(lambd.size(0),1) + next_obs1 * (1-lambd).view(lambd.size(0),1))
+		noop1 = (noop * lambd.view(lambd.size(0),1) + noop1 * (1-lambd).view(lambd.size(0),1))
+		return obs1,next_obs,noop
+
 	def pretrain_rf(self,batch):
 		batch = np_to_pytorch_batch(batch)
 		noop = th.clamp(batch['rewards']+1,0,1)
@@ -49,13 +68,21 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		next_obs = batch['next_observations']
 
 		noop_prop = noop.mean().item()
-		noop_prop = max(1e-4,1-noop_prop)/noop_prop
-		pred_reward = th.sum(self.rf(obs,next_obs)*actions, dim=1, keepdim=True)
-		rf_loss = F.binary_cross_entropy_with_logits(pred_reward,noop,pos_weight=ptu.tensor([noop_prop]))
+		noop_prop = max(1e-4,1-noop_prop)/max(1e-4,noop_prop)
+		rf_obs,rf_next_obs,rf_noop = self.mixup(obs,next_obs,noop)
+		pred_reward = self.rf(rf_obs,rf_next_obs)
+		accuracy = th.eq((self.rf(obs,next_obs)>np.log(.5)).float(),noop).float().mean()
+		rf_loss = F.binary_cross_entropy_with_logits(pred_reward,rf_noop,pos_weight=ptu.tensor([noop_prop]))
 
 		self.rf_optimizer.zero_grad()
 		rf_loss.backward()
 		self.rf_optimizer.step()
+
+		rf_statistics = {}
+		rf_statistics['RF Loss'] = np.mean(ptu.get_numpy(rf_loss))
+		rf_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+		logger.record_dict(rf_statistics, prefix='')
+		logger.dump_tabular(with_prefix=False, with_timestamp=False)
 
 	def train_from_torch(self, batch):
 		noop = th.clamp(batch['rewards']+1,0,1)
@@ -67,25 +94,40 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		Reward and R loss
 		"""
-		noop_prop = noop.mean().item()
-		noop_prop = max(1e-4,1-noop_prop)/noop_prop
-		pred_reward = th.sum(self.rf(obs,next_obs)*actions, dim=1, keepdim=True)
-		rf_loss = F.binary_cross_entropy_with_logits(pred_reward,noop,pos_weight=ptu.tensor([noop_prop]))
-		rewards = pred_reward.clone().detach()
+		if not self.ground_truth:
+			rewards = (1-self.rf(obs,next_obs).exp()).log()*-1*batch['rewards']
+			if self._n_train_steps_total % self.reward_update_period == 0:
+				noop_prop = noop.mean().item()
+				noop_prop = max(1e-4,1-noop_prop)/max(1e-4,noop_prop)
+				rf_obs,rf_next_obs,rf_noop = self.mixup(obs,next_obs,noop)
+				pred_reward = self.rf(rf_obs,rf_next_obs)
+				rf_loss = F.binary_cross_entropy_with_logits(pred_reward,rf_noop,pos_weight=ptu.tensor([noop_prop]))
+
+				self.rf_optimizer.zero_grad()
+				rf_loss.backward()
+				self.rf_optimizer.step()
+		else:
+			rewards = batch['rewards']
 
 		"""
 		Q loss
 		"""
-		best_action_idxs = th.min(self.qf1(next_obs),self.qf2(next_obs)).max(
+		# best_action_idxs = th.min(self.qf1(next_obs),self.qf2(next_obs)).max(
+		# 	1, keepdim=True
+		# )[1]
+		# target_q_values = th.min(self.target_qf1(next_obs).gather(
+		# 									1, best_action_idxs
+		# 								),
+		# 							self.target_qf2(next_obs).gather(
+		# 									1, best_action_idxs
+		# 								)
+		# 						)
+		best_action_idxs = self.qf1(next_obs).max(
 			1, keepdim=True
 		)[1]
-		target_q_values = th.min(self.target_qf1(next_obs).gather(
-											1, best_action_idxs
-										),
-									self.target_qf2(next_obs).gather(
+		target_q_values = self.target_qf1(next_obs).gather(
 											1, best_action_idxs
 										)
-								)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
@@ -102,16 +144,13 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		min_qf1_loss = min_qf1_loss - y1_pred.mean()
 		min_qf2_loss = min_qf2_loss - y2_pred.mean()
 
-		qf1_loss += min_qf1_loss * self.min_q_weight
-		qf2_loss += min_qf2_loss * self.min_q_weight
+		if self.add_ood_term < 0 or self._n_train_steps_total < self.add_ood_term:
+			qf1_loss += min_qf1_loss * self.min_q_weight
+			qf2_loss += min_qf2_loss * self.min_q_weight
 
 		"""
 		Update Q networks
 		"""
-		if self._n_train_steps_total % self.reward_update_period == 0:
-			self.rf_optimizer.zero_grad()
-			rf_loss.backward()
-			self.rf_optimizer.step()
 		self.qf1_optimizer.zero_grad()
 		qf1_loss.backward()
 		self.qf1_optimizer.step()
@@ -135,11 +174,11 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		if self._need_to_update_eval_statistics:
 			self._need_to_update_eval_statistics = False
-			self.eval_statistics['RF Loss'] = np.mean(ptu.get_numpy(rf_loss))
+			# self.eval_statistics['RF Loss'] = np.mean(ptu.get_numpy(rf_loss))
 			self.eval_statistics['QF1 Loss'] = np.mean(ptu.get_numpy(qf1_loss))
 			self.eval_statistics['QF2 Loss'] = np.mean(ptu.get_numpy(qf2_loss))
-			self.eval_statistics['QF1 OOD Loss'] = np.mean(ptu.get_numpy(qf1_loss))
-			self.eval_statistics['QF2 OOD Loss'] = np.mean(ptu.get_numpy(qf2_loss))
+			self.eval_statistics['QF1 OOD Loss'] = np.mean(ptu.get_numpy(min_qf1_loss))
+			self.eval_statistics['QF2 OOD Loss'] = np.mean(ptu.get_numpy(min_qf2_loss))
 			self.eval_statistics.update(create_stats_ordered_dict(
 				'R Predictions',
 				ptu.get_numpy(rewards),

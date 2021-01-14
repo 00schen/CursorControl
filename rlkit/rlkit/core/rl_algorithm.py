@@ -96,20 +96,21 @@ class BaseRLAlgorithm(object, metaclass=abc.ABCMeta):
         """
         Exploration
         """
-        logger.record_dict(
-            self.expl_data_collector.get_diagnostics(),
-            prefix='exploration/'
-        )
-        expl_paths = self.expl_data_collector.get_epoch_paths()
-        if hasattr(self.expl_env, 'get_diagnostics'):
+        if self.collect_new_paths:
             logger.record_dict(
-                self.expl_env.get_diagnostics(expl_paths),
-                prefix='exploration/',
+                self.expl_data_collector.get_diagnostics(),
+                prefix='exploration/'
             )
-        logger.record_dict(
-            eval_util.get_generic_path_information(expl_paths),
-            prefix="exploration/",
-        )
+            expl_paths = self.expl_data_collector.get_epoch_paths()
+            if hasattr(self.expl_env, 'get_diagnostics'):
+                logger.record_dict(
+                    self.expl_env.get_diagnostics(expl_paths),
+                    prefix='exploration/',
+                )
+            logger.record_dict(
+                eval_util.get_generic_path_information(expl_paths),
+                prefix="exploration/",
+            )
         """
         Evaluation
         """
