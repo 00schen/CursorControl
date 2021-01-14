@@ -1,4 +1,5 @@
 from rlkit.samplers.data_collector import MdpPathCollector
+import numpy as np
 
 class CustomPathCollector(MdpPathCollector):
 	def collect_new_paths(

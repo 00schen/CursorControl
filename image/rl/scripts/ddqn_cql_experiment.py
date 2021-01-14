@@ -14,6 +14,7 @@ from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer
+from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
 
 import os
 from pathlib import Path
@@ -59,8 +60,9 @@ def experiment(variant):
         target_qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['target_qf']
         # rew_net = th.load(pretrain_file_path, map_location=th.device("cpu"))['rew_net']  # TODO: fix path arg
 
-    eval_policy = ArgmaxPolicy(
+    eval_policy = BoltzmannPolicy(
         qf, qf,
+        logit_scale=variant['expl_kwargs']['logit_scale']  # TODO: different arg for this
     )
     eval_path_collector = CustomPathCollector(
         env,
@@ -78,8 +80,6 @@ def experiment(variant):
     if variant['exploration_strategy'] == 'merge_arg':
         expl_policy = ComparisonMergePolicy(env.rng, expl_policy, env.oracle.size)
     elif variant['exploration_strategy'] == 'override':
-        expl_policy = OverridePolicy(env, expl_policy, env.oracle.size)
-    elif variant['exploration_strategy'] == 'override_gaze':
         expl_policy = OverridePolicy(expl_policy, env.oracle.status)
     expl_path_collector = FullPathCollector(
         env,
@@ -141,6 +141,8 @@ def experiment(variant):
     if variant.get('render', False):
         env.render('human')
     algorithm.train()
+    model_file_path = os.path.join(logger.get_snapshot_dir(), 'model.pkl')
+    th.save(trainer.get_snapshot(), model_file_path)
 
 
 if __name__ == "__main__":
@@ -159,11 +161,11 @@ if __name__ == "__main__":
     num_epochs = int(5e2)
     variant = dict(
         from_pretrain=False,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'a-test', 'a-test_2021_01_04_13_16_48_0000--s-0',
-                                        'pretrain.pkl'),
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'a-test', 'a-test_2021_01_08_19_46_43_0000--s-0',
+                                        'params.pkl'),
         layer_size=64,
-        exploration_argmax=True,
-        exploration_strategy='override_gaze',
+        exploration_argmax=False,
+        exploration_strategy='override',
         expl_kwargs=dict(
             logit_scale=1000,
         ),
@@ -183,10 +185,10 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            eval_path_length=1,
+            eval_path_length=path_length,
             num_epochs=num_epochs,
             num_eval_steps_per_epoch=1,
-            num_expl_steps_per_train_loop=path_length,
+            num_expl_steps_per_train_loop=1,
             # num_trains_per_train_loop=5,
         ),
 
@@ -207,9 +209,9 @@ if __name__ == "__main__":
             oracle_kwargs=dict(),
             action_type='disc_traj',
 
-            adapts=['high_dim_user', 'stack', 'reward'],
+            adapts=['high_dim_user', 'reward'],
             space=0,
-            num_obs=10,
+            num_obs=5,
             reward_max=0,
             reward_min=-1,
             input_penalty=1,
@@ -219,7 +221,7 @@ if __name__ == "__main__":
         'seedid': [2000],
 
         'env_kwargs.config.smooth_alpha': [.8, ],
-        'env_kwargs.config.oracle_kwargs.threshold': [.5, ],
+        'env_kwargs.config.oracle_kwargs.threshold': [0, ],
         'env_kwargs.config.apply_projection': [False],
         'algorithm_args.num_trains_per_train_loop': [50],
         'trainer_kwargs.qf_lr': [1e-3],

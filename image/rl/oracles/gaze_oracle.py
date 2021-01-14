@@ -87,7 +87,7 @@ class SimGazeOracle(Oracle):
         super().__init__()
         self.data = h5py.File(data_path, 'r')
         self.status = OracleStatus()
-        self.size = 128
+        self.size = 3
         self.base_oracle = base_oracle
 
     def get_action(self, obs, info=None):
@@ -127,14 +127,14 @@ class GazeModelOracle(GazeOracle):
         action, user_info = self.base_oracle.get_action(obs, info)
         self.status.action = action
 
-        self.status.new_intervention = np.count_nonzero(action) > 0
+        # self.status.new_intervention = np.count_nonzero(action) > 0
 
-        # if np.count_nonzero(action) > 0:
-        #     self.status.new_intervention = not self.status.curr_intervention
-        #     self.status.curr_intervention = True
-        # else:
-        #     self.status.new_intervention = False
-        #     self.status.curr_intervention = False
+        if np.count_nonzero(action) > 0:
+            self.status.new_intervention = not self.status.curr_intervention
+            self.status.curr_intervention = True
+        else:
+            self.status.new_intervention = False
+            self.status.curr_intervention = False
 
         return self.input, user_info
 

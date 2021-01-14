@@ -88,7 +88,7 @@ if __name__ == "__main__":
 	search_space = {
 		'seedid': 2000,
 		'env_kwargs.config.smooth_alpha': .8,
-		'env_kwargs.config.oracle_kwargs.threshold': .5,
+		'env_kwargs.config.oracle_kwargs.threshold': 0,
 		'env_kwargs.config.oracle_kwargs.epsilon': 0,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)

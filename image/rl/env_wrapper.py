@@ -28,6 +28,7 @@ def default_overhead(config):
 				'high_dim_user': high_dim_user,
 				'stack': stack,
 				'reward': reward,
+				'action': action,
 			}
 			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
 			self.adapts = [oracle] + self.adapts
@@ -199,9 +200,9 @@ class oracle:
 		if 'model' in self.oracle_type and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
 		if obs.size < self.full_obs_size and self.input_in_obs:
-			obs = self._predict(obs,info)
+			obs, info = self._predict(obs,info)
 		else:
-			self._predict(obs,info)
+			_, info = self._predict(obs,info)
 		return obs,r,done,info
 
 	def _reset(self,obs):
@@ -217,11 +218,15 @@ class oracle:
 	def _predict(self,obs,info):
 		# if oracle input not added yet (new data)
 		if 'oracle_input' not in info:
+			info = deepcopy(info)
 			recommend,_info = self.oracle.get_action(obs,info)
 			info['oracle_input'] = recommend
 			info['noop'] = not self.oracle.status.new_intervention
-
-		return np.concatenate((obs,info['oracle_input']))
+		# temporary for testing using ground truth target info
+		oin = np.zeros(3)
+		oin[info['target_index']] = 1
+		return np.concatenate((obs, oin)), info
+		return np.concatenate((obs,info['oracle_input'])), info
 
 class high_dim_user:
 	def __init__(self,master_env,config):
@@ -234,15 +239,15 @@ class high_dim_user:
 	def _step(self,obs,r,done,info):
 		state_func = {
 			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['lever_angle','target_string','current_string',
+					['lever_angle','current_string',
 					'switch_pos','aux_switch_pos','tool_pos',]]),
 			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['lever_angle','current_string',
 					 'switch_pos','aux_switch_pos','tool_pos',]]),
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','lid_pos','tool_pos','lever_angle',]]),
+					['lid_pos','tool_pos','lever_angle',]]),
 			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','target1_pos','target1_reached','tool_pos','lever_angle',]]),
+					['target1_reached','tool_pos','lever_angle',]]),
 		}[self.env_name]()
 		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
 		if self.apply_projection:
@@ -303,6 +308,8 @@ class reward:
 	def _step(self,obs,r,done,info):
 		r = 0
 		r -= self.input_penalty*(not info['noop'])
+		# if info['task_success']:
+		# 	r = 100
 		r = np.clip(r,*self.range)
 		done = info['task_success']
 
@@ -310,3 +317,17 @@ class reward:
 
 	def _reset(self,obs):
 		return obs
+
+
+class action:
+	def __init__(self,master_env,config):
+		master_env.observation_space = spaces.Box(-np.inf,np.inf,
+												  (get_dim(master_env.observation_space) + get_dim(master_env.action_space),))
+		self.master_env = master_env
+
+	def _step(self,obs,r,done,info):
+		obs = np.concatenate((obs, info[self.master_env.action_type]))
+		return obs,r,done,info
+
+	def _reset(self,obs):
+		return np.concatenate((obs, np.zeros(self.master_env.action_space.shape)))

@@ -5,6 +5,13 @@ from numpy.linalg import norm
 from .base_oracles import UserModelOracle
 
 class OneSwitchOracle(UserModelOracle):
+	def __init__(self, rng, **kwargs):
+		super().__init__(rng, **kwargs)
+		# hacky attempt to make oracle more human like
+		self.consec_off = 0
+		self.consec_thresh = 3
+
+
 	def _query(self,obs,info):
 		target_indices = np.nonzero(np.not_equal(info['target_string'],info['current_string']))[0]
 		target_poses1 = np.array(info['aux_switch_pos'])[target_indices]
@@ -65,14 +72,19 @@ class OneSwitchOracle(UserModelOracle):
 		# 	threshold = self.threshold
 		# 	target_poss = target_poses1[0]
 
-			
 		old_traj = target_pos - info['old_tool_pos']
 		new_traj = info['tool_pos'] - info['old_tool_pos']
 		info['cos_error'] = np.dot(old_traj,new_traj)/(norm(old_traj)*norm(new_traj))
 		criterion = info['cos_error'] < threshold
+		if criterion:
+			self.consec_off += 1
+		elif self.consec_off > 0:
+			self.consec_off -= 1
+		criterion = self.consec_off >= self.consec_thresh
+
 		info['distance_to_target'] = norm(info['tool_pos']-target_pos)
 		return criterion, target_pos
 	def reset(self):
 		self.bad_contacts = deque(np.zeros(10),10)
 		self.ineff_contacts = deque(np.zeros(10),10)
-		
+		self.consec_off = 0

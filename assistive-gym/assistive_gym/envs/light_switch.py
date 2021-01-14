@@ -29,6 +29,7 @@ class LightSwitchEnv(AssistiveEnv):
         angle_dirs = np.zeros(len(self.switches))
         reward_switch = 0
         angle_diffs = []
+        lever_angles = []
         for i, switch in enumerate(self.switches):
             if self.target_string[i] == self.current_string[i]:
                 angle_dirs[i], angle_diff = 0, 0
@@ -46,6 +47,7 @@ class LightSwitchEnv(AssistiveEnv):
             # 		p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
             lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
+            lever_angles.append(lever_angle)
             angle_diffs.append(angle_diff)
             if lever_angle < LOW_LIMIT + .1:
                 self.current_string[i] = 0
@@ -93,13 +95,14 @@ class LightSwitchEnv(AssistiveEnv):
             'ineff_contact': bad_contact_count,
 
             'target_index': self.target_index,
-            'lever_angle': lever_angle,
+            'lever_angle': lever_angles,
             'target_string': self.target_string,
             'current_string': self.current_string,
             'switch_pos': self.target_pos,
             'aux_switch_pos': self.target_pos1,
             'switch_orient': switch_orient
         }
+        # print(self.target_string, self.current_string)
         done = False
 
         return obs, reward, done, info
@@ -250,8 +253,8 @@ class LightSwitchEnv(AssistiveEnv):
         if not np.count_nonzero(mask):
             mask = np.equal(np.arange(len(self.target_string)), self.np_random.choice(len(self.target_string))).astype(
                 int)
-        self.initial_string = np.array([0, 0, 0])
-        # self.initial_string = np.not_equal(self.target_string, mask).astype(int)
+        self.initial_string = np.array([1, 1, 1])
+        #self.initial_string = np.not_equal(self.target_string, mask).astype(int)
         self.current_string = self.initial_string.copy()
         wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
         switch_center = np.array([-.05 - .15 * (len(self.target_string) // 2), .1, 0]) + np.array(
@@ -271,8 +274,8 @@ class LightSwitchEnv(AssistiveEnv):
             p.setCollisionFilterPair(switch, switch, 0, -1, 0, physicsClientId=self.id)
             p.setCollisionFilterPair(switch, self.wall, 0, -1, 0, physicsClientId=self.id)
             p.setCollisionFilterPair(switch, self.wall, -1, -1, 0, physicsClientId=self.id)
-            if not on_off:
-                p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
+            if on_off:
+                p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
         sphere_collision = -1
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist, rgbaColor=[0, 1, 1, 1],
@@ -318,7 +321,7 @@ class LightSwitchEnv(AssistiveEnv):
 
 class OneSwitchJacoEnv(LightSwitchEnv):
     def __init__(self, **kwargs):
-        super().__init__(message_indices=[1, 2, 4], robot_type='jaco', **kwargs)
+        super().__init__(message_indices=[3, 5, 6], robot_type='jaco', **kwargs)
 
 
 class ThreeSwitchJacoEnv(LightSwitchEnv):
