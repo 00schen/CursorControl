@@ -68,6 +68,13 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
             gt.stamp('evaluation sampling')
 
             for _ in range(self.num_train_loops_per_epoch):
+                # new_eval_paths = self.eval_data_collector.collect_new_paths(
+                #     self.eval_path_length,
+                #     self.num_eval_steps_per_epoch,
+                #     discard_incomplete_paths=True,
+                # )
+                # gt.stamp('evaluation sampling')
+
                 new_expl_paths = self.expl_data_collector.collect_new_paths(
                     self.max_path_length,
                     self.num_expl_steps_per_train_loop,
@@ -75,6 +82,7 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
                 )
                 gt.stamp('exploration sampling', unique=False)
 
+                # self.replay_buffer.add_paths(new_eval_paths)
                 self.replay_buffer.add_paths(new_expl_paths)
                 gt.stamp('data storing', unique=False)
 
