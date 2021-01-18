@@ -194,9 +194,9 @@ class oracle:
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+		if self.oracle_type == 'model' and obs.size == self.full_obs_size: # only true if trans from demo
 			obs = obs[:-self.oracle.size]
-		if obs.size < self.full_obs_size and self.input_in_obs:
+		elif obs.size < self.full_obs_size and self.input_in_obs: # not 'model' case is depricated in this code
 			obs = self._predict(obs,info)
 		else:
 			self._predict(obs,info)
@@ -205,7 +205,7 @@ class oracle:
 	def _reset(self,obs):
 		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
-		if obs.size < self.full_obs_size and self.input_in_obs:
+		elif obs.size < self.full_obs_size and self.input_in_obs:
 			self.oracle.reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
 		else:
@@ -237,7 +237,7 @@ class high_dim_user:
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['target_pos','lid_pos','tool_pos','lever_angle',]]),
 			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','target1_pos','target1_reached','tool_pos','lever_angle',]]),
+					['target_pos','target1_pos','bottle_pos','tool_pos',]]),
 		}[self.env_name]()
 		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
 		if self.apply_projection:
@@ -310,16 +310,10 @@ class reward:
 			r = np.clip(r,*self.range)
 		elif self.reward_type == 'custom':
 			r = 0
-			target_indices = np.nonzero(np.not_equal(info['target_string'],info['current_string']))[0]
-			if len(target_indices) != 0:
-				if min(norm(np.array(info['switch_pos'])-info['tool_pos'],axis=1))  > .2:
-					target_pos = np.array(info['switch_pos'])[target_indices[0]]
-					r += -1 + 10*(norm(info['old_tool_pos']-info['target_pos'])-norm(info['tool_pos']-info['target_pos']))
-				for i in target_indices:
-					if info['target_string'][i] == 0:
-						r += -1 - 5*info['angle_diff'][i]
-					else:
-						r += -1 + 5*info['angle_diff'][i]
+			if not info['task_success']:
+				target_indices = np.nonzero(np.not_equal(info['target_string'],info['current_string']))[0]
+				target_pos = np.array(info['switch_pos'])[target_indices[0]]
+				r += -1 + (norm(info['old_tool_pos']-target_pos)-norm(info['tool_pos']-target_pos))
 		else:
 			r = -1 + info['task_success']
 

@@ -9,9 +9,9 @@ from .env import AssistiveEnv
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
 	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5):
-		super(BottleEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(14,), dtype=np.float32)
-		self.num_targets = 6
+		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
+		self.num_targets = 4
 		self.success_dist = success_dist
 
 	def step(self, action):
@@ -37,7 +37,8 @@ class BottleEnv(AssistiveEnv):
 
 			'shelf_pos': self.shelf_pos,
 			'tool_pos': self.tool_pos,
-			'target1_pos': self.target1_pos,
+			'bottle_pos': self.target1_pos.copy(),
+			'target1_pos': self.og_target1_pos,
 			'target_pos': self.target_pos,
 			'target1_reached': self.target1_reached,
 		}
@@ -47,8 +48,8 @@ class BottleEnv(AssistiveEnv):
 
 	def _get_obs(self, forces):
 		torso_pos = np.array(p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-		# state = p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)
-		state = p.getLinkState(self.robot, 14, computeForwardKinematics=True, physicsClientId=self.id)
+		# state = p.getLinkState(self.tool, -1, computeForwardKinematics=True, physicsClientId=self.id)
+		state = p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)
 		tool_pos = np.array(state[0])
 		tool_orient = np.array(state[1]) # Quaternions
 		robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices, physicsClientId=self.id)
@@ -89,7 +90,7 @@ class BottleEnv(AssistiveEnv):
 			 physicsClientId=self.id, useFixedBase=True)
 		self.bottles = []
 		self.bottle_pos = []
-		for increment in product(np.linspace(-.15,.15,num=3),[0],[-.18,.01]):
+		for increment in product(np.linspace(-.1,.1,num=2),[0],[-.18,.01]):
 			bottle_pos,bottle_orient = p.multiplyTransforms(shelf_pos, default_orientation, increment, default_orientation, physicsClientId=self.id)
 			bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
 								basePosition=bottle_pos, useFixedBase=True, baseOrientation=bottle_orient, globalScaling=.01, physicsClientId=self.id)
@@ -124,7 +125,7 @@ class BottleEnv(AssistiveEnv):
 		self.util.ik_random_restarts(self.robot, 11, self.init_pos, init_orient, self.world_creation, self.robot_left_arm_joint_indices, self.robot_lower_limits, self.robot_upper_limits,
 									best_ik_joints=best_ik_joints, ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=1, max_ik_random_restarts=1, random_restart_threshold=0.03, step_sim=True)
 		self.world_creation.set_gripper_open_position(self.robot, position=1, left=True, set_instantly=True)
-		# self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001]*3, pos_offset=[0, 0, 0.02], orient_offset=p.getQuaternionFromEuler([0, -np.pi/2.0, 0], physicsClientId=self.id), maximal=False)
+		self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001]*3, pos_offset=[0, 0, 0.02], orient_offset=p.getQuaternionFromEuler([0, -np.pi/2.0, 0], physicsClientId=self.id), maximal=False)
 
 	def set_target_index(self):
 		self.target_index = self.np_random.choice(self.num_targets)
@@ -133,14 +134,16 @@ class BottleEnv(AssistiveEnv):
 		for bottle in self.bottles:
 			for i in range(7,20):
 				p.setCollisionFilterPair(bottle, self.robot, -1, i, 0, physicsClientId=self.id)
+			for i in range(-1,2):
+				p.setCollisionFilterPair(bottle, self.tool, -1, i, 0, physicsClientId=self.id)
 
 		target1_pos = self.target1_pos = self.bottle_pos[self.target_index]
+		self.og_target1_pos = self.target1_pos.copy()
 		self.target1_reached = False
 		target_pos = self.target_pos = self.register_pos + np.array([.2,.2,.05])
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
 		self.target1 = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target1_pos, useMaximalCoordinates=False, physicsClientId=self.id)
-		# self.tool = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=self.tool_pos, useMaximalCoordinates=False, physicsClientId=self.id)
 		self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos, useMaximalCoordinates=False, physicsClientId=self.id)
 
 		self.update_targets()
@@ -151,13 +154,13 @@ class BottleEnv(AssistiveEnv):
 		if self.target1_reached:
 			self.target1_pos = self.bottle_pos[self.target_index] = self.tool_pos
 			p.resetBasePositionAndOrientation(self.target1, self.target1_pos, [0, 0, 0, 1], physicsClientId=self.id)
-			# tool_orient = p.getLinkState(self.robot, 8, computeForwardKinematics=True, physicsClientId=self.id)[1]
 			p.resetBasePositionAndOrientation(self.bottles[self.target_index], self.target1_pos-np.array([0,0,.05]), [0,0,0,1], physicsClientId=self.id)
 
 	@property
 	def tool_pos(self):
-		# return np.array(p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)[0])
-		return np.array(p.getLinkState(self.robot, 8, computeForwardKinematics=True, physicsClientId=self.id)[0])
+		# return np.array(p.getLinkState(self.tool, -1, computeForwardKinematics=True, physicsClientId=self.id)[0])
+		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[0])
+		# return np.array(p.getLinkState(self.robot, 8, computeForwardKinematics=True, physicsClientId=self.id)[0])
 
 class BottleJacoEnv(BottleEnv):
 	def __init__(self,**kwargs):

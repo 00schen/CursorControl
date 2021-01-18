@@ -13,6 +13,7 @@ from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer
 
 import os
+import gtimer as gt
 from pathlib import Path
 from rlkit.launchers.launcher_util import setup_logger,reset_execution_environment
 import rlkit.util.hyperparameter as hyp
@@ -226,7 +227,7 @@ if __name__ == "__main__":
 	variant = dict(
 		from_pretrain=False,
 		# pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
-		layer_size=1024,
+		layer_size=128,
 		exploration_argmax=True,
 		exploration_strategy='',
 		expl_kwargs=dict(
@@ -269,19 +270,13 @@ if __name__ == "__main__":
 		# demo_paths=[os.path.join(main_dir,"demos",demo)\
 		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
 		demo_paths=[
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_1.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_2.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_3.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_4.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000_all_4.npy"),
-
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_5.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_6.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_7.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000_all_8.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_10000_all_1.npy"),
+					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_10000_all_1.npy"),
+					# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_success_1.npy"),
+					# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
 					],
 		# demo_path_proportions=[1]*9,
-		pretrain_rf=True,
+		pretrain_rf=False,
 		pretrain=True,
 
 		env_kwargs={'config':dict(
@@ -295,30 +290,30 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha = .8,
 
-			adapts = ['high_dim_user','stack','reward'],
+			adapts = ['high_dim_user','reward'],
 			space=0,
 			num_obs=10,
 			num_nonnoop=0,
 			reward_max=0,
-			reward_min=-5,
+			reward_min=-1,
 			# input_penalty=1,
 			reward_type='user_penalty',
 		)},
 	)
 	search_space = {
-		'seedid': [2000],
+		'seedid': [2000,2001,2002],
 
 		'trainer_kwargs.temp': [1],
-		'trainer_kwargs.min_q_weight': [1,.5,2],
+		'trainer_kwargs.min_q_weight': [1],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5],
 		'env_kwargs.config.apply_projection': [False],
-		# 'env_kwargs.config.input_penalty':[1e-2,1e-3,1e-4],
 		'env_kwargs.config.input_penalty':[1],
-		'demo_path_proportions':[[1]*5,],
+		'demo_path_proportions':[[int(1e4),int(1e4)],[int(1e4),0],[int(5e3),0]],
+		# 'demo_path_proportions':[[25,25],[50,50],[100,100],[250,250]],
 		'trainer_kwargs.qf_lr': [1e-5],
 		'algorithm_args.num_trains_per_train_loop': [5],
-		'trainer_kwargs.reward_update_period':[10],
-		'trainer_kwargs.ground_truth':[True,False],
+		# 'trainer_kwargs.reward_update_period':[10],
+		'trainer_kwargs.ground_truth':[True],
 		'trainer_kwargs.add_ood_term':[-1],
 	}
 
@@ -354,7 +349,6 @@ if __name__ == "__main__":
 		@ray.remote(num_cpus=1,num_gpus=1/args.per_gpu if args.gpus else 0)
 		class Runner:
 			def run(self,variant):
-				import gtimer as gt
 				gt.reset_root()
 				ptu.set_gpu_mode(True)
 				process_args(variant)

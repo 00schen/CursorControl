@@ -44,6 +44,7 @@ class LightSwitchEnv(AssistiveEnv):
 			# 		p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
 			# 	else:
 			# 		p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
+			# 	self.update_targets()
 
 			lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
 			lever_angles.append(lever_angle)
@@ -66,6 +67,7 @@ class LightSwitchEnv(AssistiveEnv):
 					p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
 				else:
 					p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
+				self.update_targets()
 			else:
 				p.changeVisualShape(self.targets1[i],-1,rgbaColor=[0,1,1,1])
 		
@@ -94,10 +96,10 @@ class LightSwitchEnv(AssistiveEnv):
 
 			'target_index': self.target_index,
 			'lever_angle': lever_angles,
-			'target_string': self.target_string,
-			'current_string': self.current_string,
-			'switch_pos': self.target_pos,
-			'aux_switch_pos': self.target_pos1,
+			'target_string': self.target_string.copy(),
+			'current_string': self.current_string.copy(),
+			'switch_pos': np.array(self.target_pos).copy(),
+			'aux_switch_pos': np.array(self.target_pos1).copy(),
 			'switch_orient': switch_orient,
 		}
 		if self.capture_frames:
@@ -237,7 +239,8 @@ class LightSwitchEnv(AssistiveEnv):
 		mask = self.np_random.choice([0,1],len(self.target_string),p=[1-self.switch_p,self.switch_p])
 		if not np.count_nonzero(mask):
 			mask = np.equal(np.arange(len(self.target_string)),self.np_random.choice(len(self.target_string))).astype(int)
-		self.initial_string = np.not_equal(self.target_string,mask).astype(int)
+		# self.initial_string = np.not_equal(self.target_string,mask).astype(int)
+		self.initial_string = np.array([1,1,1])
 		self.current_string = self.initial_string.copy()
 		wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
 		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,.05])*self.np_random.uniform(-1,1,3)
@@ -252,8 +255,7 @@ class LightSwitchEnv(AssistiveEnv):
 			p.setCollisionFilterPair(switch, switch, 0, -1, 0, physicsClientId=self.id)
 			p.setCollisionFilterPair(switch, self.wall, 0, -1, 0, physicsClientId=self.id)
 			p.setCollisionFilterPair(switch, self.wall, -1, -1, 0, physicsClientId=self.id)
-			# if not on_off:
-			if False:
+			if not on_off:
 				p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT+.099, physicsClientId=self.id)
 			else:
 				p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT-.099, physicsClientId=self.id)

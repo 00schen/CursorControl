@@ -19,7 +19,7 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=variant['p_on'] if variant['on_policy'] else variant['p_off']),
+		DemonstrationPolicy(env,p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -50,14 +50,14 @@ def collect_demonstrations(variant):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name',)
-	parser.add_argument('--exp_name', default='a-test')
+	parser.add_argument('--suffix', default='debug')
 	parser.add_argument('--no_render', action='store_false')
 	parser.add_argument('--use_ray', action='store_true')
 	args, _ = parser.parse_known_args()
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 100
+	path_length = 150
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -73,18 +73,17 @@ if __name__ == "__main__":
 		)},
 		render = args.no_render and (not args.use_ray),
 
-		on_policy=False,
-		p_on=.99,
-		p_off=.5,
-		num_episodes=5000,
+		on_policy=True,
+		p=.9,
+		num_episodes=10000,
 		path_length=path_length,
-		save_name_suffix="all_8"
+		save_name_suffix="all_"+args.suffix
 	)
 	search_space = {
 		'seedid': 1000,
 		'env_kwargs.config.smooth_alpha': .8,
 		'env_kwargs.config.oracle_kwargs.threshold': .5,
-		'env_kwargs.config.oracle_kwargs.epsilon': 0,
+		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)
@@ -118,7 +117,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 10
+		num_workers = 5
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]
