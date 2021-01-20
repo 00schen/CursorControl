@@ -226,7 +226,7 @@ if __name__ == "__main__":
 	num_epochs = int(1e4)
 	variant = dict(
 		from_pretrain=False,
-		# pretrain_file_path=os.path.join(main_dir,'logs','pretrain-cql','pretrain_cql_2020_12_07_17_15_47_0000--s-0','pretrain.pkl'),
+		pretrain_file_path=os.path.join(main_dir,'logs','a-test','a-test_2021_01_19_10_35_36_0000--s-0','pretrain.pkl'),
 		layer_size=128,
 		exploration_argmax=True,
 		exploration_strategy='',
@@ -251,7 +251,7 @@ if __name__ == "__main__":
 			batch_size=256,
 			max_path_length=path_length,
 			eval_path_length=1,
-			num_epochs=num_epochs,
+			num_epochs=0,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
 			# num_trains_per_train_loop=50,				
@@ -259,22 +259,22 @@ if __name__ == "__main__":
 		bc_args=dict(
 			batch_size=256,
 			max_path_length=path_length,
-			num_epochs=int(1e4),
-			num_eval_steps_per_epoch=path_length,
+			num_epochs=10,
+			num_eval_steps_per_epoch=5 * path_length,
 			num_expl_steps_per_train_loop=0,
 			collect_new_paths=False,
-			num_trains_per_train_loop=100,				
+			num_trains_per_train_loop=10000,
 		),
 
 		load_demos=True,
-		# demo_paths=[os.path.join(main_dir,"demos",demo)\
-		# 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}_keyboard" in demo],
-		demo_paths=[
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_10000_all_1.npy"),
-					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_10000_all_1.npy"),
-					# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_success_1.npy"),
-					# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
-					],
+		demo_paths=[os.path.join(main_dir,"demos",demo)\
+					for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}" in demo],
+		# demo_paths=[
+		# 			os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_10000_all_1.npy"),
+		# 			os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_10000_all_1.npy"),
+		# 			# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_success_1.npy"),
+		# 			# os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
+		# 			],
 		# demo_path_proportions=[1]*9,
 		pretrain_rf=False,
 		pretrain=True,
@@ -285,7 +285,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='model',
+			oracle='sim_gaze_model',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 			smooth_alpha = .8,
@@ -298,17 +298,18 @@ if __name__ == "__main__":
 			reward_min=-1,
 			# input_penalty=1,
 			reward_type='user_penalty',
+			input_in_obs=True
 		)},
 	)
 	search_space = {
 		'seedid': [2000,2001,2002],
-
 		'trainer_kwargs.temp': [1],
 		'trainer_kwargs.min_q_weight': [1],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5],
 		'env_kwargs.config.apply_projection': [False],
 		'env_kwargs.config.input_penalty':[1],
-		'demo_path_proportions':[[int(1e4),int(1e4)],[int(1e4),0],[int(5e3),0]],
+		# 'demo_path_proportions':[[int(1e4),int(1e4)],[int(1e4),0],[int(5e3),0]],
+		'demo_path_proportions': [[int(1e4)]],
 		# 'demo_path_proportions':[[25,25],[50,50],[100,100],[250,250]],
 		'trainer_kwargs.qf_lr': [1e-5],
 		'algorithm_args.num_trains_per_train_loop': [5],
@@ -336,7 +337,7 @@ if __name__ == "__main__":
 		import ray
 		from ray.util import ActorPool
 		from itertools import cycle,count
-		ray.init(temp_dir='/tmp/ray_exp', num_gpus=args.gpus)
+		ray.init(num_gpus=args.gpus)
 
 		@ray.remote
 		class Iterators:
