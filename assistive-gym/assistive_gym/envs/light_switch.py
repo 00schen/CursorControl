@@ -198,9 +198,9 @@ class LightSwitchEnv(AssistiveEnv):
 	
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
-		# init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
-		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
-		self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+		init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
+		# switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
+		# self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
 	def init_robot_arm(self):
 		self.init_start_pos()
@@ -240,7 +240,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.initial_string = np.array([1,1,1])
 		self.current_string = self.initial_string.copy()
 		wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
-		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,.05])*self.np_random.uniform(-1,1,3)
+		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,0])*self.np_random.uniform(-1,1,3)
 		switch_scale = .075
 		self.switches = []
 		for increment,on_off in zip(np.linspace(np.zeros(3),[.15*(len(self.target_string)-1),0,0],num=len(self.target_string)),self.initial_string):

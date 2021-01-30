@@ -8,7 +8,7 @@ from .env import AssistiveEnv
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5):
+	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.num_targets = 4
@@ -20,6 +20,12 @@ class BottleEnv(AssistiveEnv):
 		self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 		if norm(self.tool_pos-self.target1_pos) < .05:
 			self.target1_reached = True
+
+		contacts = p.getContactPoints(bodyA=self.robot, bodyB=self.shelf, physicsClientId=self.id)
+		if len(contacts) == 0:
+			normal = np.zeros(3)
+		else:
+			normal = contacts[0][7]
 
 		task_success = norm(self.target1_pos-self.target_pos) < self.success_dist*2
 		self.task_success = task_success
@@ -34,6 +40,7 @@ class BottleEnv(AssistiveEnv):
 			'task_success': self.task_success,
 			'old_tool_pos': old_tool_pos,
 			'target_index': self.target_index,
+			'normal': normal,
 
 			'shelf_pos': self.shelf_pos,
 			'tool_pos': self.tool_pos,
@@ -149,7 +156,6 @@ class BottleEnv(AssistiveEnv):
 		self.update_targets()
 
 	def update_targets(self):
-		pass
 		# p.resetBasePositionAndOrientation(self.tool, self.tool_pos, [0, 0, 0, 1], physicsClientId=self.id)
 		if self.target1_reached:
 			self.target1_pos = self.bottle_pos[self.target_index] = self.tool_pos
