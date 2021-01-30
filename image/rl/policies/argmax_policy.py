@@ -5,20 +5,18 @@ import torch.nn.functional as F
 import rlkit.torch.pytorch_util as ptu
 
 class ArgmaxPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2):
+	def __init__(self, qf):
 		super().__init__()
-		self.qf1 = qf1
-		self.qf2 = qf2
+		self.qf = qf
 
 	def get_action(self, obs):
 		if isinstance(obs,np.ndarray):
 			obs = th.from_numpy(obs).float()
-		if next(self.qf1.parameters()).is_cuda:
+		if next(self.qf.parameters()).is_cuda:
 			obs = obs.cuda()
 
 		with th.no_grad():
-			# q_values = th.min(self.qf1(obs),self.qf2(obs))
-			q_values = self.qf1(obs)
+			_, q_values = self.qf(obs)
 			action = F.one_hot(q_values.argmax().long(),6).flatten()
 		return ptu.get_numpy(action), {}
 
