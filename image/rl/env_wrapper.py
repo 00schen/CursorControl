@@ -184,17 +184,14 @@ class oracle:
 				'keyboard': KeyboardOracle,
 				# 'mouse': MouseOracle,
 			}[config['oracle']](master_env)
-		if self.input_in_obs:
-			master_env.observation_space = spaces.Box(-10,10,
-								(get_dim(master_env.observation_space)+self.oracle.size,))
-		else:
-			master_env.observation_space = spaces.Box(-10,10,
-								(get_dim(master_env.observation_space),))
 		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
+		if self.input_in_obs:
+			master_env.observation_space = spaces.Box(-np.inf,np.inf, (self.full_obs_size,))
 		self.master_env = master_env
+		print(self.full_obs_size)
 
 	def _step(self,obs,r,done,info):
-		if self.oracle_type == 'model' and obs.size == self.full_obs_size: # only true if trans from demo
+		if not self.input_in_obs and obs.size == self.full_obs_size: # only true if trans from demo
 			obs = obs[:-self.oracle.size]
 		elif obs.size < self.full_obs_size and self.input_in_obs: # not 'model' case is depricated in this code
 			obs = self._predict(obs,info)
@@ -203,13 +200,11 @@ class oracle:
 		return obs,r,done,info
 
 	def _reset(self,obs):
-		if self.oracle_type == 'model' and obs.size == self.full_obs_size:
+		self.oracle.reset()
+		if not self.input_in_obs and obs.size == self.full_obs_size:
 			obs = obs[:-self.oracle.size]
 		elif obs.size < self.full_obs_size and self.input_in_obs:
-			self.oracle.reset()
 			obs = np.concatenate((obs,np.zeros(self.oracle.size)))
-		else:
-			self.oracle.reset()
 		return obs
 
 	def _predict(self,obs,info):
@@ -224,20 +219,28 @@ class high_dim_user:
 		self.random_projection = master_env.rng.normal(0,10,(50,50))
 		self.random_projection,*_ = np.linalg.qr(self.random_projection)
 		self.apply_projection = config['apply_projection']
+		
+		self.state_type = config['state_type']
 
 
 	def _step(self,obs,r,done,info):
 		state_func = {
 			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['lever_angle','target_string','current_string',
-					'switch_pos','aux_switch_pos','tool_pos',]]),
+					[['lever_angle','target_string','current_string',
+					'switch_pos','aux_switch_pos','tool_pos',],
+					['lever_angle','switch_pos','tool_pos',],
+					['switch_pos','tool_pos',],
+					['tool_pos'],
+					['aux_switch_pos','tool_pos',],][self.state_type]]),
 			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['lever_angle','target_string','current_string',
 					 'switch_pos','aux_switch_pos','tool_pos',]]),
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['target_pos','lid_pos','tool_pos','lever_angle',]]),
 			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','target1_pos','bottle_pos','tool_pos',]]),
+					[['aux_target_pos','target_pos','target1_pos','bottle_pos','tool_pos',],
+						['target_pos','target1_pos','bottle_pos','tool_pos',],
+						['target1_pos','bottle_pos','tool_pos',],][self.state_type]]),
 		}[self.env_name]()
 		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
 		if self.apply_projection:

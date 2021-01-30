@@ -30,10 +30,10 @@ class LightSwitchEnv(AssistiveEnv):
 		angle_diffs = []
 		lever_angles = []
 		for i,switch in enumerate(self.switches):
-			if self.target_string[i] == self.current_string[i]:
-				angle_dirs[i],angle_diff = 0,0
-			else:
-				angle_dirs[i],angle_diff = self.move_lever(switch)
+			# if self.target_string[i] == self.current_string[i]:
+			# 	angle_dirs[i],angle_diff = 0,0
+			# else:
+			angle_dirs[i],angle_diff = self.move_lever(switch)
 
 			### Debugging: auto flip switch ###
 			# tool_pos1 = np.array(p.getLinkState(self.tool, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
@@ -202,7 +202,7 @@ class LightSwitchEnv(AssistiveEnv):
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
 		# init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
-		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[self.target_index], physicsClientId=self.id)
+		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
 		self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
 	def init_robot_arm(self):

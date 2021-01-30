@@ -5,10 +5,9 @@ import torch.nn.functional as F
 import rlkit.torch.pytorch_util as ptu
 
 class ArgmaxPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2):
+	def __init__(self, qf1,):
 		super().__init__()
 		self.qf1 = qf1
-		self.qf2 = qf2
 
 	def get_action(self, obs):
 		if isinstance(obs,np.ndarray):

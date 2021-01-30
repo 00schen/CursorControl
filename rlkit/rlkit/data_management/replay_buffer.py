@@ -14,6 +14,9 @@ class ReplayBuffer(object, metaclass=abc.ABCMeta):
         """
         pass
 
+    def modify_path(self,path):
+        pass
+
     @abc.abstractmethod
     def terminate_episode(self):
         """
@@ -42,6 +45,7 @@ class ReplayBuffer(object, metaclass=abc.ABCMeta):
 
         :param path: Dict like one outputted by rlkit.samplers.util.rollout
         """
+        self.modify_path(path)
         for i, (
                 obs,
                 action,

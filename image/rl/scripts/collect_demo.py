@@ -57,14 +57,14 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 150
+	path_length = 200
 	variant = dict(
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 
-			oracle='model',
+			oracle='keyboard',
 			oracle_kwargs=dict(),
 			input_in_obs=True,
 			action_type='disc_traj',
@@ -73,25 +73,23 @@ if __name__ == "__main__":
 		)},
 		render = args.no_render and (not args.use_ray),
 
-		on_policy=True,
-		p=.9,
-		num_episodes=10000,
+		on_policy=False,
+		p=.95,
+		num_episodes=20,
 		path_length=path_length,
-		save_name_suffix="all_"+args.suffix
+		save_name_suffix="keyboard"+args.suffix
 	)
 	search_space = {
 		'seedid': 1000,
 		'env_kwargs.config.smooth_alpha': .8,
-		'env_kwargs.config.oracle_kwargs.threshold': .5,
-		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
+		# 'env_kwargs.config.oracle_kwargs.threshold': .5,
+		# 'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)
 
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
-		if variant['render']:
-			variant['num_episodes'] = 20
 		variant['save_name'] = f"{args.env_name}_{variant['env_kwargs']['config']['oracle']}"\
 								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}"\
 								+ "_" + variant['save_name_suffix']
@@ -131,4 +129,6 @@ if __name__ == "__main__":
 		variant['seedid'] = current_time
 		process_args(variant)
 		paths = collect_demonstrations(variant)
+		variant['save_name'] = f"{args.env_name}_{variant['env_kwargs']['config']['oracle']}"\
+								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{len(paths)}"
 		np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)

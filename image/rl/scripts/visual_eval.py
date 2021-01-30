@@ -17,11 +17,9 @@ def evaluation(variant):
 
 	file_name = os.path.join(variant['eval_path'])
 	qf1 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf1']
-	qf2 = th.load(file_name,map_location=th.device("cpu"))['trainer/qf2']
 
 	policy = BoltzmannPolicy(
 		qf1=qf1,
-		qf2=qf2,
 		logit_scale=1e4,
 	)
 	# policy = th.load(file_name,map_location=th.device("cpu"))['trainer/policy']
@@ -54,13 +52,13 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 100
+	path_length = 200
 	variant = dict(
 		seedid=2002,
 		path_length=path_length,
-		eval_path=os.path.join(main_dir,'logs','test-s1-v1-ground-truth-offline-8','test_s1_v1_ground_truth_offline_8_2021_01_13_13_40_17_0004--s-0','params.pkl'),
+		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-3','test_b_ground_truth_offline_3_2021_01_22_16_10_53_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name=args.env_name,
+			env_name='Bottle',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,capture_frames=False),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
@@ -71,10 +69,8 @@ if __name__ == "__main__":
 			smooth_alpha = .8,
 
 			adapts = ['high_dim_user','reward'],
+			state_type=2,
 			apply_projection=False,
-			space=0,
-			num_obs=10,
-			num_nonnoop=10,
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,

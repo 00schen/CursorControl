@@ -11,10 +11,9 @@ class OneHotCategorical(Distribution,TorchOneHot):
 		return s, log_p
 
 class BoltzmannPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2, logit_scale=100):
+	def __init__(self, qf1, logit_scale=100):
 		super().__init__()
 		self.qf1 = qf1
-		self.qf2 = qf2
 		self.logit_scale = logit_scale
 
 	def get_action(self, obs):
