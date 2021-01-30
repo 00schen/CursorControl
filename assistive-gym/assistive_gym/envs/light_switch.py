@@ -30,9 +30,6 @@ class LightSwitchEnv(AssistiveEnv):
 		angle_diffs = []
 		lever_angles = []
 		for i,switch in enumerate(self.switches):
-			# if self.target_string[i] == self.current_string[i]:
-			# 	angle_dirs[i],angle_diff = 0,0
-			# else:
 			angle_dirs[i],angle_diff = self.move_lever(switch)
 
 			### Debugging: auto flip switch ###
@@ -122,7 +119,7 @@ class LightSwitchEnv(AssistiveEnv):
 		axis,_ = p.multiplyTransforms(np.zeros(3),p.getLinkState(switch,0)[1], [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
-		k = -.2
+		k = .2
 		w = k*np.sign(c_F)*np.sqrt(abs(c_F))*norm(radius)
 
 		for _ in range(self.frame_skip):
@@ -201,9 +198,9 @@ class LightSwitchEnv(AssistiveEnv):
 	
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
-		# init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
-		switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
-		self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+		init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
+		# switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
+		# self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
 	def init_robot_arm(self):
 		self.init_start_pos()
@@ -243,7 +240,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.initial_string = np.array([1,1,1])
 		self.current_string = self.initial_string.copy()
 		wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
-		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,.05])*self.np_random.uniform(-1,1,3)
+		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,0])*self.np_random.uniform(-1,1,3)
 		switch_scale = .075
 		self.switches = []
 		for increment,on_off in zip(np.linspace(np.zeros(3),[.15*(len(self.target_string)-1),0,0],num=len(self.target_string)),self.initial_string):

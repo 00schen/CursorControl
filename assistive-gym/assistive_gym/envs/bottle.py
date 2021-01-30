@@ -8,7 +8,7 @@ from .env import AssistiveEnv
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5,capture_frames=False):
+	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.num_targets = 4

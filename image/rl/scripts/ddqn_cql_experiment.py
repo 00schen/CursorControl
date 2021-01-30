@@ -235,7 +235,7 @@ if __name__ == "__main__":
 			batch_size=256,
 			max_path_length=path_length,
 			eval_path_length=1,
-			num_epochs=num_epochs,
+			num_epochs=0,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
 			num_trains_per_train_loop=5,				
@@ -247,7 +247,7 @@ if __name__ == "__main__":
 			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=0,
 			collect_new_paths=False,
-			num_trains_per_train_loop=100,				
+			num_trains_per_train_loop=10000,
 		),
 
 		load_demos=True,
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
 
-			oracle='model',
+			oracle='sim_gaze_model',
 			oracle_kwargs=dict(),
 			action_type='disc_traj',
 			smooth_alpha = .8,
@@ -319,7 +319,7 @@ if __name__ == "__main__":
 		import ray
 		from ray.util import ActorPool
 		from itertools import cycle,count
-		ray.init(temp_dir='/tmp/ray_exp', num_gpus=args.gpus)
+		ray.init(num_gpus=args.gpus)
 
 		@ray.remote
 		class Iterators:

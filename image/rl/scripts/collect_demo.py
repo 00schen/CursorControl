@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy
+from rl.policies import DemonstrationPolicy, UserInputPolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
@@ -19,7 +19,8 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=variant['p']),
+		UserInputPolicy(env, p=variant['p'])
+		# DemonstrationPolicy(env,p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -64,18 +65,28 @@ if __name__ == "__main__":
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
 
+<<<<<<< HEAD
 			oracle='keyboard',
+=======
+			oracle='sim_gaze_model',
+>>>>>>> origin/env_update
 			oracle_kwargs=dict(),
-			input_in_obs=True,
+			input_in_obs=False,
 			action_type='disc_traj',
 
 			adapts = [],
 		)},
 		render = args.no_render and (not args.use_ray),
 
+<<<<<<< HEAD
 		on_policy=False,
 		p=.95,
 		num_episodes=20,
+=======
+		on_policy=True,
+		p=.9,
+		num_episodes=1000,
+>>>>>>> origin/env_update
 		path_length=path_length,
 		save_name_suffix="keyboard"+args.suffix
 	)
