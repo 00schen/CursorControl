@@ -10,8 +10,8 @@ from rlkit.torch.core import np_to_pytorch_batch
 
 from rl.policies import OverridePolicy,ComparisonMergePolicy
 from rl.path_collectors import FullPathCollector,CustomPathCollector
-from rl.env_wrapper import default_overhead
-from rl.simple_path_loader import SimplePathLoader
+from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import BCTrainer
 
 import os

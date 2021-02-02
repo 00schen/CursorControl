@@ -1,7 +1,7 @@
 from rl.policies import BoltzmannPolicy
 from rl.path_collectors import FullPathCollector
-from rl.env_wrapper import default_overhead
-from rl.simple_path_loader import SimplePathLoader
+from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
 
 import os
 from pathlib import Path

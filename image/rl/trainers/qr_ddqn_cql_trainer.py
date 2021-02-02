@@ -1,10 +1,13 @@
-from rl.trainers.ddqn_cql_trainer import DDQNCQLTrainer
 import torch as th
-import rlkit.torch.pytorch_util as ptu
 import torch.nn.functional as F
-import numpy as np
-from rlkit.core.eval_util import create_stats_ordered_dict
 import torch.optim as optim
+import numpy as np
+
+from rlkit.core.eval_util import create_stats_ordered_dict
+import rlkit.torch.pytorch_util as ptu
+from rl.trainers.ddqn_cql_trainer import DDQNCQLTrainer
+
+
 
 
 class QRDDQNCQLTrainer(DDQNCQLTrainer):
@@ -34,11 +37,9 @@ class QRDDQNCQLTrainer(DDQNCQLTrainer):
         if not self.ground_truth:
             rewards = (1 - self.rf(obs, next_obs).exp()).log() * -1 * batch['rewards']
             if self._n_train_steps_total % self.reward_update_period == 0:
-                noop_prop = noop.mean().item()
-                noop_prop = max(1e-4, 1 - noop_prop) / max(1e-4, noop_prop)
                 rf_obs, rf_next_obs, rf_noop = self.mixup(obs, next_obs, noop)
                 pred_reward = self.rf(rf_obs, rf_next_obs)
-                rf_loss = F.binary_cross_entropy_with_logits(pred_reward, rf_noop, pos_weight=ptu.tensor([noop_prop]))
+                rf_loss = F.binary_cross_entropy_with_logits(pred_reward, rf_noop,)
 
                 self.rf_optimizer.zero_grad()
                 rf_loss.backward()

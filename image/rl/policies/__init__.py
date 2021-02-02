@@ -6,3 +6,4 @@ from .override_policy import OverridePolicy
 from .max_q_policy import MaxQPolicy
 from .argmax_policy import ArgmaxPolicy
 from .user_input_policy import UserInputPolicy
+from .dummy_policy import DummyPolicy

@@ -6,8 +6,8 @@ from cqlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from cqlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from cqlkit.torch.core import np_to_pytorch_batch
 from cqlkit.samplers.data_collector import MdpPathCollector, CustomMDPPathCollector
-from rl.env_wrapper import default_overhead
-from rl.simple_path_loader import SimplePathLoader
+from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import CQLBCTrainer
 
 import argparse, os

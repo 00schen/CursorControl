@@ -23,7 +23,8 @@ class BoltzmannPolicy(PyTorchModule):
 			obs = obs.cuda()
 
 		with th.no_grad():
-			_, q_values = self.qf(obs)
+			# _, q_values = self.qf(obs)
+			q_values = self.qf(obs)
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
 		return action.cpu().numpy(), {}
 

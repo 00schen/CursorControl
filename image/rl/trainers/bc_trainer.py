@@ -40,7 +40,7 @@ class DisBCTrainer(TorchTrainer):
 		Reward and R loss
 		"""
 		if self.use_mixup:
-			train_obs,train_actions = mixup(obs,actions)
+			(train_obs,),train_actions = mixup([obs],actions)
 		else:
 			train_obs,train_actions = obs,actions
 		bc_pred = self.policy(train_obs)

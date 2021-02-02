@@ -1,4 +1,4 @@
-from rl.utils import RunningMeanStd
+from rl.misc.utils import RunningMeanStd
 import numpy as np
 from scipy.stats import norm as normal
 from .follower_policy import FollowerPolicy

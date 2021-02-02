@@ -2,8 +2,8 @@ import pybullet as p
 import numpy as np
 import torch
 import cv2
-from rl.gaze_capture.face_processor import FaceProcessor
-from rl.gaze_capture.ITrackerModel import ITrackerModel
+# from rl.gaze_capture.face_processor import FaceProcessor
+# from rl.gaze_capture.ITrackerModel import ITrackerModel
 from .base_oracles import Oracle, OracleStatus
 from .three_switch_oracle import ThreeSwitchOracle
 import threading

@@ -1,7 +1,7 @@
 from rl.policies import DemonstrationPolicy, UserInputPolicy
 from rl.path_collectors import FullPathCollector
-from rl.env_wrapper import default_overhead
-from rl.simple_path_loader import SimplePathLoader
+from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
 import rlkit.pythonplusplus as ppp
 
 import os
@@ -19,8 +19,7 @@ def collect_demonstrations(variant):
 
 	path_collector = FullPathCollector(
 		env,
-		UserInputPolicy(env, p=variant['p'])
-		# DemonstrationPolicy(env,p=variant['p']),
+		DemonstrationPolicy(env,p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -60,41 +59,31 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
+		seedid=1000,
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5),
-
-<<<<<<< HEAD
-			oracle='keyboard',
-=======
-			oracle='sim_gaze_model',
->>>>>>> origin/env_update
-			oracle_kwargs=dict(),
-			input_in_obs=False,
+			oracle='model',
+			oracle_kwargs=dict(
+				threshold=.5,
+			),
+			input_in_obs=True,
 			action_type='disc_traj',
+			smooth_alpha=.8,
 
 			adapts = [],
 		)},
 		render = args.no_render and (not args.use_ray),
 
-<<<<<<< HEAD
-		on_policy=False,
-		p=.95,
-		num_episodes=20,
-=======
 		on_policy=True,
-		p=.9,
-		num_episodes=1000,
->>>>>>> origin/env_update
+		p=.95,
+		num_episodes=int(1.5e4),
 		path_length=path_length,
-		save_name_suffix="keyboard"+args.suffix
+		save_name_suffix="all"+args.suffix
 	)
 	search_space = {
-		'seedid': 1000,
-		'env_kwargs.config.smooth_alpha': .8,
-		# 'env_kwargs.config.oracle_kwargs.threshold': .5,
-		# 'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
+		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)

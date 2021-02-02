@@ -31,6 +31,7 @@
 *.npz
 *.npy
 *.h5
+*.out
 legacy_code
 */*/*/oracle_training.py
 */*/oracle_training.py

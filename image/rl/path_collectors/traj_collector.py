@@ -25,3 +25,5 @@ class CustomPathCollector(MdpPathCollector):
 		self._num_steps_total += num_steps_collected
 		self._epoch_paths.extend(paths)
 		return paths
+	def get_snapshot(self):
+		return dict()
