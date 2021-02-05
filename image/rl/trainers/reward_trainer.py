@@ -56,9 +56,10 @@ class RewardTrainer(TorchTrainer):
 		"""
 		Save some statistics for eval using just one batch.
 		"""
+		self.rf.train(False)
 		stat_pred = self.rf(obs,next_obs).detach()
-		accuracy = th.eq(stat_pred,rewards).float().mean()
-
+		accuracy = th.eq(stat_pred.sigmoid()>.5, rewards).float().mean()
+		self.rf.train(True)
 		if self._need_to_update_eval_statistics:
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['RF Loss'] = np.mean(ptu.get_numpy(rf_loss))

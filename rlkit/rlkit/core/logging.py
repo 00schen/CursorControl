@@ -13,7 +13,8 @@ import datetime
 import dateutil.tz
 import csv
 import json
-import pickle
+import dill as pickle
+# import pickle
 import errno
 import torch
 
@@ -320,21 +321,21 @@ class Logger(object):
         if self._snapshot_dir:
             if self._snapshot_mode == 'all':
                 file_name = osp.join(self._snapshot_dir, 'itr_%d.pkl' % itr)
-                torch.save(params, file_name)
+                torch.save(params, file_name, pickle_module=pickle)
             elif self._snapshot_mode == 'last':
                 # override previous params
                 file_name = osp.join(self._snapshot_dir, 'params.pkl')
-                torch.save(params, file_name)
+                torch.save(params, file_name, pickle_module=pickle)
             elif self._snapshot_mode == "gap":
                 if itr % self._snapshot_gap == 0:
                     file_name = osp.join(self._snapshot_dir, 'itr_%d.pkl' % itr)
-                    torch.save(params, file_name)
+                    torch.save(params, file_name, pickle_module=pickle)
             elif self._snapshot_mode == "gap_and_last":
                 if itr % self._snapshot_gap == 0:
                     file_name = osp.join(self._snapshot_dir, 'itr_%d.pkl' % itr)
-                    torch.save(params, file_name)
+                    torch.save(params, file_name, pickle_module=pickle)
                 file_name = osp.join(self._snapshot_dir, 'params.pkl')
-                torch.save(params, file_name)
+                torch.save(params, file_name, pickle_module=pickle)
             elif self._snapshot_mode == 'none':
                 pass
             else:

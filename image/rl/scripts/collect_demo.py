@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, UserInputPolicy
+from rl.policies import DemonstrationPolicy, UserInputPolicy, BoltzmannPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -17,9 +17,16 @@ def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+100)
 
+	# file_name = os.path.join(variant['eval_path'])
+	# policy = BoltzmannPolicy(
+	# 	qf1=th.load(file_name,map_location=th.device("cpu"))['trainer/policy'],
+	# 	logit_scale=1e4,
+	# )
+
 	path_collector = FullPathCollector(
 		env,
 		DemonstrationPolicy(env,p=variant['p']),
+		# policy,
 	)
 
 	if variant.get('render',False):
@@ -60,6 +67,7 @@ if __name__ == "__main__":
 	path_length = 200
 	variant = dict(
 		seedid=1000,
+		eval_path=os.path.join(main_dir,'logs','test-b-dagger','test_b_ground_truth_offline_3_2021_01_22_16_10_53_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
@@ -77,13 +85,13 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.95,
-		num_episodes=int(1.5e4),
+		p=.9,
+		num_episodes=int(1000),
 		path_length=path_length,
 		save_name_suffix="all"+args.suffix
 	)
 	search_space = {
-		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .5,
+		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
 	}
 	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
 	variant = ppp.merge_recursive_dicts(variant,search_space)

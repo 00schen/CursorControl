@@ -1,4 +1,5 @@
 import numpy as np
+from torch.nn import functional as F
 
 class RunningMeanStd:
 	def __init__(self, epsilon=1, shape=()):
@@ -33,3 +34,8 @@ class RunningMeanStd:
 		self.mean = new_mean
 		self.var = new_var
 		self.count = new_count
+
+def make_alpha_relu(p):
+	def alpha_relu(x, training):
+		return F.alpha_dropout(F.leaky_relu(x),p=p,training=training)
+	return alpha_relu

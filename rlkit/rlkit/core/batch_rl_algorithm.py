@@ -23,6 +23,7 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
         num_trains_per_train_loop,
         num_train_loops_per_epoch=1,
         min_num_steps_before_training=0,
+        eval_paths=True,
         eval_path_length=None,
         collect_new_paths=True,
     ):
@@ -41,6 +42,7 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
         else:
             self.eval_path_length = eval_path_length
         self.collect_new_paths = collect_new_paths
+        self.eval_paths = eval_paths
         self.num_epochs = num_epochs
         self.num_eval_steps_per_epoch = num_eval_steps_per_epoch
         self.num_trains_per_train_loop = num_trains_per_train_loop
@@ -62,12 +64,13 @@ class BatchRLAlgorithm(BaseRLAlgorithm, metaclass=abc.ABCMeta):
                 range(self._start_epoch, self.num_epochs),
                 save_itrs=True,
         ):
-            self.eval_data_collector.collect_new_paths(
-                self.eval_path_length,
-                self.num_eval_steps_per_epoch,
-                discard_incomplete_paths=True,
-            )
-            gt.stamp('evaluation sampling')
+            if self.eval_paths:
+                self.eval_data_collector.collect_new_paths(
+                    self.eval_path_length,
+                    self.num_eval_steps_per_epoch,
+                    discard_incomplete_paths=True,
+                )
+                gt.stamp('evaluation sampling')
 
             for _ in range(self.num_train_loops_per_epoch):
                 if self.collect_new_paths:

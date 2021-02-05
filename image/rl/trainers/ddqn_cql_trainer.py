@@ -18,6 +18,7 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			add_ood_term=-1,
 			alpha = .4,
 			ground_truth=False,
+			target_name='noop',
 			**kwargs):
 		super().__init__(qf,target_qf,**kwargs)
 		self.reward_update_period = reward_update_period
@@ -26,10 +27,10 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		self.add_ood_term = add_ood_term
 		self.alpha = alpha
 		self.ground_truth = ground_truth
+		self.target_name = target_name
 		self.rf = rf
 
 	def train_from_torch(self, batch):
-		noop = th.clamp(batch['rewards'] + 1, 0, 1)
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
@@ -39,10 +40,16 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		Reward and R loss
 		"""
 		if not self.ground_truth:
-			rewards = self.rf(obs,next_obs)
+			self.rf.train(False)
+			r_pred = self.rf(obs,next_obs).detach()
+			rewards = F.logsigmoid(r_pred)
+			accuracy = th.eq(r_pred.sigmoid()>.5, batch['episode_success']).float().mean()
+			if self._need_to_update_eval_statistics:
+				self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
 		else:
 			# rewards = batch['rewards']
-			rewards = batch['episode_success']
+			rewards = batch[self.target_name]-1
+			# rewards = batch['noop']-1
 
 		"""
 		Q loss

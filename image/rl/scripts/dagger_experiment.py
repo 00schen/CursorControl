@@ -9,8 +9,9 @@ from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import DisBCTrainer
-from rl.misc.balanced_interventions_replay_buffer import BalancedInterReplayBuffer
+from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.misc.utils import make_alpha_relu
 
 import os
 from pathlib import Path
@@ -28,16 +29,14 @@ def experiment(variant):
 	obs_dim = env.observation_space.low.size
 	action_dim = env.action_space.low.size
 	M = variant["layer_size"]
-	upper_q = variant['env_kwargs']['config']['reward_max']*variant['env_kwargs']['config']['step_limit']
-	lower_q = variant['env_kwargs']['config']['reward_min']*variant['env_kwargs']['config']['step_limit']
 	qf1 = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
 		hidden_sizes=[M, M, M, M],
+		# hidden_activation=make_alpha_relu(variant['dropout_p']),
 		hidden_activation=F.leaky_relu,
-		layer_norm=True,
-		# output_activation=Clamp(max=0, min=-5e3),
-		output_activation=Clamp(max=upper_q, min=lower_q),
+		# layer_norm=True,
+		# output_activation=Clamp(max=-5, min=5),
 	)
 	eval_policy = ArgmaxPolicy(
 		qf1,
@@ -69,10 +68,11 @@ def experiment(variant):
 		policy=qf1,
 		**variant['trainer_kwargs']
 	)
-	replay_buffer = BalancedInterReplayBuffer(
+	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		inter_prop=variant['inter_prop'],
+		target_name='noop',
+		false_prop=variant['false_prop'],
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -128,12 +128,14 @@ if __name__ == "__main__":
 			num_eval_steps_per_epoch=400,
 			num_expl_steps_per_train_loop=path_length,
 			num_trains_per_train_loop=100,
+			# collect_new_paths=False,
 		),
 
 		load_demos=True,
 		demo_paths=[
-					# os.path.join(main_dir, "demos", f"{args.env_name}_model_noisy_9500_success.npy"),
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_5000_success_1.npy"),
+					os.path.join(main_dir, "demos", f"{args.env_name}_model_noisy_9500_success.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_1000_all1.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_15000_all1.npy"),
 					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
 					],
 		pretrain_rf=False,
@@ -163,15 +165,16 @@ if __name__ == "__main__":
 		)},
 	)
 	search_space = {
-		'seedid': [2000,],
+		'seedid': [2000,2001],
 
 		'env_kwargs.config.oracle_kwargs.threshold': [.5],
-		'env_kwargs.config.state_type': [2],
+		'env_kwargs.config.state_type': [0],
 
-		'inter_prop': [.5],
-		'demo_path_proportions':[[100, ], ],
+		'false_prop': [.5],
+		'demo_path_proportions':[[100], ],
 		'trainer_kwargs.policy_lr': [1e-3],
-		'trainer_kwargs.use_mixup': [True],
+		'trainer_kwargs.use_mixup': [False,True],
+		# 'dropout_p': [.1,.05],
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

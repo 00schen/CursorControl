@@ -114,20 +114,21 @@ class BaseRLAlgorithm(object, metaclass=abc.ABCMeta):
         """
         Evaluation
         """
-        logger.record_dict(
-            self.eval_data_collector.get_diagnostics(),
-            prefix='evaluation/',
-        )
-        eval_paths = self.eval_data_collector.get_epoch_paths()
-        if hasattr(self.eval_env, 'get_diagnostics'):
+        if self.eval_paths:
             logger.record_dict(
-                self.eval_env.get_diagnostics(eval_paths),
+                self.eval_data_collector.get_diagnostics(),
                 prefix='evaluation/',
             )
-        logger.record_dict(
-            eval_util.get_generic_path_information(eval_paths),
-            prefix="evaluation/",
-        )
+            eval_paths = self.eval_data_collector.get_epoch_paths()
+            if hasattr(self.eval_env, 'get_diagnostics'):
+                logger.record_dict(
+                    self.eval_env.get_diagnostics(eval_paths),
+                    prefix='evaluation/',
+                )
+            logger.record_dict(
+                eval_util.get_generic_path_information(eval_paths),
+                prefix="evaluation/",
+            )
 
         """
         Misc

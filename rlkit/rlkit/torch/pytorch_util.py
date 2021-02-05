@@ -93,6 +93,10 @@ def alpha_selu(x, training=False):
     return alpha_dropout(nn.SELU(x), training=training)
 
 
+def alpha_relu(x, training=False):
+    return alpha_dropout(F.leaky_relu(x), training=training)
+
+
 def double_moments(x, y):
     """
     Returns the first two moments between x and y.

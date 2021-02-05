@@ -9,6 +9,7 @@ from rlkit.torch.core import PyTorchModule, eval_np
 from rlkit.torch.data_management.normalizer import TorchFixedNormalizer
 from rlkit.torch.networks import LayerNorm
 from rlkit.torch.pytorch_util import activation_from_string
+from inspect import signature
 
 
 class Mlp(PyTorchModule):
@@ -62,7 +63,10 @@ class Mlp(PyTorchModule):
             h = fc(h)
             if self.layer_norm and i < len(self.fcs) - 1:
                 h = self.layer_norms[i](h)
-            h = self.hidden_activation(h)
+            if 'training' in signature(self.hidden_activation).parameters.keys():
+                h = self.hidden_activation(h,training=self.training)
+            else:
+                h = self.hidden_activation(h)
         preactivation = self.last_fc(h)
         output = self.output_activation(preactivation)
         if return_preactivations:

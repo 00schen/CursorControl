@@ -9,15 +9,15 @@ from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import RewardTrainer
-from rl.misc.balanced_interventions_replay_buffer import BalancedInterReplayBuffer
+from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.misc.utils import make_alpha_relu
 
 import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
 from torch.nn import functional as F
-
 
 def experiment(variant):
 	from rlkit.core import logger
@@ -32,9 +32,9 @@ def experiment(variant):
 		input_size=obs_dim *2,
 		output_size=1,
 		hidden_sizes=[M, M, M, M],
-		hidden_activation=F.leaky_relu,
+		hidden_activation=make_alpha_relu(variant['dropout_p']),
 		layer_norm=True,
-		output_activation=Clamp(max=-1e-2, min=-5),
+		output_activation=Clamp(max=5,min=-5),
 	)
 	eval_policy = DummyPolicy(
 		env,
@@ -48,10 +48,11 @@ def experiment(variant):
 		rf=rf,
 		**variant['trainer_kwargs']
 	)
-	replay_buffer = BalancedInterReplayBuffer(
+	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		inter_prop=variant['inter_prop'],
+		false_prop=variant['false_prop'],
+		target_name='terminals',
 		env_info_sizes={'noop':1,'episode_success':1}
 	)
 	algorithm = TorchBatchRLAlgorithm(
@@ -102,12 +103,15 @@ if __name__ == "__main__":
 			num_expl_steps_per_train_loop=1,
 			num_trains_per_train_loop=1,
 			collect_new_paths=False,
+			eval_paths=False,
 		),
 
 		load_demos=True,
 		demo_paths=[
 					# os.path.join(main_dir, "demos", f"{args.env_name}_model_noisy_9500_success.npy"),
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_5000_success_1.npy"),
+					os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.7_eps_.5_1.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_15000_all1.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_dummy_1000.npy"),
 					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
 					],
 
@@ -135,17 +139,19 @@ if __name__ == "__main__":
 		)},
 	)
 	search_space = {
-		'seedid': [2000, 2001, ],
+		'seedid': [2000, ],
 
 		'env_kwargs.config.oracle_kwargs.threshold': [.5],
-		'env_kwargs.config.state_type': [2],
+		'env_kwargs.config.state_type': [0],
 
-		'inter_prop': [.5,],
-		'demo_path_proportions': [[4000, ], ],
-		'trainer_kwargs.target_name': ['terminals','episode_success','noop'],
-		'trainer_kwargs.rf_lr': [1e-3],
-		'trainer_kwargs.use_mixup': [False],
+		'false_prop': [.5,],
+		'demo_path_proportions': [[int(1e4), ], ],
+		'trainer_kwargs.target_name': ['terminals'],
+		'trainer_kwargs.rf_lr': [1e-4],
+		'trainer_kwargs.use_mixup': [True],
+		'dropout_p': [.05],
 	}
+
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,

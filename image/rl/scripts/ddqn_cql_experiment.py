@@ -9,7 +9,7 @@ from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer
-from rl.misc.balanced_interventions_replay_buffer import BalancedInterReplayBuffer,BalancedSuccessReplayBuffer
+from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rl.scripts.run_util import run_exp
 
 import os
@@ -21,6 +21,7 @@ from torch.nn import functional as F
 
 def experiment(variant):
 	from rlkit.core import logger
+	import torch as th
 
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid'])
@@ -48,14 +49,7 @@ def experiment(variant):
 		# output_activation=Clamp(max=0, min=-5e3),
 		output_activation=Clamp(max=upper_q, min=lower_q),
 	)
-	rf = ConcatMlp(
-		input_size=obs_dim *2,
-		output_size=1,
-		hidden_sizes=[M, M, M, M],
-		hidden_activation=F.leaky_relu,
-		layer_norm=True,
-		output_activation=Clamp(max=-1e-2, min=-5),
-	)
+	rf = th.load(variant['rf_path'],map_location=ptu.device)['trainer/rf']
 	eval_policy = ArgmaxPolicy(
 		qf,
 	)
@@ -88,10 +82,11 @@ def experiment(variant):
 		rf=rf,
 		**variant['trainer_kwargs']
 		)
-	replay_buffer = BalancedSuccessReplayBuffer(
+	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		fail_prop=variant['fail_prop'],
+		target_name='noop',
+		false_prop=variant['false_prop'],
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -176,7 +171,8 @@ if __name__ == "__main__":
 	path_length = 200
 	num_epochs = int(10)
 	variant = dict(
-		layer_size=128,
+		layer_size=256,
+		rf_path=os.path.join(main_dir, 'logs', 'test-b-reward-2', 'test-b-reward-2_2021_02_05_11_59_40_0000--s-0', 'params.pkl'),
 		exploration_argmax=True,
 		exploration_strategy='',
 		expl_kwargs=dict(
@@ -196,37 +192,40 @@ if __name__ == "__main__":
 
 			# temp=1.0,
 			# min_q_weight=1.0,
-			ground_truth=True,
+			ground_truth=False,
+			target_name='terminals',
 			add_ood_term=-1,
 		),
+		# algorithm_args=dict(
+		# 	batch_size=256,
+		# 	max_path_length=path_length,
+		# 	eval_path_length=1,
+		# 	num_epochs=0,
+		# 	num_eval_steps_per_epoch=1,
+		# 	num_expl_steps_per_train_loop=path_length,
+		# 	num_trains_per_train_loop=5,
+		# ),
 		algorithm_args=dict(
-			batch_size=256,
-			max_path_length=path_length,
-			eval_path_length=1,
-			num_epochs=0,
-			num_eval_steps_per_epoch=1,
-			num_expl_steps_per_train_loop=path_length,
-			num_trains_per_train_loop=5,
-		),
-		bc_args=dict(
-			batch_size=256,
+			batch_size=128,
 			max_path_length=path_length,
 			num_epochs=int(3e4),
 			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=0,
 			collect_new_paths=False,
-			num_trains_per_train_loop=10000,
+			num_trains_per_train_loop=100,
 		),
 
 		load_demos=True,
 		demo_paths=[
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.7_eps_.5_1.npy"),
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.6_eps_.5_1.npy"),
+					os.path.join(main_dir, "demos", f"{args.env_name}_model_noisy_9500_success.npy"),
+					os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_1000_all1.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.7_eps_.5_1.npy"),
+					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.6_eps_.5_1.npy"),
 					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_success_1.npy"),
 					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
 					],
 		pretrain_rf=False,
-		pretrain=True,
+		pretrain=False,
 
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
@@ -247,19 +246,19 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			reward_type='sparse',
+			reward_type='user_penalty',
 		)},
 	)
 	search_space = {
-		'seedid': [2000, 2001,],
+		'seedid': [2000, 2001, 2002],
 
 		'trainer_kwargs.temp': [1],
 		'trainer_kwargs.min_q_weight': [1],
 		'env_kwargs.config.oracle_kwargs.threshold': [.5],
-		'env_kwargs.config.state_type': [2],
+		'env_kwargs.config.state_type': [0],
 
-		'demo_path_proportions':[[int(1e4), 0], ],
-		'fail_prop': [.2, .1, 0],
+		'demo_path_proportions':[[int(9e3), 1000], ],
+		'false_prop': [.5,],
 		'trainer_kwargs.qf_lr': [1e-5],
 	}
 

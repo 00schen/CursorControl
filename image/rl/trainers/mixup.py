@@ -1,7 +1,7 @@
 import numpy as np
 import torch as th
 
-def mixup(feats,target,alpha=.5):
+def mixup(feats,target,alpha=5):
     lambd = np.random.beta(alpha, alpha, target.size(0))
     lambd = np.concatenate([lambd[:,None], 1-lambd[:,None]], 1).max(1)
     lambd = target.new(lambd)
