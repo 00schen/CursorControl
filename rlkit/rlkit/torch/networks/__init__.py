@@ -17,10 +17,12 @@ from rlkit.torch.networks.mlp import (
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,
-    QfMlp
+    QfMlp,
+    QfGazeMlp,
 )
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
 from rlkit.torch.networks.two_headed_mlp import TwoHeadMlp
+from rlkit.torch.networks.encoder_policies import VQGazePolicy, VAEGazePolicy
 
 __all__ = [
     'Clamp',
@@ -46,6 +48,9 @@ __all__ = [
     'Split',
     'TwoHeadDCNN',
     'TwoHeadMlp',
-    'QfMlp'
+    'QfMlp',
+    'QfGazeMlp',
+    'VQGazePolicy',
+    'VAEGazePolicy',
 ]
 

@@ -62,6 +62,7 @@ class QRDDQNCQLTrainer(DDQNCQLTrainer):
 
         # actions is a one-hot vector
         curr_logits, curr_qvalues = self.qf(obs)
+        curr_chosen_qvalues = th.sum(curr_qvalues * actions, dim=1)
         n_atoms = curr_logits.size(-1)
         actions = actions[:, :, None].repeat((1, 1, n_atoms))
         y_pred = th.sum(curr_logits * actions, dim=1)[:, :, None]
@@ -70,16 +71,13 @@ class QRDDQNCQLTrainer(DDQNCQLTrainer):
         huber_loss = (th.abs(bellman_errors) <= self.kappa).double() * 0.5 * bellman_errors ** 2 + \
                      (th.abs(bellman_errors) > self.kappa).double() * self.kappa * (th.abs(bellman_errors)
                                                                                     - 0.5 * self.kappa)
-        tau_hat = (th.arange(n_atoms) + 0.5) / n_atoms
-        if th.cuda.is_available():
-            tau_hat = tau_hat.cuda()
+        tau_hat = (th.arange(n_atoms).to(huber_loss.device) + 0.5) / n_atoms
         quantile_huber_loss = th.abs(tau_hat[None, :, None] - (bellman_errors < 0).double()) * huber_loss
         loss = th.mean(th.sum(th.mean(quantile_huber_loss, dim=2), dim=1))
 
         """CQL term"""
         min_qf_loss = th.logsumexp(curr_qvalues / self.temp, dim=1).mean() * self.temp
-        min_qf_loss = min_qf_loss - y_pred.mean()
-
+        min_qf_loss = min_qf_loss - curr_chosen_qvalues.mean()
         if self.add_ood_term < 0 or self._n_train_steps_total < self.add_ood_term:
             loss += min_qf_loss * self.min_q_weight
 

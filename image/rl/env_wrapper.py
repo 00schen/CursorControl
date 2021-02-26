@@ -192,42 +192,45 @@ class oracle:
                 "Sin": TracingOracle,
             }[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
             if 'sim_gaze' in self.oracle_type:
-                self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle)
+                self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
+                                                                     **config['gaze_oracle_kwargs'])
             elif 'gaze' in self.oracle_type:
                 self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
         else:
-            self.oracle = master_env.oracle = {
+            oracle_type = {
                 'keyboard': KeyboardOracle,
                 # 'mouse': MouseOracle,
                 'gaze': RealGazeKeyboardOracle,
-            }[config['oracle']](master_env)
-        self.orig_obs_size = get_dim(master_env.observation_space)
+                'sim_gaze': SimGazeKeyboardOracle,
+            }[config['oracle']]
+            if config['oracle'] == 'sim_gaze':
+                self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
+            else:
+                self.oracle = master_env.oracle = oracle_type()
+
         self.full_obs_size = get_dim(master_env.observation_space) + self.oracle.size
         if self.input_in_obs:
             master_env.observation_space = spaces.Box(-10, 10,
                                                       (get_dim(master_env.observation_space) + self.oracle.size,))
-        else:
-            master_env.observation_space = spaces.Box(-10, 10,
-                                                      (get_dim(master_env.observation_space),))
         self.master_env = master_env
 
     def _step(self, obs, r, done, info):
-        if 'model' in self.oracle_type and obs.size > self.orig_obs_size:  # only true if trans from demo
-            obs = obs[:self.orig_obs_size]
-        if obs.size < self.full_obs_size and self.input_in_obs:  # not 'model' case is depricated in this code
+        if not self.input_in_obs and obs.size >= self.full_obs_size:  # only true if trans from demo
+            obs = obs[:-self.oracle.size]
+            self._predict(obs, info)
+        elif obs.size < self.full_obs_size and self.input_in_obs:  # not 'model' case is depricated in this code
             obs = self._predict(obs, info)
         else:
             self._predict(obs, info)
         return obs, r, done, info
 
     def _reset(self, obs):
-        if 'model' in self.oracle_type and obs.size > self.orig_obs_size:  # only true if trans from demo
-            obs = obs[:self.orig_obs_size]
-        if obs.size < self.full_obs_size and self.input_in_obs:
-            self.oracle.reset()
+        # TODO: handle all cases properly
+        self.oracle.reset()
+        if not self.input_in_obs and obs.size >= self.full_obs_size:
+            obs = obs[:-self.oracle.size]
+        elif obs.size < self.full_obs_size and self.input_in_obs:
             obs = np.concatenate((obs, np.zeros(self.oracle.size)))
-        else:
-            self.oracle.reset()
         return obs
 
     def _predict(self, obs, info):
@@ -235,21 +238,22 @@ class oracle:
             recommend, _info = self.oracle.get_action(obs, info)
             info['oracle_input'] = recommend
             info['noop'] = not self.oracle.status.curr_intervention  # TODO: maintain compatibility with non status oracles
-        return np.concatenate((obs, info['oracle_input']))
-        # oin = np.zeros(3)
-        # targets = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
-        # if len(targets):
-        #     oin[targets[0]] = 1
-        # return np.concatenate((obs, oin))
+            info['nostart'] = not self.oracle.status.new_intervention
+        return np.concatenate((obs,info['oracle_input']))
 
 
 class high_dim_user:
     def __init__(self, master_env, config):
-        master_env.observation_space = spaces.Box(-np.inf, np.inf, (get_dim(master_env.observation_space) + 50,))
         self.env_name = master_env.env_name
-        self.random_projection = master_env.rng.normal(0, 10, (50, 50))
+        self.high_dim_size = 15 if self.env_name == 'OneSwitch' else 50
+        self.full_obs_size = get_dim(master_env.observation_space) + self.high_dim_size
+
+        master_env.observation_space = spaces.Box(-np.inf, np.inf,
+                                                  (get_dim(master_env.observation_space) + self.high_dim_size,))
+        self.random_projection = master_env.rng.normal(0, 10, (self.high_dim_size, self.high_dim_size))
         self.random_projection, *_ = np.linalg.qr(self.random_projection)
         self.apply_projection = config['apply_projection']
+
 
     def _step(self, obs, r, done, info):
         state_func = {
@@ -263,14 +267,22 @@ class high_dim_user:
             'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
                                               ['target_pos', 'target1_pos', 'bottle_pos', 'tool_pos', ]]),
         }[self.env_name]()
-        state_func = np.concatenate((state_func, np.zeros(50 - state_func.size)))
+        state_func = np.concatenate((state_func, np.zeros(self.high_dim_size - state_func.size)))
         if self.apply_projection:
             state_func = state_func @ self.random_projection
+
+        if obs.size >= self.full_obs_size:  # only true if trans from demo
+            obs = obs[self.high_dim_size:]
         obs = np.concatenate((state_func, obs))
+
         return obs, r, done, info
 
     def _reset(self, obs):
-        return np.concatenate((np.zeros(50), obs,))
+        # TODO: handle all cases properly
+        if obs.size >= self.full_obs_size:
+            obs = obs[self.high_dim_size:]
+        obs = np.concatenate((np.zeros(self.high_dim_size), obs))
+        return obs
 
 
 class burst:
@@ -334,11 +346,11 @@ class reward:
 
     def _step(self, obs, r, done, info):
         if self.reward_type == 'user_penalty':
-            r = 0
-            r -= self.input_penalty * (not info['noop'])
-            # if info['task_success']:
-            #     r = 1
-            r = np.clip(r, *self.range)
+            r = -1
+            # r -= self.input_penalty * (not info['nostart'])
+            if info['task_success']:
+                r = 0
+            # r = np.clip(r, *self.range)
         elif self.reward_type == 'custom':
             r = 0
             if not info['task_success']:
@@ -352,7 +364,6 @@ class reward:
             done = info['task_success']
         else:
             done = False
-
         return obs, r, done, info
 
     def _reset(self, obs):

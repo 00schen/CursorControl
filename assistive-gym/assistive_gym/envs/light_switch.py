@@ -198,7 +198,7 @@ class LightSwitchEnv(AssistiveEnv):
 	
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
-		init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
+		self.init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
 		# switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
 		# self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 

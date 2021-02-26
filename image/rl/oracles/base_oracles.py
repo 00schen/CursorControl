@@ -38,9 +38,8 @@ class UserModelOracle(Oracle):
         return action, {}
 
 class UserInputOracle(Oracle):
-    def __init__(self,env):
+    def __init__(self):
         super().__init__()
-        self.env = env
 
     def get_action(self,obs,info=None):
         user_info = self._query()

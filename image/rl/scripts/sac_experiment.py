@@ -12,7 +12,7 @@ from rl.policies import OverridePolicy,ComparisonMergePolicy
 from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import BCTrainer
+from rl.trainers import TorchBCTrainer
 
 import os
 from pathlib import Path
@@ -101,7 +101,7 @@ def experiment(variant):
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
 		from tqdm import tqdm
-		bc_trainer = BCTrainer(policy)
+		bc_trainer = TorchBCTrainer(policy)
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			for _ in range(10):
 				bc_batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
