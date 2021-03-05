@@ -17,8 +17,8 @@ from rlkit.torch.networks.mlp import (
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,
-    QfMlp,
-    QfGazeMlp,
+    QrMlp,
+    QrGazeMlp,
 )
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
 from rlkit.torch.networks.two_headed_mlp import TwoHeadMlp
@@ -48,8 +48,8 @@ __all__ = [
     'Split',
     'TwoHeadDCNN',
     'TwoHeadMlp',
-    'QfMlp',
-    'QfGazeMlp',
+    'QrMlp',
+    'QrGazeMlp',
     'VQGazePolicy',
     'VAEGazePolicy',
 ]

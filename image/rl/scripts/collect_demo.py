@@ -69,33 +69,36 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        from_pretrain=True,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_23_16_05_08_0000--s-0',
+        from_pretrain=False,
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_28_21_44_17_0000--s-0',
                                         'pretrain.pkl'),
         env_kwargs={'config': dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=False),
 
-            oracle='sim_gaze_model',
+            oracle='sim_gaze',
             oracle_kwargs={},
-            gaze_oracle_kwargs={'mode': 'rl',
-                                'gaze_demos_path': os.path.join(main_dir, 'demos',
-                                                                'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
-                                                                '1614124074734074185.npy')},
+            gaze_oracle_kwargs={'mode': 'il',
+                                # 'gaze_demos_path': os.path.join(main_dir, 'demos',
+                                #                                 'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
+                                #                                 '1614378227763030936.npy'),
+                                'synth_gaze': False,
+                                'per_step': True
+                                },
             input_in_obs=True,
             action_type='disc_traj',
             adapts=['high_dim_user'],
-            apply_projection=False
+            apply_projection=False,
         )},
         render=args.no_render and (not args.use_ray),
 
         on_policy=True,
         p=1,
-        num_episodes=1000,
+        num_episodes=100,
         path_length=path_length,
         save_name_suffix="all_" + args.suffix,
-        intervene=False
+        intervene=True
     )
     search_space = {
         'seedid': 1000,

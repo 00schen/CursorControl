@@ -222,10 +222,12 @@ class oracle:
             obs = self._predict(obs, info)
         else:
             self._predict(obs, info)
+        # obs[-self.oracle.size:] = self.curr_input
         return obs, r, done, info
 
     def _reset(self, obs):
         # TODO: handle all cases properly
+        # self.curr_input = None
         self.oracle.reset()
         if not self.input_in_obs and obs.size >= self.full_obs_size:
             obs = obs[:-self.oracle.size]
@@ -239,13 +241,15 @@ class oracle:
             info['oracle_input'] = recommend
             info['noop'] = not self.oracle.status.curr_intervention  # TODO: maintain compatibility with non status oracles
             info['nostart'] = not self.oracle.status.new_intervention
+        # if self.curr_input is None:
+        #     self.curr_input = info['oracle_input']
         return np.concatenate((obs,info['oracle_input']))
 
 
 class high_dim_user:
     def __init__(self, master_env, config):
         self.env_name = master_env.env_name
-        self.high_dim_size = 15 if self.env_name == 'OneSwitch' else 50
+        self.high_dim_size = 3 if self.env_name == 'OneSwitch' else 50
         self.full_obs_size = get_dim(master_env.observation_space) + self.high_dim_size
 
         master_env.observation_space = spaces.Box(-np.inf, np.inf,
@@ -257,8 +261,10 @@ class high_dim_user:
 
     def _step(self, obs, r, done, info):
         state_func = {
-            'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
-                                                 ['switch_pos', 'tool_pos']]),
+            # 'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
+            #                                      ['switch_pos', 'tool_pos']]),
+            'OneSwitch': lambda: np.concatenate([np.ravel(info[state_comp])
+                                                 for state_comp in ('tool_pos',)]),
             'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
                                                    ['lever_angle', 'target_string', 'current_string',
                                                     'switch_pos', 'aux_switch_pos', 'tool_pos', ]]),
@@ -270,11 +276,9 @@ class high_dim_user:
         state_func = np.concatenate((state_func, np.zeros(self.high_dim_size - state_func.size)))
         if self.apply_projection:
             state_func = state_func @ self.random_projection
-
         if obs.size >= self.full_obs_size:  # only true if trans from demo
             obs = obs[self.high_dim_size:]
         obs = np.concatenate((state_func, obs))
-
         return obs, r, done, info
 
     def _reset(self, obs):
@@ -350,7 +354,7 @@ class reward:
             # r -= self.input_penalty * (not info['nostart'])
             if info['task_success']:
                 r = 0
-            # r = np.clip(r, *self.range)
+            r = np.clip(r, *self.range)
         elif self.reward_type == 'custom':
             r = 0
             if not info['task_success']:

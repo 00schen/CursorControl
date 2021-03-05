@@ -343,7 +343,7 @@ class ParallelMlp(nn.Module):
         return flat.view(batch_size, -1, self.num_heads)
 
 
-class QfMlp(Mlp):
+class QrMlp(Mlp):
     def __init__(
             self,
             hidden_sizes,
@@ -386,7 +386,7 @@ class QfMlp(Mlp):
         return eval_np(self, input, return_preactivations=False)[1], {}
 
 
-class QfGazeMlp(QfMlp):
+class QrGazeMlp(QrMlp):
     def __init__(
             self,
             hidden_sizes,
@@ -418,7 +418,6 @@ class QfGazeMlp(QfMlp):
         gaze, h = input[..., -self.gaze_dim:], input[..., :-self.gaze_dim]
         latent = self.gaze_encoder(gaze)
         latent = latent[..., :self.latent_dim]
-
         h = torch.cat((latent, h), dim=-1)
 
         return super().forward(h, return_preactivations)

@@ -80,7 +80,9 @@ class QRDDQNCQLTrainer(DDQNCQLTrainer):
         min_qf_loss = min_qf_loss - curr_chosen_qvalues.mean()
         if self.add_ood_term < 0 or self._n_train_steps_total < self.add_ood_term:
             loss += min_qf_loss * self.min_q_weight
-
+            # loss -= curr_chosen_qvalues[batch_size:].mean()
+        # prob = th.nn.LogSoftmax(dim=-1)(curr_qvalues)
+        # loss = -th.mean(prob * batch['actions'])
         """
         Update Q networks
         """

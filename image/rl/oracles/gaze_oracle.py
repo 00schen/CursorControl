@@ -4,7 +4,7 @@ import torch
 import cv2
 from rl.gaze_capture.face_processor import FaceProcessor
 from rl.gaze_capture.ITrackerModel import ITrackerModel
-from .base_oracles import Oracle, OracleStatus
+from .base_oracles import Oracle
 from rlkit.util.io import load_local_or_remote_file
 import threading
 import random
@@ -48,14 +48,21 @@ class KeyboardOracle(Oracle):
 
 
 class SimGazeOracle(Oracle):
-    def __init__(self, mode='il', gaze_demos_path=None):
+    def __init__(self, mode='il', gaze_demos_path=None, synth_gaze=False, per_step=False):
         super().__init__()
         self.from_gaze_demos = gaze_demos_path is not None
+        self.synth_gaze = synth_gaze
+        self.per_step = per_step
+
         if self.from_gaze_demos:
             self.data = []
             gaze_demos = load_local_or_remote_file(gaze_demos_path)
             for path in gaze_demos:
                 self.data.append(path['env_infos'][0]['oracle_input'])
+            if self.synth_gaze:
+                data = np.array(self.data)
+                self.mean = np.mean(data, axis=0)
+                self.std = np.std(data, axis=0)
 
         else:
             data_path = {'il': 'image/rl/gaze_capture/gaze_data_il.h5',
@@ -69,7 +76,10 @@ class SimGazeOracle(Oracle):
 
     def get_gaze_input(self, info):
         if self.from_gaze_demos:
-            self.gaze_input = random.choice(self.data)
+            if self.synth_gaze:
+                self.gaze_input = np.maximum(np.random.normal(loc=self.mean, scale=self.std), 0)
+            else:
+                self.gaze_input = random.choice(self.data)
         else:
             target = np.where(info['target_string'] == 0)[0][0]
             self.gaze_input = random.choice(self.data[str(target)][()])
@@ -121,8 +131,8 @@ class RealGazeKeyboardOracle(KeyboardOracle):
 
 
 class SimGazeModelOracle(SimGazeOracle):
-    def __init__(self, base_oracle, mode='il', gaze_demos_path=None, thresh=1, inter_len=1, p=1):
-        super().__init__(mode=mode, gaze_demos_path=gaze_demos_path)
+    def __init__(self, base_oracle, mode='il', gaze_demos_path=None, per_step=False, thresh=1, inter_len=1, p=1):
+        super().__init__(mode=mode, gaze_demos_path=gaze_demos_path, per_step=per_step)
         self.base_oracle = base_oracle
         # self.thresh = thresh
         # self.count = 0
@@ -162,7 +172,7 @@ class SimGazeModelOracle(SimGazeOracle):
             self.status.new_intervention = False
             self.status.curr_intervention = False
 
-        if self.gaze_input is None:
+        if self.per_step or self.gaze_input is None:
             self.get_gaze_input(info)
 
         return self.gaze_input, user_info
@@ -177,9 +187,8 @@ class SimGazeModelOracle(SimGazeOracle):
 class SimGazeKeyboardOracle(KeyboardOracle, SimGazeOracle):
     def get_action(self, obs, info=None):
         self.set_action()
-        if self.gaze_input is None:
+        if self.per_step or self.gaze_input is None:
             self.get_gaze_input(info)
-
         return self.gaze_input, {}
 
     def reset(self):

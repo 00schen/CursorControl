@@ -50,7 +50,7 @@ def experiment(variant, logdir):
     path_loader = SimplePathLoader(
         demo_path=variant['demo_paths'],
         demo_path_proportion=variant['demo_path_proportions'],
-        replay_buffer=replay_buffer,
+        replay_buffers=[replay_buffer],
     )
     path_loader.load_demos()
 
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         ),
         demo_paths=[
             os.path.join(main_dir, "demos",
-                         "int_OneSwitch_sim_gaze_on_policy_100_all_debug_1614124074734074185.npy"),
+                         "int_OneSwitch_sim_gaze_on_policy_100_all_debug_1614650908910465344.npy"),
             # os.path.join(main_dir, "demos",
             #              f"100 BC_int_OneSwitch_gaze_on_policy_100_all_debug_1613210243133488598.npy"),
         ],
@@ -142,7 +142,7 @@ if __name__ == "__main__":
         env_kwargs={'config': dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
             oracle='sim_gaze_model',
             oracle_kwargs=dict(),
             gaze_oracle_kwargs={'mode': 'rl'},
