@@ -181,7 +181,7 @@ class oracle:
 	def __init__(self,master_env,config):
 		self.oracle_type = config['oracle']
 		self.input_in_obs = config.get('input_in_obs',False)
-		if self.oracle_type == 'model':
+		if 'model' in self.oracle_type:
 			self.oracle = master_env.oracle = {
 				"Feeding": StraightLineOracle,
 				"Laptop": LaptopOracle,
@@ -193,12 +193,25 @@ class oracle:
 				# "Circle": TracingOracle,
 				# "Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
+			if 'sim_gaze' in self.oracle_type:
+				self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
+																	 **config['gaze_oracle_kwargs'])
+			elif 'gaze' in self.oracle_type:
+				self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
 		else:
 			self.oracle = master_env.oracle = {
 				'keyboard': KeyboardOracle,
 				# 'mouse': MouseOracle,
+				'gaze': RealGazeKeyboardOracle,
+                'sim_gaze': SimGazeKeyboardOracle,
 			}[config['oracle']](master_env)
+			if config['oracle'] == 'sim_gaze':
+                self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
+            else:
+                self.oracle = master_env.oracle = oracle_type()
+
 		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
+		
 		if self.input_in_obs:
 			master_env.observation_space = spaces.Box(-np.inf,np.inf, (self.full_obs_size,))
 		self.master_env = master_env
@@ -224,8 +237,10 @@ class oracle:
 
 	def _predict(self,obs,info):
 		recommend,_info = self.oracle.get_action(obs,info)
+		info['oracle_input'] = recommend
 		self.master_env.recommend = info['recommend'] = recommend
-		info['noop'] = not np.count_nonzero(recommend)
+		info['noop'] = not self.oracle.status.curr_intervention
+		info['nostart'] = not self.oracle.status.new_intervention
 		return np.concatenate((obs,recommend))
 
 class high_dim_user:
@@ -265,7 +280,7 @@ class high_dim_user:
 						['slide_dist','microwave_angle','microwave_closed','item_placed','item_reached','og_item_poses','item_poses','target_poses','tool_pos',],
 					][self.state_type]]),
 		}[self.env_name]()
-		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
+		state_func = np.concatenate((state_func,np.zeros(self.high_dim_size-state_func.size)))
 		if self.apply_projection:
 			state_func = state_func @ self.random_projection
 		obs = np.concatenate((state_func,obs))

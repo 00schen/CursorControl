@@ -25,6 +25,9 @@ class BoltzmannPolicy(PyTorchModule):
 		with th.no_grad():
 			# _, q_values = self.qf(obs)
 			q_values = self.qf(obs)
+			# q_values = self.qf.get_action(obs)[0]
+			# q_values = th.from_numpy(q_values)
+			# # action = OneHotCategorical(probs=q_values).sample().flatten().detach()
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
 		return action.cpu().numpy(), {}
 

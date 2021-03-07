@@ -347,11 +347,11 @@ class ParallelMlp(nn.Module):
         return flat.view(batch_size, -1, self.num_heads)
 
 
-class QfMlp(PyTorchModule):
+class QrMlp(Mlp):
     def __init__(
             self,
             hidden_sizes,
-            output_size,
+            action_size,
             input_size,
             atom_size=200,
             init_w=3e-3,
@@ -361,51 +361,70 @@ class QfMlp(PyTorchModule):
             b_init_value=0.,
             layer_norm=False,
             layer_norm_kwargs=None,
+            reward_min=-1
     ):
-        super().__init__()
-
-        if layer_norm_kwargs is None:
-            layer_norm_kwargs = dict()
-
-        self.input_size = input_size
-        self.output_size = output_size
+        super().__init__(hidden_sizes=hidden_sizes, output_size=action_size * atom_size, input_size=input_size,
+                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                         layer_norm_kwargs=layer_norm_kwargs)
+        self.action_size = action_size
         self.atom_size = atom_size
-        self.hidden_activation = hidden_activation
-        self.output_activation = output_activation
-        self.layer_norm = layer_norm
-        self.fcs = []
-        self.layer_norms = []
-        in_size = input_size
-
-        for i, next_size in enumerate(hidden_sizes):
-            fc = nn.Linear(in_size, next_size)
-            in_size = next_size
-            hidden_init(fc.weight)
-            fc.bias.data.fill_(b_init_value)
-            self.__setattr__("fc{}".format(i), fc)
-            self.fcs.append(fc)
-
-            if self.layer_norm:
-                ln = LayerNorm(next_size)
-                self.__setattr__("layer_norm{}".format(i), ln)
-                self.layer_norms.append(ln)
-
-        self.last_fc = nn.Linear(in_size, self.output_size * self.atom_size)
-        self.last_fc.weight.data.uniform_(-init_w, init_w)
-        self.last_fc.bias.data.fill_(0)
+        self.reward_min = reward_min
 
     def forward(self, input, return_preactivations=False):
-        h = input
-        for i, fc in enumerate(self.fcs):
-            h = fc(h)
-            if self.layer_norm and i < len(self.fcs) - 1:
-                h = self.layer_norms[i](h)
-            h = self.hidden_activation(h)
-        preactivation = self.last_fc(h)
-        output = self.output_activation(preactivation)
-        logits = torch.reshape(output, [-1, self.output_size, self.atom_size])
-        q_values = torch.mean(logits, dim=2)
+        output = super().forward(input, return_preactivations)
+        preactivation = None
         if return_preactivations:
-            return logits, q_values, preactivation
-        else:
+            output, preactivation = output
+        output = self.reward_min * torch.sigmoid(output)
+        logits = torch.reshape(output, [-1, self.action_size, self.atom_size])
+        q_values = torch.mean(logits, dim=2)
+
+        if preactivation is None:
             return logits, q_values
+
+        else:
+            return logits, q_values, preactivation
+
+    def get_action(self, input):
+        return eval_np(self, input, return_preactivations=False)[1], {}
+
+
+class QrGazeMlp(QrMlp):
+    def __init__(
+            self,
+            hidden_sizes,
+            action_size,
+            input_size,
+            gaze_encoder,
+            atom_size=200,
+            init_w=3e-3,
+            hidden_activation=F.relu,
+            output_activation=identity,
+            hidden_init=ptu.fanin_init,
+            b_init_value=0.,
+            layer_norm=False,
+            layer_norm_kwargs=None,
+            gaze_dim=128,
+            embedding_dim=1,
+            reward_min=-1,
+    ):
+        super().__init__(hidden_sizes=hidden_sizes, action_size=action_size,
+                         input_size=input_size - gaze_dim + embedding_dim, atom_size=atom_size,
+                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                         layer_norm_kwargs=layer_norm_kwargs, reward_min=reward_min)
+        self.gaze_encoder = gaze_encoder
+        self.gaze_dim = gaze_dim
+        self.latent_dim = embedding_dim
+
+    def forward(self, input, return_preactivations=False):
+        gaze, h = input[..., -self.gaze_dim:], input[..., :-self.gaze_dim]
+        latent = self.gaze_encoder(gaze)
+        latent = latent[..., :self.latent_dim]
+        h = torch.cat((latent, h), dim=-1)
+
+        return super().forward(h, return_preactivations)
+
+    def get_action(self, input):
+        return eval_np(self, input, return_preactivations=False)[1], {}

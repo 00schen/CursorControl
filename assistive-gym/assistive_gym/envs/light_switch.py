@@ -12,8 +12,8 @@ HIGH_LIMIT = .2
 class LightSwitchEnv(AssistiveEnv):
 	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco', capture_frames=False, debug=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
-		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
+		# self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(8,), dtype=np.float32)
 		self.success_dist = success_dist
 		self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
 		# self.num_targets = 2*len(self.messages)
@@ -21,6 +21,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.switch_p = 1
 		self.capture_frames = capture_frames
 		self.debug = debug
+		self.stochastic = stochastic
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -157,7 +158,7 @@ class LightSwitchEnv(AssistiveEnv):
 		# switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
 		# robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 
-		robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
+		robot_obs = np.concatenate([tool_pos, tool_orient, forces]).ravel()
 		return robot_obs.ravel()
 
 	def reset(self):
@@ -171,6 +172,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.robot_upper_limits = self.robot_upper_limits[self.robot_left_arm_joint_indices]
 		self.reset_robot_joints()
 		wheelchair_pos, wheelchair_orient = p.getBasePositionAndOrientation(self.wheelchair, physicsClientId=self.id)
+		# p.resetBasePositionAndOrientation(self.wheelchair,np.array(wheelchair_pos) + [0, -0.1, 0], wheelchair_orient, physicsClientId=self.id)
+
 		p.resetBasePositionAndOrientation(self.robot, np.array(wheelchair_pos) + np.array([-0.35, -0.3, 0.3]), p.getQuaternionFromEuler([0, 0, -np.pi/2.0], physicsClientId=self.id), physicsClientId=self.id)
 		base_pos, base_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 		self.human_controllable_joint_indices = []
@@ -187,7 +190,7 @@ class LightSwitchEnv(AssistiveEnv):
 		p.setGravity(0, 0, 0, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
-		p.resetDebugVisualizerCamera(cameraDistance= .3, cameraYaw=180, cameraPitch=-10, cameraTargetPosition=[0, 0, 1.2], physicsClientId=self.id)
+		p.resetDebugVisualizerCamera(cameraDistance= .1, cameraYaw=180, cameraPitch=0, cameraTargetPosition=[0, -0.3, 1.2], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 		self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, 0, 1.2], .3, 180, -10, 0, 2)
 		fov = 60
@@ -195,12 +198,13 @@ class LightSwitchEnv(AssistiveEnv):
 		nearPlane = 0.01
 		farPlane = 100
 		self.projMatrix = p.computeProjectionMatrixFOV(fov,aspect,nearPlane,farPlane)
-
 		return self._get_obs([0])
 	
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
-		self.init_pos = np.array([-0.2, -.5, 1]) + self.np_random.uniform(-0.05, 0.05, size=3)
+		self.init_pos = np.array([0, -.5, 1])
+		if self.stochastic:
+			self.init_pos = self.init_pos + self.np_random.uniform(-0.05, 0.05, size=3)
 		# switch_pos, switch_orient = p.getBasePositionAndOrientation(self.switches[0], physicsClientId=self.id)
 		# self.init_pos, __ = p.multiplyTransforms(switch_pos, switch_orient, [0,.3,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 
@@ -222,8 +226,11 @@ class LightSwitchEnv(AssistiveEnv):
 		# Place a switch on a wall
 		# wall_index = self.target_index % 2
 		wall_index = 0
+		wall1 = np.array([0.,-1.,1.])
+		if self.stochastic:
+			wall1[1] = wall1[1] + self.np_random.uniform(-.1, .1)
 		walls = [
-			(np.array([0,-1.1,1]),[0,0,0,1]),
+			(wall1, [0,0,0,1]),
 			(np.array([.65,-.4,1]),p.getQuaternionFromEuler([0, 0, np.pi/2])),
 			# (np.array([-1.1,-.7,1]),p.getQuaternionFromEuler([0, 0, -np.pi/2])),
 			]
@@ -242,10 +249,12 @@ class LightSwitchEnv(AssistiveEnv):
 		self.initial_string = np.array([1,1,1])
 		self.current_string = self.initial_string.copy()
 		wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
-		switch_center = np.array([-.05-.15*(len(self.target_string)//2),.1,0])+np.array([.05,0,0])*self.np_random.uniform(-1,1,3)
+		switch_center = np.array([-.35*(len(self.target_string)//2),.1,0])
+		if self.stochastic:
+			switch_center = switch_center + [self.np_random.uniform(-.1, .1), 0, 0]
 		switch_scale = .075
 		self.switches = []
-		for increment,on_off in zip(np.linspace(np.zeros(3),[.15*(len(self.target_string)-1),0,0],num=len(self.target_string)),self.initial_string):
+		for increment,on_off in zip(np.linspace(np.zeros(3),[.35*(len(self.target_string)-1),0,0],num=len(self.target_string)),self.initial_string):
 			switch_pos,switch_orient = p.multiplyTransforms(wall_pos, wall_orient, switch_center+increment, p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 			switch = p.loadURDF(os.path.join(self.world_creation.directory, 'light_switch', 'switch.urdf'),
 								basePosition=switch_pos, useFixedBase=True, baseOrientation=switch_orient,\
@@ -255,9 +264,9 @@ class LightSwitchEnv(AssistiveEnv):
 			p.setCollisionFilterPair(switch, self.wall, 0, -1, 0, physicsClientId=self.id)
 			p.setCollisionFilterPair(switch, self.wall, -1, -1, 0, physicsClientId=self.id)
 			if not on_off:
-				p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT+.099, physicsClientId=self.id)
+				p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
 			else:
-				p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT-.099, physicsClientId=self.id)
+				p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)

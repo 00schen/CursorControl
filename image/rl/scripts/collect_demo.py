@@ -8,11 +8,13 @@ import os
 from pathlib import Path
 import argparse
 import numpy as np
-import torch.optim as optim
+import rlkit.torch.pytorch_util as ptu
 from copy import deepcopy
 
 import torch as th
 from types import MethodType
+
+
 def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+100)
