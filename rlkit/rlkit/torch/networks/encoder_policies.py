@@ -104,7 +104,7 @@ class VAEGazePolicy(nn.Module):
         obs, gaze = x[..., :-self.gaze_dim], x[..., -self.gaze_dim:]
         latent = self.encoder(gaze)
         mean, logvar = latent[..., :self.embedding_dim], latent[..., self.embedding_dim:]
-        sample = mean + logvar * eps
+        sample = mean + torch.exp(0.5 * logvar) * eps
         obs = torch.cat((obs, sample), dim=-1)
         pred = self.decoder(obs)
         kl_loss = -0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar))
