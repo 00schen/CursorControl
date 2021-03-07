@@ -107,7 +107,7 @@ class Logger(object):
         self._header_printed = False
         self.table_printer = TerminalTablePrinter()
 
-        self._use_tensorboard = False
+        # self._use_tensorboard = False
         self.epoch = 0
     def reset(self):
         self.__init__()
@@ -133,9 +133,10 @@ class Logger(object):
                          mode='a')
 
     def add_tensorboard_output(self, file_name):
-        import tensorboard_logger
-        self._use_tensorboard = True
-        self.tensorboard_logger = tensorboard_logger.Logger(file_name)
+        # import tensorboard_logger
+        # self._use_tensorboard = True
+        # self.tensorboard_logger = tensorboard_logger.Logger(file_name)
+        pass
 
     def remove_text_output(self, file_name):
         self._remove_output(file_name, self._text_outputs, self._text_fds)
@@ -196,8 +197,8 @@ class Logger(object):
 
     def record_tabular(self, key, val):
         self._tabular.append((self._tabular_prefix_str + str(key), str(val)))
-        if self._use_tensorboard:
-            self.tensorboard_logger.log_value(self._tabular_prefix_str + str(key), val, self.epoch)
+        # if self._use_tensorboard:
+        #     self.tensorboard_logger.log_value(self._tabular_prefix_str + str(key), val, self.epoch)
 
     def record_dict(self, d, prefix=None):
         if prefix is not None:

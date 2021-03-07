@@ -8,11 +8,12 @@ from .env import AssistiveEnv
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False):
+	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.num_targets = 4
 		self.success_dist = success_dist
+		self.debug = debug
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -30,6 +31,8 @@ class BottleEnv(AssistiveEnv):
 		task_success = norm(self.target1_pos-self.target_pos) < self.success_dist*2
 		self.task_success = task_success
 		obs = self._get_obs([0])
+		if self.debug:
+			self.task_success = task_success = self.target1_reached
 
 		dist_reward = norm(self.tool_pos-self.target1_pos)
 		dist1_reward = norm(self.target1_pos-self.target_pos)
@@ -45,8 +48,8 @@ class BottleEnv(AssistiveEnv):
 			'shelf_pos': self.shelf_pos,
 			'tool_pos': self.tool_pos,
 			'bottle_pos': self.target1_pos.copy(),
-			'target1_pos': self.og_target1_pos,
-			'target_pos': self.target_pos,
+			'target1_pos': self.og_target1_pos.copy(),
+			'target_pos': self.target_pos.copy(),
 			'target1_reached': self.target1_reached,
 		}
 		done = False

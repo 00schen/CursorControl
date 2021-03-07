@@ -5,12 +5,13 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy
-from rl.path_collectors import FullPathCollector, CustomPathCollector
+from rl.path_collectors import FullPathCollector, CustomPathCollector, rollout
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer
 from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.misc.reward_ensemble import RewardEnsemble
 
 import os
 from pathlib import Path
@@ -29,8 +30,10 @@ def experiment(variant):
 	obs_dim = env.observation_space.low.size
 	action_dim = env.action_space.low.size
 	M = variant["layer_size"]
-	upper_q = variant['env_kwargs']['config']['reward_max']*variant['env_kwargs']['config']['step_limit']
-	lower_q = variant['env_kwargs']['config']['reward_min']*variant['env_kwargs']['config']['step_limit']
+	# upper_q = variant['env_kwargs']['config']['reward_max']*variant['env_kwargs']['config']['step_limit']
+	# lower_q = variant['env_kwargs']['config']['reward_min']*variant['env_kwargs']['config']['step_limit']
+	upper_q = 0
+	lower_q = -500
 	qf = Mlp(
 		input_size=obs_dim,
 		output_size=action_dim,
@@ -49,7 +52,8 @@ def experiment(variant):
 		# output_activation=Clamp(max=0, min=-5e3),
 		output_activation=Clamp(max=upper_q, min=lower_q),
 	)
-	rf = th.load(variant['rf_path'],map_location=ptu.device)['trainer/rf']
+	rf = RewardEnsemble(variant['rf_path'])
+	# rf = th.load(variant['rf_path'],map_location=ptu.device)['trainer/rf']
 	eval_policy = ArgmaxPolicy(
 		qf,
 	)
@@ -74,7 +78,8 @@ def experiment(variant):
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
-		save_env_in_snapshot=False
+		save_env_in_snapshot=False,
+		# rollout_fn=rollout,
 	)
 	trainer = DDQNCQLTrainer(
 		qf=qf,
@@ -85,8 +90,9 @@ def experiment(variant):
 	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		target_name='noop',
+		target_name='task_success',
 		false_prop=variant['false_prop'],
+		env_info_sizes={'task_success':1},
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -171,8 +177,8 @@ if __name__ == "__main__":
 	path_length = 200
 	num_epochs = int(10)
 	variant = dict(
-		layer_size=256,
-		rf_path=os.path.join(main_dir, 'logs', 'test-b-reward-2', 'test-b-reward-2_2021_02_05_11_59_40_0000--s-0', 'params.pkl'),
+		layer_size=128,
+		rf_path=os.path.join(main_dir, 'logs', 'test-b-reward-1'),
 		exploration_argmax=True,
 		exploration_strategy='',
 		expl_kwargs=dict(
@@ -192,8 +198,8 @@ if __name__ == "__main__":
 
 			# temp=1.0,
 			# min_q_weight=1.0,
-			ground_truth=False,
-			target_name='terminals',
+			# ground_truth=False,
+			target_name='noop',
 			add_ood_term=-1,
 		),
 		# algorithm_args=dict(
@@ -206,35 +212,33 @@ if __name__ == "__main__":
 		# 	num_trains_per_train_loop=5,
 		# ),
 		algorithm_args=dict(
-			batch_size=128,
+			batch_size=256,
 			max_path_length=path_length,
 			num_epochs=int(3e4),
 			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=0,
-			collect_new_paths=False,
+			collect_new_paths=True,
 			num_trains_per_train_loop=100,
 		),
 
 		load_demos=True,
 		demo_paths=[
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_noisy_9500_success.npy"),
-					os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_1000_all1.npy"),
-					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.7_eps_.5_1.npy"),
-					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_10000_p_.6_eps_.5_1.npy"),
-					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_success_1.npy"),
-					# os.path.join(main_dir, "demos", f"{args.env_name}_model_off_policy_4000_fail_1.npy"),
+					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_15000_model1.npy"),
+					# os.path.join(main_dir, "demos", f"Bottle_model_noisy_9500_success.npy"),
+					os.path.join(main_dir, "demos", f"Kitchen_keyboard_on_policy_1_model.npy"),
 					],
 		pretrain_rf=False,
 		pretrain=False,
 
 		env_kwargs={'config':dict(
-			env_name=args.env_name,
+			# env_name=args.env_name,
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03, frame_skip=5),
-			# env_kwargs=dict(path_length=path_length, frame_skip=5),
+			env_kwargs=dict(success_dist=.03, frame_skip=5,),
 
 			oracle='model',
-			oracle_kwargs=dict(),
+			oracle_kwargs=dict(
+				threshold=.5
+			),
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
@@ -246,19 +250,27 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			reward_type='user_penalty',
+			reward_type='kitchen',
 		)},
+
+		logprob=False,
 	)
 	search_space = {
-		'seedid': [2000, 2001, 2002],
+		'seedid': [2000,2001],
 
+		'trainer_kwargs.ground_truth': [True,],
 		'trainer_kwargs.temp': [1],
 		'trainer_kwargs.min_q_weight': [1],
-		'env_kwargs.config.oracle_kwargs.threshold': [.5],
-		'env_kwargs.config.state_type': [0],
+		'trainer_kwargs.reward_bias': [.5],
+		'env_kwargs.config.state_type': [1],
+		'env_kwargs.config.env_kwargs.debug': [False],
+		'env_kwargs.config.env_name': ['Kitchen'],
+		# 'env_kwargs.config.env_name': ['OneSwitch'],
 
-		'demo_path_proportions':[[int(9e3), 1000], ],
-		'false_prop': [.5,],
+		'demo_path_proportions':[[int(5.5e3),int(1e4)], ],
+		# 'demo_path_proportions':[[int(1.5e4)], ],
+		# 'demo_path_proportions':[[10], ],
+		'false_prop': [.9],
 		'trainer_kwargs.qf_lr': [1e-5],
 	}
 
@@ -270,6 +282,10 @@ if __name__ == "__main__":
 		variants.append(variant)
 
 	def process_args(variant):
+		# variant['demo_paths'] = {
+		# 	'Bottle': [variant['demo_paths'][0]],
+		# 	'OneSwitch': [variant['demo_paths'][1]],
+		# }[variant['env_kwargs']['config']['env_name']]
 		variant['trainer_kwargs']['learning_rate'] = variant['trainer_kwargs'].pop('qf_lr')
 		variant['qf_lr'] = variant['trainer_kwargs']['learning_rate']
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']

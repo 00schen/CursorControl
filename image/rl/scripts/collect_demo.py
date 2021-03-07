@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, UserInputPolicy, BoltzmannPolicy
+from rl.policies import DemonstrationPolicy, UserInputPolicy, ArgmaxPolicy,FollowerPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -18,15 +18,15 @@ def collect_demonstrations(variant):
 	env.seed(variant['seedid']+100)
 
 	# file_name = os.path.join(variant['eval_path'])
-	# policy = BoltzmannPolicy(
-	# 	qf1=th.load(file_name,map_location=th.device("cpu"))['trainer/policy'],
-	# 	logit_scale=1e4,
+	# policy = ArgmaxPolicy(
+	# 	qf=th.load(file_name,map_location=th.device("cpu"))['trainer/qf'],
 	# )
+
+	policy = FollowerPolicy(env)
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(env,p=variant['p']),
-		# policy,
+		DemonstrationPolicy(policy,env,p=variant['p']),
 	)
 
 	if variant.get('render',False):
@@ -37,58 +37,62 @@ def collect_demonstrations(variant):
 		target_index = 0
 		while target_index < env.base_env.num_targets:
 			def set_target_index(self):
-				self.target_index = target_index
+				self.target_index = 1
 			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
 			collected_paths = path_collector.collect_new_paths(
 				variant['path_length'],
 				variant['path_length'],
 			)
-			success_found = False
+			# success_found = False
 			for path in collected_paths:
 				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
-				if True:
-					paths.append(path)
-					success_found = True
-			if success_found:
-				target_index += 1
-			print("total paths collected: ", len(paths))
+				paths.append(path)
+				success_count += path['env_infos'][-1]['task_success']
+			# if success_found:
+			target_index += 1
+			print("total paths collected: ", len(paths), "successes: ", success_count)
 	return paths
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name',)
-	parser.add_argument('--suffix', default='debug')
 	parser.add_argument('--no_render', action='store_false')
 	parser.add_argument('--use_ray', action='store_true')
 	args, _ = parser.parse_known_args()
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
+	path_length = 1200
 	variant = dict(
 		seedid=1000,
-		eval_path=os.path.join(main_dir,'logs','test-b-dagger','test_b_ground_truth_offline_3_2021_01_22_16_10_53_0000--s-0','params.pkl'),
+		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name=args.env_name,
+			env_name='Kitchen',
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03,frame_skip=5),
-			oracle='model',
+			env_kwargs=dict(success_dist=.03,frame_skip=5,),
+			oracle='keyboard',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
-			input_in_obs=True,
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
 			adapts = [],
+			# adapts = ['high_dim_user','reward'],
+			state_type=0,
+			apply_projection=False,
+			reward_max=0,
+			reward_min=-1,
+			input_penalty=1,
+			reward_type='sparse',
 		)},
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.9,
-		num_episodes=int(1000),
+		p=.99,
+		num_episodes=1,
 		path_length=path_length,
-		save_name_suffix="all"+args.suffix
+		save_name_suffix="model"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
@@ -98,7 +102,7 @@ if __name__ == "__main__":
 
 	def process_args(variant):
 		variant['env_kwargs']['config']['seedid'] = variant['seedid']
-		variant['save_name'] = f"{args.env_name}_{variant['env_kwargs']['config']['oracle']}"\
+		variant['save_name'] = f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}"\
 								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}"\
 								+ "_" + variant['save_name_suffix']
 
@@ -123,7 +127,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 5
+		num_workers = 20
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]
@@ -137,6 +141,4 @@ if __name__ == "__main__":
 		variant['seedid'] = current_time
 		process_args(variant)
 		paths = collect_demonstrations(variant)
-		variant['save_name'] = f"{args.env_name}_{variant['env_kwargs']['config']['oracle']}"\
-								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{len(paths)}"
 		np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)

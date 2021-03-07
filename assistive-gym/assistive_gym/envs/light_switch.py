@@ -10,7 +10,7 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',capture_frames=False):
+	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco', capture_frames=False, debug=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(18,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
@@ -20,6 +20,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.num_targets = 3
 		self.switch_p = 1
 		self.capture_frames = capture_frames
+		self.debug = debug
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -33,15 +34,16 @@ class LightSwitchEnv(AssistiveEnv):
 			angle_dirs[i],angle_diff = self.move_lever(switch)
 
 			### Debugging: auto flip switch ###
-			# tool_pos1 = np.array(p.getLinkState(self.tool, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-			# if (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1)\
-			# 	or (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1):
-			# 	# for switch1 in self.switches:
-			# 	if self.target_string[i] == 0:
-			# 		p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
-			# 	else:
-			# 		p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
-			# 	self.update_targets()
+			if self.debug:
+				tool_pos1 = np.array(p.getLinkState(self.tool, 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
+				if (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1)\
+					or (norm(self.tool_pos-self.target_pos1[i]) < .07 or norm(tool_pos1-self.target_pos1[i]) < .1):
+					# for switch1 in self.switches:
+					if self.target_string[i] == 0:
+						p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
+					else:
+						p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
+					self.update_targets()
 
 			lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
 			lever_angles.append(lever_angle)

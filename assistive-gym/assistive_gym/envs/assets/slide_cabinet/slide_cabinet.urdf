@@ -1,0 +1,150 @@
+<?xml version="1.0" ?>
+<robot name="slide_cabinet.urdf">
+  <material name="Caramel">
+    <color rgba=".95 .8 .54 1"/>
+  </material>
+  <material name="White">
+    <color rgba=".9 .9 .9 1"/>
+  </material>
+  <material name="Navy Blue">
+    <color rgba="0 0 .3 1"/>
+  </material>
+  <link name="base_link">
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value=".0"/>
+      <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz=".25 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz=".25 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin rpy="0 0 0" xyz="-.25 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-.25 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 .19"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 .19"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+    </collision>
+
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 -.19"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -.19"/>
+      <geometry>
+				<box size=".5 .25 .02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="door_link">
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value=".0"/>
+      <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 .13 0"/>
+      <geometry>
+				<box size=".5 .02 .4"/>
+      </geometry>
+      <material name="White"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 .13 0"/>
+      <geometry>
+				<box size=".5 .02 .4"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="handle_link">
+    <contact>
+      <lateral_friction value="1.0"/>
+    </contact>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value=".0"/>
+      <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="-.2 .145 0"/>
+      <geometry>
+				<box size=".02 .07 .1"/>
+      </geometry>
+      <material name="Navy Blue"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-.2 .145 0"/>
+      <geometry>
+				<box size=".02 .07 .1"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="slide" type="prismatic">
+    <parent link="base_link"/>
+    <child link="door_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="0" upper=".5" effort=".01" velocity="100"/>
+  </joint>
+  <joint name="handle" type="fixed">
+    <parent link="door_link"/>
+    <child link="handle_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+</robot>

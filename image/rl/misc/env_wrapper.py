@@ -72,6 +72,7 @@ class LibraryWrapper(Env):
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
+		info['raw_obs'] = obs
 
 		if self.env_name in ['Circle', 'Sin']:
 			self.timesteps += 1
@@ -203,9 +204,10 @@ class oracle:
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
-		if not self.input_in_obs and obs.size == self.full_obs_size: # only true if trans from demo
-			obs = obs[:-self.oracle.size]
-		elif obs.size < self.full_obs_size and self.input_in_obs: # not 'model' case is depricated in this code
+		# obs = info['raw_obs']
+		if not self.input_in_obs and obs.size > self.full_obs_size-self.oracle.size: # only true if trans from demo
+			obs = obs[-(self.full_obs_size-self.oracle.size):]
+		if obs.size < self.full_obs_size and self.input_in_obs: # not 'model' case is depricated in this code
 			obs = self._predict(obs,info)
 		else:
 			self._predict(obs,info)
@@ -214,8 +216,8 @@ class oracle:
 	def _reset(self,obs):
 		self.oracle.reset()
 		self.master_env.recommend = np.zeros(self.oracle.size)
-		if not self.input_in_obs and obs.size == self.full_obs_size:
-			obs = obs[:-self.oracle.size]
+		if not self.input_in_obs and obs.size > self.full_obs_size-self.oracle.size:
+			obs = obs[-(self.full_obs_size-self.oracle.size):]
 		elif obs.size < self.full_obs_size and self.input_in_obs:
 			obs = np.concatenate((obs,self.master_env.recommend))
 		return obs
@@ -240,7 +242,6 @@ class high_dim_user:
 	def _step(self,obs,r,done,info):
 		state_func = {
 			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
-					['tool_pos'],
 					['switch_pos','tool_pos',],
 					['aux_switch_pos','tool_pos',],
 					['lever_angle','switch_pos','tool_pos',],
@@ -253,9 +254,15 @@ class high_dim_user:
 			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
 					['target_pos','lid_pos','tool_pos','lever_angle',]]),
 			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
+						['bottle_pos','tool_pos',],
+						['target1_reached','bottle_pos','tool_pos'],
 						['target1_pos','bottle_pos','tool_pos',],
 						['target_pos','target1_pos','bottle_pos','tool_pos',],
 						['aux_target_pos','target_pos','target1_pos','bottle_pos','tool_pos',],
+						# ['cos_error','aux_target_pos','target_pos','target1_pos','bottle_pos','tool_pos',],
+					][self.state_type]]),
+			'Kitchen': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
+						['slide_dist','microwave_angle','microwave_closed','item_placed','item_reached','og_item_poses','item_poses','target_poses','tool_pos',],
 					][self.state_type]]),
 		}[self.env_name]()
 		state_func = np.concatenate((state_func,np.zeros(50-state_func.size)))
@@ -332,20 +339,31 @@ class reward:
 			r -= self.input_penalty * (not info['noop'])
 			# if info['task_success']:
 			#     r = 1
-			r = np.clip(r, *self.range)
+			done = info['task_success']
 		elif self.reward_type == 'custom':
 			r = 0
 			if not info['task_success']:
 				target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
 				target_pos = np.array(info['switch_pos'])[target_indices[0]]
 				r += -1 + (norm(info['old_tool_pos'] - target_pos) - norm(info['tool_pos'] - target_pos))
-		else:
+				# done = done
+		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
-
-		if self.range[1] <= 0:
+			done = info['task_success']
+		elif self.reward_type == 'part_sparse':
+			r = -1 + .5*(info['task_success']+info['target1_reached'])
+			done = info['task_success']
+		elif self.reward_type == 'terminal_interrupt':
+			r = info['noop']
+			# done = info['noop']
+			done = info['task_success']
+		elif self.reward_type == 'kitchen':
+			r = -1 + sum(info['item_placed']+info['item_reached']+[info['microwave_closed']])/len(info['item_placed']+info['item_reached']+[1])
 			done = info['task_success']
 		else:
-			done = False
+			error
+
+		r = np.clip(r, *self.range)
 
 		return obs, r, done, info
 
