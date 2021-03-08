@@ -69,7 +69,7 @@ if __name__ == "__main__":
 		seedid=1000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Kitchen',
+			env_name='Bottle',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,),
 			oracle='keyboard',

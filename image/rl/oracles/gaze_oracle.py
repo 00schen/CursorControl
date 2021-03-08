@@ -2,17 +2,10 @@ import pybullet as p
 import numpy as np
 import torch
 import cv2
-<<<<<<< HEAD
-# from rl.gaze_capture.face_processor import FaceProcessor
-# from rl.gaze_capture.ITrackerModel import ITrackerModel
-from .base_oracles import Oracle, OracleStatus
-from .three_switch_oracle import ThreeSwitchOracle
-=======
 from rl.gaze_capture.face_processor import FaceProcessor
 from rl.gaze_capture.ITrackerModel import ITrackerModel
 from .base_oracles import Oracle
 from rlkit.util.io import load_local_or_remote_file
->>>>>>> 83be95668807e149b280207a6b75a1a3310064db
 import threading
 import random
 import h5py

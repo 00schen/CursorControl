@@ -10,7 +10,7 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco', capture_frames=False, debug=False):
+	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco', capture_frames=False, stochastic=True, debug=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		# self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(8,), dtype=np.float32)

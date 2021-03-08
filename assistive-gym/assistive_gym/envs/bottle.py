@@ -8,12 +8,13 @@ from .env import AssistiveEnv
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False, debug=False):
+	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
-		self.num_targets = 4
+		self.num_targets = 4*2
 		self.success_dist = success_dist
 		self.debug = debug
+		self.stochastic = stochastic
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -58,7 +59,6 @@ class BottleEnv(AssistiveEnv):
 
 	def _get_obs(self, forces):
 		torso_pos = np.array(p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-		# state = p.getLinkState(self.tool, -1, computeForwardKinematics=True, physicsClientId=self.id)
 		state = p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)
 		tool_pos = np.array(state[0])
 		tool_orient = np.array(state[1]) # Quaternions
@@ -66,7 +66,8 @@ class BottleEnv(AssistiveEnv):
 		robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 		robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
-		robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
+		robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
+		# robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
 		return robot_obs.ravel()
 
 	def reset(self):
@@ -125,7 +126,9 @@ class BottleEnv(AssistiveEnv):
 
 	def init_start_pos(self):
 		"""exchange this function for curriculum"""
-		self.init_pos = np.array([0,-.5,1])+self.np_random.uniform([-0.1,-0.1,0], [0.1,0.1,0], size=3)
+		self.init_pos = np.array([0,-.5,1])
+		if self.stochastic:
+			self.init_pos += self.np_random.uniform([-0.1,-0.1,0], [0.1,0.1,0], size=3)
 
 	def init_robot_arm(self):
 		self.init_start_pos()
@@ -147,14 +150,15 @@ class BottleEnv(AssistiveEnv):
 			for i in range(-1,2):
 				p.setCollisionFilterPair(bottle, self.tool, -1, i, 0, physicsClientId=self.id)
 
-		target1_pos = self.target1_pos = self.bottle_pos[self.target_index]
+		target1_pos = self.target1_pos = self.bottle_pos[self.target_index//2]
 		self.og_target1_pos = self.target1_pos.copy()
 		self.target1_reached = False
-		target_pos = self.target_pos = self.register_pos + np.array([.2,.2,.05])
+		target_pos = self.target_pos = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([0,0,1])][self.target_index%2] # get top of shelf
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
 		self.target1 = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target1_pos, useMaximalCoordinates=False, physicsClientId=self.id)
 		self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos, useMaximalCoordinates=False, physicsClientId=self.id)
+		p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=self.shelf_pos + np.array([0,0,1]), useMaximalCoordinates=False, physicsClientId=self.id)
 
 		self.update_targets()
 

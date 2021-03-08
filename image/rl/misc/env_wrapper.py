@@ -26,7 +26,6 @@ def default_overhead(config):
 			self.rng = default_rng(config['seedid'])
 			super().__init__(config)
 			adapt_map = {
-				'burst': burst,
 				'high_dim_user': high_dim_user,
 				'stack': stack,
 				'reward': reward,
@@ -54,38 +53,26 @@ def default_overhead(config):
 class LibraryWrapper(Env):
 	def __init__(self, config):
 		self.env_name = config['env_name']
-
-		self.base_env, self.env_name = {
-			"Feeding": (ag.FeedingJacoEnv, 'Feeding'),
-			"Laptop": (ag.LaptopJacoEnv, 'Laptop'),
-			"OneSwitch": (ag.OneSwitchJacoEnv, 'OneSwitch'),
-			"ThreeSwitch": (ag.ThreeSwitchJacoEnv, 'ThreeSwitch'),
-			"Bottle": (ag.BottleJacoEnv, 'Bottle'),
-			"Kitchen": (ag.KitchenJacoEnv, 'Kitchen'),
-			# "Circle": (ag.CircleJacoEnv, 'Circle'),
-			# "Sin": (ag.SinJacoEnv, 'Sin'),
+		self.base_env = {
+			"Feeding": ag.FeedingJacoEnv,
+			"Laptop": ag.LaptopJacoEnv,
+			"OneSwitch": ag.OneSwitchJacoEnv,
+			"ThreeSwitch": ag.ThreeSwitchJacoEnv,
+			"Bottle": ag.BottleJacoEnv,
+			"Kitchen": ag.KitchenJacoEnv,
 		}[config['env_name']]
 		self.base_env = self.base_env(**config['env_kwargs'])
 		self.observation_space = self.base_env.observation_space
 		self.action_space = self.base_env.action_space
-		self.step_limit = config['step_limit']
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
 		info['raw_obs'] = obs
-
-		if self.env_name in ['Circle', 'Sin']:
-			self.timesteps += 1
-			info['frachet'] = self.base_env.discrete_frachet / self.timesteps
-			info['task_success'] = self.timesteps >= self.step_limit and info['fraction_t'] >= .8
-
 		done = info['task_success']
-		# info['target_pos'] = self.base_env.target_pos
 		return obs, r, done, info
 
 	def reset(self):
 		obs = self.base_env.reset()
-		self.timesteps = 0
 		return obs
 
 	def render(self, mode=None, **kwargs):
@@ -167,8 +154,6 @@ def action_factory(base):
 			action, ainfo = self.translate(action)
 			obs, r, done, info = super().step(action)
 			info.update(ainfo)
-			if self.action_type in ['target']:
-				info['pred_target_dist'] = norm(action - self.base_env.target_pos)
 			return obs, r, done, info
 
 		def reset(self):
@@ -180,7 +165,6 @@ def action_factory(base):
 class oracle:
 	def __init__(self,master_env,config):
 		self.oracle_type = config['oracle']
-		self.input_in_obs = config.get('input_in_obs',False)
 		if 'model' in self.oracle_type:
 			self.oracle = master_env.oracle = {
 				"Feeding": StraightLineOracle,
@@ -189,9 +173,6 @@ class oracle:
 				"ThreeSwitch": ThreeSwitchOracle,
 				"Bottle": BottleOracle,
 				"Kitchen": StraightLineOracle,
-
-				# "Circle": TracingOracle,
-				# "Sin": TracingOracle,
 			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
 			if 'sim_gaze' in self.oracle_type:
 				self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
@@ -201,26 +182,26 @@ class oracle:
 		else:
 			self.oracle = master_env.oracle = {
 				'keyboard': KeyboardOracle,
-				# 'mouse': MouseOracle,
 				'gaze': RealGazeKeyboardOracle,
-                'sim_gaze': SimGazeKeyboardOracle,
+				'sim_gaze': SimGazeKeyboardOracle,
 			}[config['oracle']](master_env)
-			if config['oracle'] == 'sim_gaze':
-                self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
-            else:
-                self.oracle = master_env.oracle = oracle_type()
+			if config['oracle'] == 'sim_gaze': #TODO: look at how oracke works (why oracle_type)
+				self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
+			else:
+				self.oracle = master_env.oracle = oracle_type()
 
 		self.full_obs_size = get_dim(master_env.observation_space)+self.oracle.size
-		
+		self.input_in_obs = config.get('input_in_obs',False)
 		if self.input_in_obs:
 			master_env.observation_space = spaces.Box(-np.inf,np.inf, (self.full_obs_size,))
 		self.master_env = master_env
 
 	def _step(self,obs,r,done,info):
 		# obs = info['raw_obs']
+		##### obs = [--raw observation--, --oracle recommendation--] #####
 		if not self.input_in_obs and obs.size > self.full_obs_size-self.oracle.size: # only true if trans from demo
-			obs = obs[-(self.full_obs_size-self.oracle.size):]
-		if obs.size < self.full_obs_size and self.input_in_obs: # not 'model' case is depricated in this code
+			obs = obs[:-self.oracle.size]
+		if self.input_in_obs and obs.size < self.full_obs_size: # not 'model' case is depricated in this code
 			obs = self._predict(obs,info)
 		else:
 			self._predict(obs,info)
@@ -229,18 +210,17 @@ class oracle:
 	def _reset(self,obs):
 		self.oracle.reset()
 		self.master_env.recommend = np.zeros(self.oracle.size)
+		##### obs = [--raw observation--, --oracle recommendation--] #####
 		if not self.input_in_obs and obs.size > self.full_obs_size-self.oracle.size:
-			obs = obs[-(self.full_obs_size-self.oracle.size):]
-		elif obs.size < self.full_obs_size and self.input_in_obs:
+			obs = obs[:-self.oracle.size]
+		if self.input_in_obs and obs.size < self.full_obs_size:
 			obs = np.concatenate((obs,self.master_env.recommend))
 		return obs
 
 	def _predict(self,obs,info):
 		recommend,_info = self.oracle.get_action(obs,info)
-		info['oracle_input'] = recommend
 		self.master_env.recommend = info['recommend'] = recommend
 		info['noop'] = not self.oracle.status.curr_intervention
-		info['nostart'] = not self.oracle.status.new_intervention
 		return np.concatenate((obs,recommend))
 
 class high_dim_user:
@@ -288,28 +268,6 @@ class high_dim_user:
 
 	def _reset(self,obs):
 		return np.concatenate((np.zeros(50),obs,))
-
-class burst:
-	""" Remove user input from observation and reward if input is in bursts
-		Burst defined as inputs separated by no more than 'space' steps """
-
-	def __init__(self, master_env, config):
-		self.space = config['space'] + 2
-		self.master_env = master_env
-
-	def _step(self, obs, r, done, info):
-		oracle_size = self.master_env.oracle.size
-		if np.count_nonzero(obs[-oracle_size:]):
-			if self.timer < self.space:
-				obs[-oracle_size:] = np.zeros(6)
-			self.timer = 0
-		self.timer += 1
-		return obs, r, done, info
-
-	def _reset(self, obs):
-		self.timer = self.space
-		obs, _r, _d, _i = self._step(obs, 0, False, {})
-		return obs
 
 
 class stack:
