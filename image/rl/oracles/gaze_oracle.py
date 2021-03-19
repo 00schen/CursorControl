@@ -48,7 +48,7 @@ class KeyboardOracle(Oracle):
 
 
 class SimGazeOracle(Oracle):
-    def __init__(self, mode='il', gaze_demos_path=None, synth_gaze=False, per_step=False):
+    def __init__(self, mode='train', gaze_demos_path=None, synth_gaze=False, per_step=False):
         super().__init__()
         self.from_gaze_demos = gaze_demos_path is not None
         self.synth_gaze = synth_gaze
@@ -65,9 +65,8 @@ class SimGazeOracle(Oracle):
                 self.std = np.std(data, axis=0)
 
         else:
-            data_path = {'il': 'image/rl/gaze_capture/gaze_data_il.h5',
-                         'int': 'image/rl/gaze_capture/gaze_data_int.h5',
-                         'rl': 'image/rl/gaze_capture/gaze_data_rl.h5'}[mode]
+            data_path = {'train': 'image/rl/gaze_capture/gaze_data_train.h5',
+                         'eval': 'image/rl/gaze_capture/gaze_data_eval.h5'}[mode]
 
             self.data = h5py.File(data_path, 'r')
 
@@ -108,7 +107,7 @@ class RealGazeKeyboardOracle(KeyboardOracle):
             state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar',
                                map_location=torch.device('cpu'))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
-        self.input = np.zeros(self.size)
+        self.gaze_input = np.zeros(self.size)
         self.gaze_thread = None
 
     def get_gaze_input(self):
@@ -116,23 +115,23 @@ class RealGazeKeyboardOracle(KeyboardOracle):
         features = self.face_processor.get_gaze_features(frame)
 
         if features is None:
-            self.input = np.zeros(self.size)
+            self.gaze_input = np.zeros(self.size)
         else:
             i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
             i_tracker_features = self.i_tracker(*i_tracker_input).detach().cpu().numpy()
-            self.input = i_tracker_features[0]
+            self.gaze_input = i_tracker_features[0]
 
     def get_action(self, obs, info=None):
         if self.gaze_thread is None or not self.gaze_thread.is_alive():
             self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
             self.gaze_thread.start()
         self.set_action()
-        return self.input, {}
+        return self.gaze_input, {}
 
 
 class SimGazeModelOracle(SimGazeOracle):
-    def __init__(self, base_oracle, mode='il', gaze_demos_path=None, per_step=False, thresh=1, inter_len=1, p=1):
-        super().__init__(mode=mode, gaze_demos_path=gaze_demos_path, per_step=per_step)
+    def __init__(self, base_oracle, mode='il', gaze_demos_path=None, per_step=False, synth_gaze=False):
+        super().__init__(mode=mode, gaze_demos_path=gaze_demos_path, per_step=per_step, synth_gaze=synth_gaze)
         self.base_oracle = base_oracle
         # self.thresh = thresh
         # self.count = 0
@@ -184,6 +183,23 @@ class SimGazeModelOracle(SimGazeOracle):
         self.base_oracle.reset()
 
 
+class SimOneHotModelOracle(SimGazeModelOracle):
+    def get_gaze_input(self, info):
+        target = np.where(info['target_string'] == 0)[0][0]
+        self.gaze_input = np.zeros(self.size)
+        self.gaze_input[target] = 1
+
+
+class SimGoalPosModelOracle(SimGazeModelOracle):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs, per_step=True)
+
+    def get_gaze_input(self, info):
+        target = np.where(info['target_string'] == 0)[0][0]
+        target_pos = info['switch_pos'][target]
+        self.gaze_input = np.concatenate((target_pos, np.zeros(self.size - len(target_pos))))
+
+
 class SimGazeKeyboardOracle(KeyboardOracle, SimGazeOracle):
     def get_action(self, obs, info=None):
         self.set_action()
@@ -218,7 +234,7 @@ class RealGazeModelOracle(RealGazeKeyboardOracle):
             self.status.new_intervention = False
             self.status.curr_intervention = False
 
-        return self.input, user_info
+        return self.gaze_input, user_info
 
     def reset(self):
         super().reset()
