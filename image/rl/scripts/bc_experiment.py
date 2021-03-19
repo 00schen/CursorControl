@@ -136,7 +136,7 @@ if __name__ == "__main__":
             aux_loss_weight=1,
             discrim_hidden=(64,),
             l2_weight=0,
-            reconstruct_weight=1
+            reconstruct_weight=0
         ),
         bc_args=dict(
             batch_size=128,
@@ -149,7 +149,7 @@ if __name__ == "__main__":
         ),
         demo_paths=[
             os.path.join(main_dir, "demos",
-                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1616176591751061503.npy"),
+                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1616181157045452426.npy"),
             os.path.join(main_dir, "demos",
                          f"int_OneSwitch_sim_goal_model_on_policy_1000_all_debug_1615835470059229510.npy"),
         ],

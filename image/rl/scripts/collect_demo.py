@@ -75,9 +75,9 @@ if __name__ == "__main__":
         env_kwargs={'config': dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=False),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
 
-            oracle='sim_gaze',
+            oracle='sim_gaze_model',
             oracle_kwargs={},
             gaze_oracle_kwargs={'mode': 'train',
                                 # 'gaze_demos_path': os.path.join(main_dir, 'demos',
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
         on_policy=True,
         p=1,
-        num_episodes=100,
+        num_episodes=1000,
         path_length=path_length,
         save_name_suffix="all_" + args.suffix,
         intervene=True

@@ -98,7 +98,6 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
         gaze_latent, gaze_pred, reconstruct_loss = self.policy(gaze_obs, gaze=True)
         prior_latent, prior_pred, _ = self.policy(prior_obs, gaze=False)
 
-
         pred = torch.cat((gaze_pred, prior_pred), dim=0)
         bc_loss = torch.nn.CrossEntropyLoss()(pred, labels)
 
@@ -117,12 +116,18 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
 
         # fake_gaze = torch.maximum(torch.normal(mean=gaze, std=std), torch.tensor(0).to(ptu.device))
         # fake_latent = self.policy.gaze_encoder(fake_gaze)
-        latent = torch.cat((gaze_latent, prior_latent), dim=0)
-        discrim_pred = self.discrim(latent)
-        discrim_labels = torch.cat((torch.zeros((gaze_latent.size(0), 1)),
-                                    0.9 * torch.ones((prior_latent.size(0), 1))), dim=0).to(ptu.device)
-        pos_weight = torch.tensor(gaze_latent.size(0) / prior_latent.size(0)).to(ptu.device)
-        discrim_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)(discrim_pred, discrim_labels)
+        # latent = torch.cat((gaze_latent, prior_latent), dim=0)
+        # discrim_pred = self.discrim(latent)
+        # discrim_labels = torch.cat((torch.zeros((gaze_latent.size(0), 1)),
+        #                             0.9 * torch.ones((prior_latent.size(0), 1))), dim=0).to(ptu.device)
+        # pos_weight = torch.tensor(gaze_latent.size(0) / prior_latent.size(0)).to(ptu.device)
+        # discrim_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)(discrim_pred, discrim_labels)
+
+        discrim_loss_fn = torch.nn.BCEWithLogitsLoss()
+        gaze_loss = discrim_loss_fn(self.discrim(gaze_latent), torch.zeros((gaze_latent.size(0), 1)).to(ptu.device))
+        prior_loss = discrim_loss_fn(self.discrim(prior_latent),
+                                     0.9 * torch.ones((prior_latent.size(0), 1)).to(ptu.device))
+        discrim_loss = (gaze_loss + prior_loss) / 2
 
         self.discrim_optimizer.zero_grad()
         discrim_loss.backward(retain_graph=True)

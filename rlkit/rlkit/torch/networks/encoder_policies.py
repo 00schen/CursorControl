@@ -148,7 +148,7 @@ class MixedPolicy(nn.Module):
         self.embedding_dim = embedding_dim
         self.num_encoders = num_encoders
 
-        data_paths = ['image/rl/gaze_capture/gaze_data_eval.h5']
+        data_paths = ['image/rl/gaze_capture/gaze_data_train.h5']
         gaze_data = []
         for path in data_paths:
             loaded = h5py.File(path, 'r')
