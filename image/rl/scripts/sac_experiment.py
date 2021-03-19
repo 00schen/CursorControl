@@ -8,11 +8,11 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.core import np_to_pytorch_batch
 
-from rl.policies import BoltzmannPolicy,OverridePolicy,ComparisonMergePolicy, OverridePolicy
-from rl.path_collectors import FullPathCollector
+from rl.policies import OverridePolicy,ComparisonMergePolicy
+from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import BCTrainer
+from rl.trainers import TorchBCTrainer
 
 import os
 from pathlib import Path
@@ -64,7 +64,7 @@ def experiment(variant):
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
-		expl_policy = OverridePolicy(expl_policy,env.oracle.size)
+		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -101,7 +101,7 @@ def experiment(variant):
 	algorithm.to(ptu.device)
 	if variant['pretrain']:
 		from tqdm import tqdm
-		bc_trainer = BCTrainer(policy)
+		bc_trainer = TorchBCTrainer(policy)
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			for _ in range(10):
 				bc_batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
@@ -246,7 +246,7 @@ if __name__ == "__main__":
 		import time
 		current_time = time.time_ns()
 		variant = variants[0]
-		run_id=current_time
+		run_id=str(current_time)
 		save_path = os.path.join(main_dir,'logs')
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id)
 		process_args(variant)

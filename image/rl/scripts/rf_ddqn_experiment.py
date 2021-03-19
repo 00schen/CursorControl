@@ -36,7 +36,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M,M],
 		hidden_activation=F.leaky_relu,
 		layer_norm=True,
-		output_activation=Clamp(max=0,min=-5000),
+		output_activation=Clamp(max=0,min=-500),
 	)
 	qf2 = Mlp(
 		input_size=obs_dim,
@@ -44,7 +44,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M,M],
 		hidden_activation=F.leaky_relu,
 		layer_norm=True,
-		output_activation=Clamp(max=0,min=-5000),
+		output_activation=Clamp(max=0,min=-500),
 	)
 	target_qf1 = Mlp(
 		input_size=obs_dim,
@@ -52,7 +52,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M,M],
 		hidden_activation=F.leaky_relu,
 		layer_norm=True,
-		output_activation=Clamp(max=0,min=-5000),
+		output_activation=Clamp(max=0,min=-500),
 	)
 	target_qf2 = Mlp(
 		input_size=obs_dim,
@@ -60,7 +60,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M,M],
 		hidden_activation=F.leaky_relu,
 		layer_norm=True,
-		output_activation=Clamp(max=0,min=-5000),
+		output_activation=Clamp(max=0,min=-500),
 	)
 	rf = ConcatMlp(
 		input_size=obs_dim *2,
@@ -68,7 +68,7 @@ def experiment(variant):
 		hidden_sizes=[M,M,M,M],
 		hidden_activation=F.leaky_relu,
 		layer_norm=True,
-		output_activation=Clamp(max=0,min=-50),
+		output_activation=Clamp(max=0,min=-5),
 	)
 	eval_policy = ArgmaxPolicy(
 		qf1,qf2,
@@ -236,8 +236,6 @@ if __name__ == "__main__":
 		'trainer_kwargs.reward_update_period':[10],
 		'trainer_kwargs.ground_truth':[True,False]
 		# 'demo_path_proportions': [[1,.2],[1,.5],[1,1],],
-
-		# 'env_kwargs.config.sparse_reward': [False,True],
 	}
 
 

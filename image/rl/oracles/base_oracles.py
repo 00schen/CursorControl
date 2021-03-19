@@ -1,16 +1,13 @@
 import numpy as np
 
-
 class Oracle:
     def __init__(self):
         self.size = 6
+        self.status = OracleStatus()
     def _query(self,obs=None,info=None):
         pass
     def reset(self):
         pass
-    def get_action(self,obs,info):
-        pass
-
 
 
 class OracleStatus:
@@ -30,7 +27,7 @@ class UserModelOracle(Oracle):
 
     def get_action(self,obs,info):
         criterion,target_pos = self._query(obs,info)
-        action = np.zeros(6)
+        action = np.zeros(self.size)
         if self.rng.random() < self.blank*criterion:
             traj = target_pos-info['tool_pos']
             axis = np.argmax(np.abs(traj))
@@ -41,11 +38,8 @@ class UserModelOracle(Oracle):
         return action, {}
 
 class UserInputOracle(Oracle):
-    def __init__(self,env):
+    def __init__(self):
         super().__init__()
-        self.env = env
-        self.status = OracleStatus()
-        self.size = 0
 
     def get_action(self,obs,info=None):
         user_info = self._query()
@@ -58,5 +52,4 @@ class UserInputOracle(Oracle):
             'down':		np.array([0,0,0,0,1,0]),
             'noop':		np.array([0,0,0,0,0,0])
         }[self.action]
-        self.status.action = action
-        return np.zeros(0), user_info
+        return action, user_info

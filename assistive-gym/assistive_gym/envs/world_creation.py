@@ -319,6 +319,8 @@ class WorldCreation:
         transform_pos, transform_orient = p.multiplyTransforms(positionA=gripper_pos, orientationA=gripper_orient, positionB=pos_offset, orientationB=orient_offset, physicsClientId=self.id)
         if self.task in ['scratch_itch','laptop','switch']:
             tool = p.loadURDF(os.path.join(self.directory, 'scratcher', 'tool_scratch.urdf'), basePosition=transform_pos, baseOrientation=transform_orient, physicsClientId=self.id)
+        elif self.task in ['reaching']:
+            tool = p.loadURDF(os.path.join(self.directory, 'block', 'block.urdf'), basePosition=transform_pos, baseOrientation=transform_orient, physicsClientId=self.id)
         elif self.task == 'bed_bathing':
             tool = p.loadURDF(os.path.join(self.directory, 'bed_bathing', 'wiper.urdf'), basePosition=transform_pos, baseOrientation=transform_orient, physicsClientId=self.id)
         elif self.task in ['drinking', 'scooping', 'feeding', 'arm_manipulation']:

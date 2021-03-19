@@ -1,6 +1,5 @@
 import numpy as np
 from .follower_policy import FollowerPolicy
-from .gaze_policy import DefaultPolicy
 
 class DemonstrationPolicy:
 	def __init__(self,env,p):
@@ -28,4 +27,3 @@ class RandomPolicy:
 		return action,{}
 	def reset(self):
 		self.action_index = 0
-

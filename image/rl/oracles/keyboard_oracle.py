@@ -1,7 +1,6 @@
 import pybullet as p
 from .base_oracles import UserInputOracle
 
-
 class KeyboardOracle(UserInputOracle):
 	def _query(self):
 		keys = p.getKeyboardEvents()
@@ -17,4 +16,5 @@ class KeyboardOracle(UserInputOracle):
 		for key in inputs:
 			if key in keys and keys[key]&p.KEY_WAS_TRIGGERED:
 				self.action = inputs[key]
+			
 		return {"action": self.action}

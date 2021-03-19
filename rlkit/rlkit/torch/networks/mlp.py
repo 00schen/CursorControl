@@ -341,3 +341,86 @@ class ParallelMlp(nn.Module):
         flat = self.network(x)
         batch_size = x.shape[0]
         return flat.view(batch_size, -1, self.num_heads)
+
+
+class QrMlp(Mlp):
+    def __init__(
+            self,
+            hidden_sizes,
+            action_size,
+            input_size,
+            atom_size=200,
+            init_w=3e-3,
+            hidden_activation=F.relu,
+            output_activation=identity,
+            hidden_init=ptu.fanin_init,
+            b_init_value=0.,
+            layer_norm=False,
+            layer_norm_kwargs=None,
+            reward_min=-1
+    ):
+        super().__init__(hidden_sizes=hidden_sizes, output_size=action_size * atom_size, input_size=input_size,
+                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                         layer_norm_kwargs=layer_norm_kwargs)
+        self.action_size = action_size
+        self.atom_size = atom_size
+        self.reward_min = reward_min
+
+    def forward(self, input, return_preactivations=False):
+        output = super().forward(input, return_preactivations)
+        preactivation = None
+        if return_preactivations:
+            output, preactivation = output
+        output = self.reward_min * torch.sigmoid(output)
+        logits = torch.reshape(output, [-1, self.action_size, self.atom_size])
+        q_values = torch.mean(logits, dim=2)
+
+        if preactivation is None:
+            return logits, q_values
+
+        else:
+            return logits, q_values, preactivation
+
+    def get_action(self, input):
+        return eval_np(self, input, return_preactivations=False)[1], {}
+
+
+class QrGazeMlp(QrMlp):
+    def __init__(
+            self,
+            hidden_sizes,
+            action_size,
+            input_size,
+            gaze_encoder,
+            atom_size=200,
+            init_w=3e-3,
+            hidden_activation=F.relu,
+            output_activation=identity,
+            hidden_init=ptu.fanin_init,
+            b_init_value=0.,
+            layer_norm=False,
+            layer_norm_kwargs=None,
+            gaze_dim=128,
+            embedding_dim=1,
+            reward_min=-1,
+    ):
+        super().__init__(hidden_sizes=hidden_sizes, action_size=action_size,
+                         input_size=input_size - gaze_dim + embedding_dim, atom_size=atom_size,
+                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                         layer_norm_kwargs=layer_norm_kwargs, reward_min=reward_min)
+        self.gaze_encoder = gaze_encoder
+        self.gaze_dim = gaze_dim
+        self.latent_dim = embedding_dim
+
+    def forward(self, input, return_preactivations=False):
+        gaze, h = input[..., -self.gaze_dim:], input[..., :-self.gaze_dim]
+        latent = self.gaze_encoder(gaze)
+        latent = latent[..., :self.latent_dim]
+        h = torch.cat((latent, h), dim=-1)
+
+        return super().forward(h, return_preactivations)
+
+    def get_action(self, input):
+        return eval_np(self, input, return_preactivations=False)[1], {}

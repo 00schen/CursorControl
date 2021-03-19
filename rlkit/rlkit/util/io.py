@@ -95,7 +95,7 @@ class CPU_Unpickler(pickle.Unpickler):
         else: return super().find_class(module, name)
 
 
-def load_local_or_remote_file(filepath, file_type=None):
+def load_local_or_remote_file(filepath, file_type=None,low_mem=False):
     local_path = local_path_from_s3_or_local_path(filepath)
     if file_type is None:
         extension = local_path.split('.')[-1]
@@ -106,7 +106,10 @@ def load_local_or_remote_file(filepath, file_type=None):
     else:
         file_type = PICKLE
     if file_type == NUMPY:
-        object = np.load(open(local_path, "rb"), allow_pickle=True)
+        if low_mem:
+            object = np.load(local_path, allow_pickle=True,mmap_mode='r')
+        else:
+            object = np.load(open(local_path, "rb"), allow_pickle=True)
     elif file_type == JOBLIB:
         object = joblib.load(local_path)
     else:

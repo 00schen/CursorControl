@@ -34,7 +34,7 @@ def evaluation(variant):
 		env.render('human')
 	eval_collected_paths = eval_path_collector.collect_new_paths(
 		variant['path_length'],
-		variant['path_length']*10,
+		variant['path_length']*variant['num_evals'],
 		discard_incomplete_paths=False,
 	)
 
@@ -54,21 +54,21 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
+	path_length = 100
 	variant = dict(
 		seedid=2002,
 		path_length=path_length,
-		eval_path=os.path.join(main_dir,'logs','test-s3-rand-proj-17','test-s3-rand-proj-17_2020_12_24_11_14_46_0000--s-0','params.pkl'),
+		eval_path=os.path.join(main_dir,'logs','test-s1-v1-ground-truth-offline-8','test_s1_v1_ground_truth_offline_8_2021_01_13_13_40_17_0004--s-0','params.pkl'),
 		env_kwargs={'config':dict(
 			env_name=args.env_name,
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03,frame_skip=5),
+			env_kwargs=dict(success_dist=.03,frame_skip=5,capture_frames=False),
 			# env_kwargs=dict(path_length=path_length,frame_skip=5),
-			smooth_alpha=.8,
 
 			oracle='model',
-			oracle_kwargs=dict(),
+			oracle_kwargs=dict(threshold=.5),
 			action_type='disc_traj',
+			smooth_alpha = .8,
 
 			adapts = ['high_dim_user','reward'],
 			apply_projection=False,
@@ -76,11 +76,12 @@ if __name__ == "__main__":
 			num_obs=10,
 			num_nonnoop=10,
 			reward_max=0,
-			reward_min=-np.inf,
+			reward_min=-1,
 			input_penalty=1,
-			sparse_reward=False,
+			reward_type='sparse',
 		)},
 		render = args.no_render,
+		num_evals = 100,
 	)
 
 	def process_args(variant):

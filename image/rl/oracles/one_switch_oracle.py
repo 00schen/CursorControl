@@ -39,7 +39,7 @@ class OneSwitchOracle(UserModelOracle):
 
 			if ((info['tool_pos'][2] < target_poses[0][2] and on_off == 0)
 				or (info['tool_pos'][2] > target_poses[0][2] and on_off == 1)):
-				threshold = self.threshold
+				threshold = .5
 				target_pos = target_pos2
 			elif ((info['tool_pos'][2] > target_poses[0][2] + .15 and on_off == 0)
 				or (info['tool_pos'][2] < target_poses[0][2] - .15 and on_off == 1)):
@@ -48,10 +48,10 @@ class OneSwitchOracle(UserModelOracle):
 			else:
 				threshold = .5
 				target_pos = tool_pos + np.array([0,0,1]) if on_off == 0 else tool_pos + np.array([0,0,-1])
-		elif np.sum(self.ineff_contacts) > 5:
-			on_off = info['target_string'][target_indices[0]]
-			target_pos = np.array(p.multiplyTransforms(target_poses[0], info['switch_orient'], [0,1,0], [0, 0, 0, 1])[0])
-			threshold = .5
+		# elif np.sum(self.ineff_contacts) > 5:
+		# 	on_off = info['target_string'][target_indices[0]]
+		# 	target_pos = np.array(p.multiplyTransforms(target_poses[0], info['switch_orient'], [0,1,0], [0, 0, 0, 1])[0])
+		# 	threshold = .5
 		elif norm(info['tool_pos']-target_poses1,axis=1)[0] > .12:
 			threshold = self.threshold
 			target_pos = target_poses1[0]

@@ -398,8 +398,11 @@ class AssistiveEnv(gym.Env):
             # self.video_writer = cv2.VideoWriter('%s_%s.avi' % (task, date), cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.width, self.height))
 
     def record_video_frame(self):
-        if self.record_video and self.gui:
-            frame = np.reshape(p.getCameraImage(width=self.width, height=self.height, renderer=p.ER_BULLET_HARDWARE_OPENGL, physicsClientId=self.id)[2], (self.height, self.width, 4))[:, :, :3]
+        pass
+    def get_frame(self):
+        # if self.record_video and self.gui:
+        frame = np.reshape(p.getCameraImage(width=self.width//4, height=self.height//3, viewMatrix=self.viewMatrix, projectionMatrix=self.projMatrix, renderer=p.ER_BULLET_HARDWARE_OPENGL, physicsClientId=self.id)[2], (self.height//3, self.width//4, 4))[:, :, :4]
+        return frame
             # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             # self.video_writer.write(frame)
 

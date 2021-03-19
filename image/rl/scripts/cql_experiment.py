@@ -10,7 +10,7 @@ from rl.policies import OverridePolicy,ComparisonMergePolicy,MaxQPolicy
 from rl.path_collectors import FullPathCollector,CustomPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import BCTrainer,CQLTrainer
+from rl.trainers import TorchBCTrainer,CQLTrainer
 
 import argparse, os
 from pathlib import Path
@@ -18,6 +18,7 @@ from rlkit.launchers.launcher_util import setup_logger,reset_execution_environme
 import rlkit.util.hyperparameter as hyp
 import numpy as np
 import torch.optim as optim
+import torch.nn.functional as F
 
 def experiment(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
@@ -29,27 +30,35 @@ def experiment(variant):
 	qf1 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
 	)
 	qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
 	)
 	target_qf1 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
 	)
 	target_qf2 = ConcatMlp(
 		input_size=obs_dim + action_dim,
 		output_size=1,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
+		hidden_activation=F.leaky_relu,
+		layer_norm=True,
 	)
 	policy = TanhGaussianPolicy(
 		obs_dim=obs_dim,
 		action_dim=action_dim,
-		hidden_sizes=[M,M,M],
+		hidden_sizes=[M,M,M,M],
 	)
 	eval_policy = policy
 	eval_path_collector = CustomPathCollector(
@@ -62,32 +71,12 @@ def experiment(variant):
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng,expl_policy,env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
-		expl_policy = OverridePolicy(env,expl_policy,env.oracle.size)
+		expl_policy = OverridePolicy(expl_policy,env.oracle.size)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
 		save_env_in_snapshot=False
 	)
-	replay_buffer = EnvReplayBuffer(
-		variant['replay_buffer_size'],
-		env,
-	)
-	if variant.get('load_demos', False):
-		path_loader = SimplePathLoader(
-			demo_path=variant['demo_paths'],
-			demo_path_proportion=variant['demo_path_proportions'],
-			replay_buffer=replay_buffer,
-		)
-	path_loader.load_demos() 
-	# trainer = SACTrainer(
-	# 	env=env,
-	# 	policy=policy,
-	# 	qf1=qf1,
-	# 	qf2=qf2,
-	# 	target_qf1=target_qf1,
-	# 	target_qf2=target_qf2,
-	# 	**variant['sac_kwargs']
-	# )
 	cql_trainer = CQLTrainer(
 			env=env,
 			policy=policy,
@@ -97,6 +86,19 @@ def experiment(variant):
 			target_qf2=target_qf2,
 			**variant['trainer_kwargs']
 		)
+	# trainer = SACTrainer(
+	# 	env=env,
+	# 	policy=policy,
+	# 	qf1=qf1,
+	# 	qf2=qf2,
+	# 	target_qf1=target_qf1,
+	# 	target_qf2=target_qf2,
+	# 	**variant['sac_kwargs']
+	# )
+	replay_buffer = EnvReplayBuffer(
+		variant['replay_buffer_size'],
+		env,
+	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=cql_trainer,
 		exploration_env=env,
@@ -107,10 +109,16 @@ def experiment(variant):
 		**variant['algorithm_args']
 	)
 	algorithm.to(ptu.device)
+	if variant.get('load_demos', False):
+		path_loader = SimplePathLoader(
+			demo_path=variant['demo_paths'],
+			demo_path_proportion=variant['demo_path_proportions'],
+			replay_buffer=replay_buffer,
+		)
+	path_loader.load_demos() 
 	if variant['pretrain']:
 		from tqdm import tqdm
-		bc_trainer = BCTrainer(policy)
-		
+		bc_trainer = TorchBCTrainer(policy)
 		for _ in tqdm(range(variant['num_pretrain_loops']),miniters=10,mininterval=10):
 			bc_batch = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
 			bc_trainer.pretrain(bc_batch)
@@ -134,7 +142,7 @@ if __name__ == "__main__":
 	print(main_dir)
 
 	path_length = 400
-	num_epochs = 10
+	num_epochs = int(1e4)
 	variant = dict(
 		layer_size=512,
 		exploration_strategy='',
@@ -162,7 +170,7 @@ if __name__ == "__main__":
 			# min_q_weight=1.0,
 
 			## sort of backup
-			max_q_backup=False,
+			# max_q_backup=False,
 			deterministic_backup=True,
 			num_random=10,
 			with_lagrange=False,
@@ -191,13 +199,13 @@ if __name__ == "__main__":
 			num_epochs=num_epochs,
 			num_eval_steps_per_epoch=1,
 			num_expl_steps_per_train_loop=path_length,
-			num_trains_per_train_loop=100,				
+			# num_trains_per_train_loop=100,				
 		),
 
 		load_demos=True,
 		demo_paths=[os.path.join(main_dir,"demos",f"{args.env_name}_model_off_policy_5000.npy"),
 					os.path.join(main_dir,"demos",f"{args.env_name}_model_on_policy_5000.npy")],
-		# demo_path_proportions=[.5,.5],
+		demo_path_proportions=[1,1],
 		pretrain=True,
 		num_pretrain_loops=int(1e4),
 
@@ -219,16 +227,18 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
+			reward_type='user_penalty',
 		)},
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000],
 
-		'trainer_kwargs.temp': [.1,1],
-		'trainer_kwargs.min_q_weight': [1,.5],
+		'trainer_kwargs.temp': [.5,.1],
+		'trainer_kwargs.min_q_weight': [2,.5],
+		'trainer_kwargs.max_q_backup': [False,True],
 		'env_kwargs.config.apply_projection': [False],
-		'env_kwargs.config.sparse_reward': [False,True],
-		'demo_path_proportions': [[0,1],[.2,.8],[.4,.6],[.6,.4],[.8,.2],[1,0]]
+		'algorithm_args.num_trains_per_train_loop': [5],
+		'env_kwargs.config.oracle_kwargs.threshold': [.8,],
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

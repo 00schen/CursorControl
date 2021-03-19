@@ -11,20 +11,21 @@ class OneHotCategorical(Distribution,TorchOneHot):
 		return s, log_p
 
 class BoltzmannPolicy(PyTorchModule):
-	def __init__(self, qf1, qf2, logit_scale=100):
+	def __init__(self, qf, logit_scale=100):
 		super().__init__()
-		self.qf1 = qf1
-		self.qf2 = qf2
+		self.qf = qf
 		self.logit_scale = logit_scale
 
 	def get_action(self, obs):
 		if isinstance(obs,np.ndarray):
 			obs = th.from_numpy(obs).float()
-		if next(self.qf1.parameters()).is_cuda:
+		if next(self.qf.parameters()).is_cuda:
 			obs = obs.cuda()
 
 		with th.no_grad():
-			q_values = th.min(self.qf1(obs),self.qf2(obs))
+			q_values = self.qf.get_action(obs)[0]
+			q_values = th.from_numpy(q_values)
+			# action = OneHotCategorical(probs=q_values).sample().flatten().detach()
 			action = OneHotCategorical(logits=self.logit_scale*q_values).sample().flatten().detach()
 		return action.cpu().numpy(), {}
 
