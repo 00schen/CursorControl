@@ -119,10 +119,10 @@ class VAEGazePolicy(nn.Module):
         return eval_np(self, x)[1], {}
 
 
-class VAEMixedPolicy(nn.Module):
+class MixedPolicy(nn.Module):
     def __init__(self, input_size, output_size, encoder_hidden_sizes=(32,), decoder_hidden_sizes=(128, 128, 128, 128),
                  embedding_dim=1, layer_norm=False, gaze_dim=128, num_encoders=3):
-        super(VAEMixedPolicy, self).__init__()
+        super(MixedPolicy, self).__init__()
 
         self.gaze_encoders = []
         for i in range(num_encoders):

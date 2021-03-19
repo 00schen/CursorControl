@@ -1,5 +1,5 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import VAEGazePolicy, MlpPolicy, VAEMixedPolicy
+from rlkit.torch.networks import VAEGazePolicy, MlpPolicy, MixedPolicy
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
 
@@ -27,7 +27,7 @@ def experiment(variant, logdir):
     M = variant["layer_size"]
     obs_dim = env.observation_space.low.size
     action_dim = env.action_space.low.size
-    policy_type = VAEMixedPolicy
+    policy_type = MixedPolicy
     policy = policy_type(input_size=obs_dim,
                          output_size=action_dim,
                          decoder_hidden_sizes=[M, M, M, M],
