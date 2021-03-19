@@ -73,7 +73,7 @@ def draw_circle_with_text(text, text_color, center, radius, circle_color=None, f
     screen.blit(text_img, text_rect)
 
 
-calibration_points = [(width / 2 + 200, height / 2), (width / 2, height / 2), (width / 2 - 200, height / 2)]
+calibration_points = [(width / 2 + 350, height / 2), (width / 2, height / 2), (width / 2 - 350, height / 2)]
 screen.fill((0, 0, 0))
 for i, point in enumerate(calibration_points):
     color = (255, 255, 255)
@@ -100,7 +100,7 @@ draw_rect_with_text("Look at the highlighted number", (255, 255, 255), width,
 
 cycles = 0
 n_points = len(calibration_points)
-calibration_cycles = 50
+remaining = [50] * n_points
 curr_point = None
 
 
@@ -115,12 +115,12 @@ def get_event():
 
 
 features = [[] for i in range(len(calibration_points))]
-while running and cycles < calibration_cycles:
+while running and sum(remaining) > 0:
     if curr_point is not None:
         draw_circle_with_text(str(curr_point), (0, 0, 0), calibration_points[curr_point],
                               20, (255, 255, 255))
 
-    curr_point = np.random.choice(n_points)
+    curr_point = np.random.choice(np.nonzero(remaining)[0])
     curr_coord = calibration_points[curr_point]
     draw_circle_with_text(str(curr_point), (0, 0, 0), curr_coord, 20, (255, 165, 0))
 
@@ -133,9 +133,9 @@ while running and cycles < calibration_cycles:
         _, frame = webcam.read()
         gaze_features = face_processor.get_gaze_features(frame)
     features[curr_point].append(gaze_features)
-    cycles += 1
+    remaining[curr_point] = remaining[curr_point] - 1
 
-dataset = h5py.File('image/rl/gaze_capture/gaze_data.h5')
+dataset = h5py.File('image/rl/gaze_capture/gaze_data_eval.h5')
 for i in range(len(features)):
     data = []
     if len(features[i]) > 0:
@@ -144,11 +144,10 @@ for i in range(len(features)):
 
         batch_size = 32
         n_batches = math.ceil(len(point) / batch_size)
-        for j in range(n_batches):
+        for j in range(n_batches + 1):
             batch = [feature[j * batch_size: (j + 1) * batch_size] for feature in point]
             output = i_tracker(*batch)
             data.extend(output.detach().cpu().numpy())
-
         dataset.create_dataset(str(i), data=data)
 
 dataset.close()
