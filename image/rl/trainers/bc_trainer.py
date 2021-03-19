@@ -64,7 +64,7 @@ class DiscreteVAEBCTrainerTorch(TorchBCTrainer):
         self.policy_optimizer.step()
 
 
-class DiscreteMixedVAEBCTrainerTorch(TorchBCTrainer):
+class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
     def __init__(
             self,
             policy,

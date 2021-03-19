@@ -5,7 +5,7 @@ from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
 
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch, DiscreteMixedVAEBCTrainerTorch
+from rl.trainers import DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch, DiscreteMixedBCTrainerTorch
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rl.path_collectors import FullPathCollector
 from rl.policies import ArgmaxPolicy
@@ -39,7 +39,7 @@ def experiment(variant, logdir):
                          )
     policy.to(ptu.device)
 
-    trainer_type = DiscreteMixedVAEBCTrainerTorch
+    trainer_type = DiscreteMixedBCTrainerTorch
     trainer = trainer_type(
         policy=policy,
         policy_lr=variant['trainer_kwargs']['lr']
