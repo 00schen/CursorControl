@@ -100,7 +100,7 @@ draw_rect_with_text("Look at the highlighted number", (255, 255, 255), width,
 
 cycles = 0
 n_points = len(calibration_points)
-remaining = [50] * n_points
+remaining = [100] * n_points
 curr_point = None
 
 
@@ -127,7 +127,7 @@ while running and sum(remaining) > 0:
     pygame.display.flip()
     get_event()
 
-    pygame.time.wait(1000)
+    #pygame.time.wait(1000)
     gaze_features = None
     while gaze_features is None:
         _, frame = webcam.read()
@@ -143,7 +143,7 @@ for i in range(len(features)):
         point = [torch.from_numpy(np.array(feature)).float().to(device) for feature in point]
 
         batch_size = 32
-        n_batches = math.ceil(len(point) / batch_size)
+        n_batches = math.ceil(len(point[0]) / batch_size)
         for j in range(n_batches + 1):
             batch = [feature[j * batch_size: (j + 1) * batch_size] for feature in point]
             output = i_tracker(*batch)
