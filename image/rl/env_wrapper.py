@@ -196,6 +196,10 @@ class oracle:
                                                                      **config['gaze_oracle_kwargs'])
             elif 'gaze' in self.oracle_type:
                 self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
+            elif 'sim_goal' in self.oracle_type:
+                self.oracle = master_env.oracle = SimGoalPosModelOracle(base_oracle=self.oracle)
+            elif 'sim' in self.oracle_type:
+                self.oracle = master_env.oracle = SimOneHotModelOracle(base_oracle=self.oracle)
         else:
             oracle_type = {
                 'keyboard': KeyboardOracle,
@@ -249,7 +253,7 @@ class oracle:
 class high_dim_user:
     def __init__(self, master_env, config):
         self.env_name = master_env.env_name
-        self.high_dim_size = 3 if self.env_name == 'OneSwitch' else 50
+        self.high_dim_size = 9 if self.env_name == 'OneSwitch' else 50
         self.full_obs_size = get_dim(master_env.observation_space) + self.high_dim_size
 
         master_env.observation_space = spaces.Box(-np.inf, np.inf,
@@ -263,8 +267,7 @@ class high_dim_user:
         state_func = {
             # 'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
             #                                      ['switch_pos', 'tool_pos']]),
-            'OneSwitch': lambda: np.concatenate([np.ravel(info[state_comp])
-                                                 for state_comp in ('tool_pos',)]),
+            'OneSwitch': lambda: np.concatenate([np.ravel(info['switch_pos'])]),
             'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
                                                    ['lever_angle', 'target_string', 'current_string',
                                                     'switch_pos', 'aux_switch_pos', 'tool_pos', ]]),

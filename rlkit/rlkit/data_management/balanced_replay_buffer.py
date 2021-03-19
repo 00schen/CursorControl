@@ -6,6 +6,7 @@ class BalancedReplayBuffer(ReplayBuffer):
     def __init__(self, main_buffer, prior_buffer):
         self.main_buffer = main_buffer
         self.prior_buffer = prior_buffer
+        self.buffers = [self.main_buffer, self.prior_buffer]
 
     def add_sample(self, observation, action, reward, terminal,
                    next_observation, **kwargs):
@@ -64,7 +65,9 @@ class BalancedReplayBuffer(ReplayBuffer):
         :param batch_size:
         :return:
         """
-        main_batch = self.main_buffer.random_batch(batch_size // 2)
-        prior_batch = self.prior_buffer.random_batch(batch_size // 2)
-        combined_batch = {key: np.concatenate((main_batch[key], prior_batch[key]), axis=0) for key in main_batch.keys()}
+        batches = []
+        for buffer in self.buffers:
+            if buffer.num_steps_can_sample():
+                batches.append(buffer.random_batch(batch_size // len(self.buffers)))
+        combined_batch = {key: np.concatenate([batch[key] for batch in batches], axis=0) for key in batches[0].keys()}
         return combined_batch

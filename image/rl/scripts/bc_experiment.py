@@ -1,10 +1,11 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import VAEGazePolicy, MlpPolicy
+from rlkit.torch.networks import VAEGazePolicy, MlpPolicy, VAEMixedPolicy
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
+from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
 
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch
+from rl.trainers import DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch, DiscreteMixedVAEBCTrainerTorch
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rl.path_collectors import FullPathCollector
 from rl.policies import ArgmaxPolicy
@@ -20,37 +21,48 @@ import argparse
 def experiment(variant, logdir):
     from rlkit.core import logger
     gaze_dim = 128
-    embedding_dim = 1
+    embedding_dim = 3
     env = default_overhead(variant['env_kwargs']['config'])
     env.seed(variant['seedid'])
     M = variant["layer_size"]
     obs_dim = env.observation_space.low.size
     action_dim = env.action_space.low.size
-    policy_type = VAEGazePolicy
+    policy_type = VAEMixedPolicy
     policy = policy_type(input_size=obs_dim,
                          output_size=action_dim,
                          decoder_hidden_sizes=[M, M, M, M],
                          layer_norm=True,
                          gaze_dim=gaze_dim,
                          embedding_dim=embedding_dim,
+                         num_encoders=1,
+                         encoder_hidden_sizes=(64,)
                          )
     policy.to(ptu.device)
 
-    trainer_type = DiscreteVAEBCTrainerTorch
+    trainer_type = DiscreteMixedVAEBCTrainerTorch
     trainer = trainer_type(
         policy=policy,
         policy_lr=variant['trainer_kwargs']['lr']
     )
 
-    replay_buffer = EnvReplayBuffer(
+    gaze_buffer = EnvReplayBuffer(
         variant['replay_buffer_size'],
         env,
+    )
+
+    prior_buffer = EnvReplayBuffer(
+        variant['replay_buffer_size'],
+        env,
+    )
+
+    replay_buffer = BalancedReplayBuffer(
+        gaze_buffer, prior_buffer
     )
 
     path_loader = SimplePathLoader(
         demo_path=variant['demo_paths'],
         demo_path_proportion=variant['demo_path_proportions'],
-        replay_buffers=[replay_buffer],
+        replay_buffers=[gaze_buffer, prior_buffer],
     )
     path_loader.load_demos()
 
@@ -105,7 +117,7 @@ def experiment(variant, logdir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='bc_gaze')
+    parser.add_argument('--exp_name', default='bc_new_gaze')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -120,7 +132,11 @@ if __name__ == "__main__":
         layer_size=128,
         replay_buffer_size=int(1e6),
         trainer_kwargs=dict(
-            lr=5e-4,
+            lr=1e-3,
+            aux_loss_weight=1,
+            discrim_hidden=(64,),
+            l2_weight=0,
+            reconstruct_weight=1
         ),
         bc_args=dict(
             batch_size=128,
@@ -133,9 +149,9 @@ if __name__ == "__main__":
         ),
         demo_paths=[
             os.path.join(main_dir, "demos",
-                         "int_OneSwitch_sim_gaze_on_policy_100_all_debug_1614650908910465344.npy"),
-            # os.path.join(main_dir, "demos",
-            #              f"100 BC_int_OneSwitch_gaze_on_policy_100_all_debug_1613210243133488598.npy"),
+                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1616176591751061503.npy"),
+            os.path.join(main_dir, "demos",
+                         f"int_OneSwitch_sim_goal_model_on_policy_1000_all_debug_1615835470059229510.npy"),
         ],
 
 
@@ -145,7 +161,7 @@ if __name__ == "__main__":
             env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
             oracle='sim_gaze_model',
             oracle_kwargs=dict(),
-            gaze_oracle_kwargs={'mode': 'rl'},
+            gaze_oracle_kwargs={'mode': 'eval'},
             action_type='disc_traj',
             smooth_alpha=.8,
 
@@ -162,7 +178,7 @@ if __name__ == "__main__":
         )},
 
         seedid=2000,
-        demo_path_proportions=[100],
+        demo_path_proportions=[100, 1000],
 
     )
 

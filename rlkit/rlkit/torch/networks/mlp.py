@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+import numpy as np
+import h5py
 
 from rlkit.policies.base import Policy
 from rlkit.pythonplusplus import identity
@@ -79,6 +81,7 @@ class MultiHeadedMlp(Mlp):
                   \
                    .-> linear head 2
     """
+
     def __init__(
             self,
             hidden_sizes,
@@ -117,6 +120,7 @@ class ConcatMultiHeadedMlp(MultiHeadedMlp):
     """
     Concatenate inputs along dimension and then pass through MultiHeadedMlp.
     """
+
     def __init__(self, *args, dim=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.dim = dim
@@ -130,6 +134,7 @@ class ConcatMlp(Mlp):
     """
     Concatenate inputs along dimension and then pass through MLP.
     """
+
     def __init__(self, *args, dim=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.dim = dim
@@ -233,6 +238,7 @@ class SplitIntoManyHeads(nn.Module):
           \
            '-> head 2
     """
+
     def __init__(
             self,
             output_sizes,
@@ -286,6 +292,7 @@ class ParallelMlp(nn.Module):
 
     The last dimension of the output corresponds to the MLP index.
     """
+
     def __init__(
             self,
             num_heads,
@@ -424,3 +431,82 @@ class QrGazeMlp(QrMlp):
 
     def get_action(self, input):
         return eval_np(self, input, return_preactivations=False)[1], {}
+
+
+class QrMixedMlp(QrMlp):
+    def __init__(
+            self,
+            hidden_sizes,
+            action_size,
+            input_size,
+            atom_size=200,
+            init_w=3e-3,
+            hidden_activation=F.relu,
+            output_activation=identity,
+            hidden_init=ptu.fanin_init,
+            b_init_value=0.,
+            layer_norm=False,
+            layer_norm_kwargs=None,
+            gaze_dim=128,
+            embedding_dim=1,
+            reward_min=-1,
+            num_encoders=3,
+            encoder_hidden_sizes=(32,)
+    ):
+        super().__init__(hidden_sizes=hidden_sizes, action_size=action_size,
+                         input_size=input_size - gaze_dim + embedding_dim, atom_size=atom_size,
+                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                         layer_norm_kwargs=layer_norm_kwargs, reward_min=reward_min)
+
+        self.gaze_dim = gaze_dim
+        self.gaze_encoders = []
+        for i in range(num_encoders):
+            encoder = Mlp(input_size=gaze_dim,
+                          output_size=embedding_dim,
+                          hidden_sizes=encoder_hidden_sizes)
+            self.__setattr__("gaze_encoder{}".format(i), encoder)
+            self.gaze_encoders.append(encoder)
+        self.embedding_dim = embedding_dim
+        self.num_encoders = num_encoders
+        self.auto_decoder = Mlp(input_size=embedding_dim, output_size=gaze_dim, hidden_sizes=encoder_hidden_sizes)
+
+        data_paths = ['image/rl/gaze_capture/gaze_data_train.h5',]
+        gaze_data = []
+        for path in data_paths:
+            loaded = h5py.File(path, 'r')
+            for key in loaded.keys():
+                gaze_data.append(loaded[key])
+
+        self.gaze_data = np.concatenate(gaze_data, axis=0)
+        self.reconstruct_loss_fn = torch.nn.MSELoss()
+
+    def forward(self, input, return_preactivations=False, gaze=True, train=True):
+        obs, aux = input[..., :-self.gaze_dim], input[..., -self.gaze_dim:]
+        reconstruct_loss = 0
+        if gaze:
+            if train:
+                encoder = np.random.choice(self.gaze_encoders)
+                latent = encoder(aux)
+                indices = np.random.choice(len(self.gaze_data), size=obs.size(0), replace=True)
+                gaze_batch = torch.from_numpy(self.gaze_data[indices]).to(ptu.device)
+                gaze_latent = encoder(gaze_batch)
+                eps = torch.normal(mean=(torch.zeros(gaze_latent.size())), std=1).to(ptu.device) * 0.1
+                pred = self.auto_decoder(gaze_latent)
+                reconstruct_loss = self.reconstruct_loss_fn(pred, gaze_batch)
+                latent_ret = torch.cat((latent, gaze_latent), dim=0)
+            else:
+                latent = 0
+                for encoder in self.gaze_encoders:
+                    latent += encoder(aux)
+                latent = latent / self.num_encoders
+                latent_ret = latent
+        else:
+            latent = aux[..., :self.embedding_dim]
+            latent_ret = latent
+
+        obs = torch.cat((obs, latent), dim=-1)
+        return (latent_ret, reconstruct_loss) + super().forward(obs, return_preactivations)
+
+    def get_action(self, input):
+        return eval_np(self, input, return_preactivations=False, train=False)[3], {}

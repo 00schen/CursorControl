@@ -1,5 +1,5 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import Mlp, ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy
+from rlkit.torch.networks import Mlp, ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy, QrMixedMlp
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
@@ -28,31 +28,38 @@ def experiment(variant):
     if not variant['from_pretrain']:
         obs_dim = env.observation_space.low.size
         action_dim = env.action_space.low.size
+        gaze_dim = 128
+        embedding_dim = 3
         M = variant["layer_size"]
         lower_q = variant['env_kwargs']['config']['reward_min'] * variant['env_kwargs']['config']['step_limit']
-        im_path = os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_28_21_44_17_0000--s-0', 'pretrain.pkl')
-        im_policy = th.load(im_path,map_location=th.device("cpu"))
-        qf = QrGazeMlp(
+        # im_path = os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_28_21_44_17_0000--s-0', 'pretrain.pkl')
+        # im_policy = th.load(im_path,map_location=th.device("cpu"))
+        qf = QrMixedMlp(
             input_size=obs_dim,
             action_size=action_dim,
             hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
             reward_min=lower_q,
-            gaze_encoder=im_policy.encoder,
-            gaze_dim=im_policy.gaze_dim,
-            embedding_dim=im_policy.embedding_dim,
+            gaze_dim=gaze_dim,
+            embedding_dim=embedding_dim,
+            num_encoders=5,
+            atom_size=200,
+            encoder_hidden_sizes=(32,)
         )
-        target_qf = QrGazeMlp(
+        target_qf = QrMixedMlp(
             input_size=obs_dim,
             action_size=action_dim,
             hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
             reward_min=lower_q,
-            gaze_encoder=im_policy.encoder,
-            gaze_dim=im_policy.gaze_dim,
-            embedding_dim=im_policy.embedding_dim,
+            gaze_dim=gaze_dim,
+            embedding_dim=embedding_dim,
+            num_encoders=5,
+            atom_size=200,
+            encoder_hidden_sizes=(32,)
+
         )
         rf = ConcatMlp(
             input_size=obs_dim * 2,
@@ -71,6 +78,7 @@ def experiment(variant):
     if variant['freeze_encoder']:
         for param in qf.gaze_encoder.parameters():
             param.requires_grad = False
+
     eval_policy = ArgmaxPolicy(
         qf
     )
@@ -102,17 +110,17 @@ def experiment(variant):
         rf=rf,
         **variant['trainer_kwargs']
     )
-    replay_buffer = EnvReplayBuffer(
+    gaze_buffer = EnvReplayBuffer(
         variant['replay_buffer_size'],
         env,
     )
-    # prior_replay_buffer = EnvReplayBuffer(
-    #     variant['replay_buffer_size'],
-    #     env,
-    # )
-    # replay_buffer = BalancedReplayBuffer(
-    #     teleop_replay_buffer, prior_replay_buffer
-    # )
+    prior_buffer = EnvReplayBuffer(
+        variant['replay_buffer_size'],
+        env,
+    )
+    replay_buffer = BalancedReplayBuffer(
+        gaze_buffer, prior_buffer
+    )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
@@ -145,7 +153,7 @@ def experiment(variant):
         path_loader = SimplePathLoader(
             demo_path=variant['demo_paths'],
             demo_path_proportion=variant['demo_path_proportions'],
-            replay_buffers=[replay_buffer, replay_buffer, replay_buffer]
+            replay_buffers=[gaze_buffer, prior_buffer]
         )
         path_loader.load_demos()
     from rlkit.core import logger
@@ -228,7 +236,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='sparse_gaze')
+    parser.add_argument('--exp_name', default='sparse_mixed')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -258,6 +266,10 @@ if __name__ == "__main__":
             qf_criterion=None,
             discount=0.99,
             reward_scale=1.0,
+            num_discrims=1,
+            discrim_hidden=(32,),
+            l2_weight=0.01,
+            reconstruct_weight=0
             # temp=1.0,
             # min_q_weight=1.0,
         ),
@@ -275,7 +287,7 @@ if __name__ == "__main__":
         bc_args=dict(
             batch_size=64,
             max_path_length=path_length,
-            num_epochs=250,
+            num_epochs=200,
             num_eval_steps_per_epoch=path_length * 3,
             num_expl_steps_per_train_loop=0,
             collect_new_paths=False,
@@ -287,9 +299,9 @@ if __name__ == "__main__":
         # 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}" in demo],
         demo_paths=[
             os.path.join(main_dir, "demos",
-                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1614378227763030936.npy"),
+                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1615418204600284881.npy"),
             os.path.join(main_dir, "demos",
-                         f"BC_OneSwitch_sim_gaze_on_policy_5000_all_debug_1614637062699545287.npy"),
+                         f"int_OneSwitch_sim_goal_model_on_policy_1000_all_debug_1615835470059229510.npy"),
 
 
 
@@ -318,19 +330,20 @@ if __name__ == "__main__":
             # input_penalty=1,
             reward_type='user_penalty',
             input_in_obs=True,
-            gaze_oracle_kwargs={'mode': 'rl'},
+            gaze_oracle_kwargs={'mode': 'eval'},
         )},
     )
     search_space = {
-        'freeze_encoder': [True],
+        'freeze_encoder': [False],
         'seedid': [2000],
         'trainer_kwargs.temp': [1],
         'trainer_kwargs.min_q_weight': [20],
+        'trainer_kwargs.aux_loss_weight': [20],
         'env_kwargs.config.oracle_kwargs.threshold': [.5],
         'env_kwargs.config.apply_projection': [False],
         'env_kwargs.config.input_penalty': [1],
         # 'demo_path_proportions':[[int(1e4),int(1e4)],[int(1e4),0],[int(5e3),0]],
-        'demo_path_proportions': [[100, 5000, 1000]],
+        'demo_path_proportions': [[100, 1000]],
         # 'demo_path_proportions':[[25,25],[50,50],[100,100],[250,250]],
         'trainer_kwargs.qf_lr': [5e-5],
         'algorithm_args.num_trains_per_train_loop': [100],

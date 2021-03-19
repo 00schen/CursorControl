@@ -79,12 +79,12 @@ if __name__ == "__main__":
 
             oracle='sim_gaze',
             oracle_kwargs={},
-            gaze_oracle_kwargs={'mode': 'il',
+            gaze_oracle_kwargs={'mode': 'train',
                                 # 'gaze_demos_path': os.path.join(main_dir, 'demos',
                                 #                                 'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
                                 #                                 '1614378227763030936.npy'),
                                 'synth_gaze': False,
-                                'per_step': True
+                                'per_step': False
                                 },
             input_in_obs=True,
             action_type='disc_traj',
