@@ -100,7 +100,7 @@ draw_rect_with_text("Look at the highlighted number", (255, 255, 255), width,
 
 cycles = 0
 n_points = len(calibration_points)
-remaining = [100] * n_points
+remaining = [50] * n_points
 curr_point = None
 
 
@@ -115,6 +115,7 @@ def get_event():
 
 
 features = [[] for i in range(len(calibration_points))]
+count = 0
 while running and sum(remaining) > 0:
     if curr_point is not None:
         draw_circle_with_text(str(curr_point), (0, 0, 0), calibration_points[curr_point],
@@ -134,6 +135,8 @@ while running and sum(remaining) > 0:
         gaze_features = face_processor.get_gaze_features(frame)
     features[curr_point].append(gaze_features)
     remaining[curr_point] = remaining[curr_point] - 1
+    count += 1
+    print(count)
 
 dataset = h5py.File('image/rl/gaze_capture/gaze_data_eval.h5')
 for i in range(len(features)):
@@ -144,7 +147,7 @@ for i in range(len(features)):
 
         batch_size = 32
         n_batches = math.ceil(len(point[0]) / batch_size)
-        for j in range(n_batches + 1):
+        for j in range(n_batches):
             batch = [feature[j * batch_size: (j + 1) * batch_size] for feature in point]
             output = i_tracker(*batch)
             data.extend(output.detach().cpu().numpy())
