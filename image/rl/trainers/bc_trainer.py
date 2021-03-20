@@ -139,8 +139,8 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
         # fake_aux = torch.maximum(torch.normal(mean=gaze, std=std), torch.tensor(0).to(ptu.device))
         # fake_aux_latent = self.policy.gaze_encoder(fake_aux)
         aux_pred = self.discrim(gaze_latent)
-        aux_labels = torch.zeros((gaze_latent.size(0), 1)).to(ptu.device)
-        aux_loss = -torch.nn.BCEWithLogitsLoss()(aux_pred, aux_labels)
+        aux_labels = torch.ones((gaze_latent.size(0), 1)).to(ptu.device)
+        aux_loss = torch.nn.BCEWithLogitsLoss()(aux_pred, aux_labels)
 
         l2_reg = 0
         for encoder in self.policy.gaze_encoders:
