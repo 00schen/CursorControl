@@ -147,8 +147,8 @@ class QRDDQNCQLTrainer(DDQNCQLTrainer):
         #     self.discrim_optimizer.step()
 
         aux_pred = discrim(gaze_latent)
-        aux_labels = th.zeros((gaze_latent.size(0), 1)).to(ptu.device)
-        aux_loss = -th.nn.BCEWithLogitsLoss()(aux_pred, aux_labels)
+        aux_labels = th.ones((gaze_latent.size(0), 1)).to(ptu.device)
+        aux_loss = th.nn.BCEWithLogitsLoss()(aux_pred, aux_labels)
         loss += self.aux_loss_weight * aux_loss
 
         l2_reg = 0
