@@ -39,7 +39,7 @@ def collect_demonstrations(variant):
 		target_index = 0
 		while target_index < env.base_env.num_targets:
 			def set_target_index(self):
-				self.target_index = 1
+				self.target_index = target_index
 			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
 			collected_paths = path_collector.collect_new_paths(
 				variant['path_length'],
@@ -50,6 +50,8 @@ def collect_demonstrations(variant):
 				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
 				paths.append(path)
 				success_count += path['env_infos'][-1]['task_success']
+				for info in path['env_infos']:
+					info['gaze'] = False
 			# if success_found:
 			target_index += 1
 			print("total paths collected: ", len(paths), "successes: ", success_count)
@@ -64,18 +66,25 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 1200
+	path_length = 400
 	variant = dict(
-		seedid=1000,
+		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
 			env_name='Bottle',
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03,frame_skip=5,),
-			oracle='keyboard',
+			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
+			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
+			gaze_oracle_kwargs={'mode': 'il',
+                                # 'gaze_demos_path': os.path.join(main_dir, 'demos',
+                                #                                 'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
+                                #                                 '1614378227763030936.npy'),
+                                'synth_gaze': False,
+                                'per_step': True
+                                },
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
@@ -91,10 +100,10 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.99,
-		num_episodes=1,
+		p=.9,
+		num_episodes=100,
 		path_length=path_length,
-		save_name_suffix="model"
+		save_name_suffix="debug"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
@@ -129,7 +138,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 20
+		num_workers = 10
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]

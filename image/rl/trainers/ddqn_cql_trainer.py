@@ -1,17 +1,57 @@
 import torch as th
+from torch import nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+
+from collections import OrderedDict
 
 from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.core.eval_util import create_stats_ordered_dict
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import Mlp
-from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
+# from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
+from rlkit.torch.torch_rl_algorithm import TorchTrainer
 from rlkit.core import logger
 
-class DDQNCQLTrainer(DoubleDQNTrainer):
-	def __init__(self,qf,target_qf,rf,
+class DQNTrainer(TorchTrainer):
+    def __init__(
+            self,
+            qf,
+            target_qf,
+			optimizer,
+            learning_rate=1e-3,
+            soft_target_tau=1e-3,
+            target_update_period=1,
+            qf_criterion=None,
+
+            discount=0.99,
+            reward_scale=1.0,
+    ):
+        super().__init__()
+        self.qf = qf
+        self.target_qf = target_qf
+        self.learning_rate = learning_rate
+        self.soft_target_tau = soft_target_tau
+        self.target_update_period = target_update_period
+        self.qf_optimizer = optimizer
+        self.discount = discount
+        self.reward_scale = reward_scale
+        self.qf_criterion = qf_criterion or nn.MSELoss()
+        self.eval_statistics = OrderedDict()
+        self._n_train_steps_total = 0
+        self._need_to_update_eval_statistics = True
+
+    def get_diagnostics(self):
+        return self.eval_statistics
+
+    def end_epoch(self, epoch):
+        self._need_to_update_eval_statistics = True
+
+class DDQNCQLTrainer(DQNTrainer):
+	def __init__(self,qf,target_qf,
+			# rf,
+			optimizer,
 			temp=1.0,
 			min_q_weight=1.0,
 			reward_update_period=.1,
@@ -20,8 +60,9 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			ground_truth=False,
 			target_name='noop',
 			reward_bias=.5,
+			kl_weight=1,
 			**kwargs):
-		super().__init__(qf,target_qf,**kwargs)
+		super().__init__(qf,target_qf,optimizer,**kwargs)
 		self.reward_bias = reward_bias
 		self.temp = temp
 		self.min_q_weight = min_q_weight
@@ -29,50 +70,57 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		self.alpha = alpha
 		self.ground_truth = ground_truth
 		self.target_name = target_name
-		self.rf = rf
+		self.kl_weight = kl_weight
+		# self.rf = rf
 
 	def train_from_torch(self, batch):
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
 		next_obs = batch['next_observations']
+		gaze = batch['gaze'].flatten()
 
 		"""
 		Reward and R loss
 		"""
-		if not self.ground_truth:
-			self.rf.train(False)
-			r_pred = self.rf(obs,actions,next_obs).detach()
-			# rewards = (F.sigmoid(r_pred)>self.reward_bias).float()-1
-			rewards = (F.sigmoid(r_pred)>self.reward_bias).float() + 100*batch['task_success']
-			terminals = th.logical_not(rewards).float()
-			# rewards = F.logsigmoid(r_pred)/5
-			accuracy = th.eq(r_pred.sigmoid()>.5, batch[self.target_name]).float().mean()
-			if self._need_to_update_eval_statistics:
-				self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
-		else:
-			# rewards = batch['noop']-1
-			# rewards = batch['noop'] + 200*batch['task_success']
-			# # terminals = th.logical_not(batch['noop']).float()
-			# terminals = batch['task_success'].float()
-			rewards = batch['rewards']
-		# rewards /= 100
+		# if not self.ground_truth:
+		# 	self.rf.train(False)
+		# 	r_pred = self.rf(obs,actions,next_obs).detach()
+		# 	# rewards = (F.sigmoid(r_pred)>self.reward_bias).float()-1
+		# 	rewards = (F.sigmoid(r_pred)>self.reward_bias).float() + 100*batch['task_success']
+		# 	terminals = th.logical_not(rewards).float()
+		# 	# rewards = F.logsigmoid(r_pred)/5
+		# 	accuracy = th.eq(r_pred.sigmoid()>.5, batch[self.target_name]).float().mean()
+		# 	if self._need_to_update_eval_statistics:
+		# 		self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+		# else:
+		# 	# rewards = batch['noop']-1
+		# 	# rewards = batch['noop'] + 200*batch['task_success']
+		# 	# # terminals = th.logical_not(batch['noop']).float()
+		# 	# terminals = batch['task_success'].float()
+		rewards = batch['rewards']
+		# # rewards /= 100
 
+		# eps = th.normal(mean=ptu.zeros((obs.size(0), self.qf.embedding_dim)))
 		"""
 		Q loss
 		"""
-		best_action_idxs = self.qf(next_obs).max(
+		# best_action_idxs = self.qf(next_obs,eps)[1].max(
+		best_action_idxs = self.qf(next_obs,gaze).max(
 			1, keepdim=True
 		)[1]
-		target_q_values = self.target_qf(next_obs).gather(
+		# target_q_values = self.target_qf(next_obs,eps)[1].gather(
+		target_q_values = self.target_qf(next_obs,gaze).gather(
 											1, best_action_idxs
 										)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		
 		# actions is a one-hot vector
-		curr_qf = self.qf(obs)
+		# kl_loss,curr_qf = self.qf(obs,eps)[:2]
+		curr_qf = self.qf(obs,gaze)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
+		# loss = self.qf_criterion(y_pred, y_target) + self.kl_weight*kl_loss
 		loss = self.qf_criterion(y_pred, y_target)
 
 		"""CQL term"""
@@ -117,7 +165,7 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 	@property
 	def networks(self):
 		nets = [
-			self.rf,
+			# self.rf,
 			self.qf,
 			self.target_qf,
 		]
@@ -125,7 +173,7 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 
 	def get_snapshot(self):
 		return dict(
-			rf =self.rf,
+			# rf =self.rf,
 			qf = self.qf,
 			target_qf = self.target_qf,
 		)

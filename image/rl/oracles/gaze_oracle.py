@@ -2,13 +2,16 @@ import pybullet as p
 import numpy as np
 import torch
 import cv2
-from rl.gaze_capture.face_processor import FaceProcessor
-from rl.gaze_capture.ITrackerModel import ITrackerModel
+from gaze_capture.face_processor import FaceProcessor
+from gaze_capture.ITrackerModel import ITrackerModel
 from .base_oracles import Oracle
 from rlkit.util.io import load_local_or_remote_file
 import threading
 import random
 import h5py
+import os
+from pathlib import Path
+main_dir = str(Path(__file__).resolve().parents[2])
 
 
 class KeyboardOracle(Oracle):
@@ -65,9 +68,9 @@ class SimGazeOracle(Oracle):
                 self.std = np.std(data, axis=0)
 
         else:
-            data_path = {'il': 'image/rl/gaze_capture/gaze_data_il.h5',
-                         'int': 'image/rl/gaze_capture/gaze_data_int.h5',
-                         'rl': 'image/rl/gaze_capture/gaze_data_rl.h5'}[mode]
+            data_path = {'il': os.path.join(main_dir,'gaze_capture','gaze_data_il.h5'),
+                         'int': os.path.join(main_dir,'gaze_capture','gaze_data_int.h5'),
+                         'rl': os.path.join(main_dir,'gaze_capture','gaze_data_rl.h5')}[mode]
 
             self.data = h5py.File(data_path, 'r')
 
@@ -92,20 +95,20 @@ class SimGazeOracle(Oracle):
 
 class RealGazeKeyboardOracle(KeyboardOracle):
     def __init__(self,
-                 predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
+                 predictor_path=os.path.join(main_dir,'gaze_capture','model_files','shape_predictor_68_face_landmarks.dat')):
         super().__init__()
         self.size = 128
-        self.webcam = cv2.VideoCapture(0)
+        self.webcam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         self.face_processor = FaceProcessor(predictor_path)
 
         self.i_tracker = ITrackerModel()
         if torch.cuda.is_available():
             self.device = torch.device("cuda:0")
             self.i_tracker.cuda()
-            state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar')['state_dict']
+            state = torch.load(os.path.join(main_dir,'gaze_capture','checkpoint.pth.tar'))['state_dict']
         else:
             self.device = "cpu"
-            state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar',
+            state = torch.load(os.path.join(main_dir,'gaze_capture','checkpoint.pth.tar'),
                                map_location=torch.device('cpu'))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
         self.input = np.zeros(self.size)

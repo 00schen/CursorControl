@@ -10,7 +10,7 @@ reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
 	def __init__(self, robot_type='jaco',success_dist=.05, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(15,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(7,), dtype=np.float32)
 		self.num_targets = 4*2
 		self.success_dist = success_dist
 		self.debug = debug
@@ -119,7 +119,8 @@ class BottleEnv(AssistiveEnv):
 		p.setGravity(0, 0, 0, physicsClientId=self.id)
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
-		p.resetDebugVisualizerCamera(cameraDistance= .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
+		# p.resetDebugVisualizerCamera(cameraDistance = .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
+		p.resetDebugVisualizerCamera(cameraDistance= .1, cameraYaw=180, cameraPitch=-90, cameraTargetPosition=[0, -.2, 1.1], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
 		return self._get_obs([0])
@@ -153,21 +154,20 @@ class BottleEnv(AssistiveEnv):
 		target1_pos = self.target1_pos = self.bottle_pos[self.target_index//2]
 		self.og_target1_pos = self.target1_pos.copy()
 		self.target1_reached = False
-		target_pos = self.target_pos = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([0,0,1])][self.target_index%2] # get top of shelf
+		target_pos = self.target_pos = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([.3,.3,-.1])][self.target_index%2] # get top of shelf
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
 		self.target1 = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target1_pos, useMaximalCoordinates=False, physicsClientId=self.id)
 		self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target_pos, useMaximalCoordinates=False, physicsClientId=self.id)
-		p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=self.shelf_pos + np.array([0,0,1]), useMaximalCoordinates=False, physicsClientId=self.id)
 
 		self.update_targets()
 
 	def update_targets(self):
 		# p.resetBasePositionAndOrientation(self.tool, self.tool_pos, [0, 0, 0, 1], physicsClientId=self.id)
 		if self.target1_reached:
-			self.target1_pos = self.bottle_pos[self.target_index] = self.tool_pos
+			self.target1_pos = self.bottle_pos[self.target_index//2] = self.tool_pos
 			p.resetBasePositionAndOrientation(self.target1, self.target1_pos, [0, 0, 0, 1], physicsClientId=self.id)
-			p.resetBasePositionAndOrientation(self.bottles[self.target_index], self.target1_pos-np.array([0,0,.05]), [0,0,0,1], physicsClientId=self.id)
+			p.resetBasePositionAndOrientation(self.bottles[self.target_index//2], self.target1_pos-np.array([0,0,.05]), [0,0,0,1], physicsClientId=self.id)
 
 	@property
 	def tool_pos(self):

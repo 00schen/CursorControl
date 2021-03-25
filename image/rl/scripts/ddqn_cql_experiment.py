@@ -1,22 +1,26 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import Mlp, ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy
+from rlkit.torch.networks import Mlp, ConcatMlp, MlpPolicy
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
-from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy, UserInputPolicy
-from rl.path_collectors import FullPathCollector
-from rl.env_wrapper import default_overhead
-from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import DDQNCQLTrainer, QRDDQNCQLTrainer
+from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy
+from rl.path_collectors import FullPathCollector, CustomPathCollector, rollout
+from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
+from rl.trainers import DDQNCQLTrainer
+from rl.misc.balanced_replay_buffer import BalancedReplayBuffer
 from rl.scripts.run_util import run_exp
+# from rl.misc.reward_ensemble import RewardEnsemble
+# from rl.misc.encoder_qf import TrainedVAEGazePolicy
+from rlkit.torch.networks import VAEGazePolicy, TransferEncoderPolicy
 
 import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
 from torch.nn import functional as F
+from torch import optim
 
 
 def experiment(variant):
@@ -29,39 +33,58 @@ def experiment(variant):
 	obs_dim = env.observation_space.low.size
 	action_dim = env.action_space.low.size
 	M = variant["layer_size"]
-	# upper_q = variant['env_kwargs']['config']['reward_max']*variant['env_kwargs']['config']['step_limit']
-	# lower_q = variant['env_kwargs']['config']['reward_min']*variant['env_kwargs']['config']['step_limit']
-	upper_q = 0
+	upper_q = 10
 	lower_q = -500
-	im_path = os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_28_21_44_17_0000--s-0', 'pretrain.pkl')
-	im_policy = th.load(im_path,map_location=th.device("cpu"))
-	qf = QrGazeMlp(
-		input_size=obs_dim,
-		action_size=action_dim,
-		hidden_sizes=[M, M, M, M],
-		hidden_activation=F.leaky_relu,
-		layer_norm=True,
-		# output_activation=Clamp(max=0, min=-5e3),
-		output_activation=Clamp(max=upper_q, min=lower_q),
-		gaze_encoder=im_policy.encoder,
-		gaze_dim=im_policy.gaze_dim,
-		embedding_dim=im_policy.embedding_dim,
+	# if variant['use_pretrained_decoder']:
+	# 	decoder = th.load(variant['decoder_path'], map_location='cpu')['trainer/qf']
+	# 	qf = TransferEncoderPolicy(decoder,pred_dim=3,decoder_pred_dim=50,
+	# 								layer_norm=variant['layer_norm'])
+	# 	target_qf = TransferEncoderPolicy(decoder,pred_dim=3,decoder_pred_dim=50,
+	# 								layer_norm=variant['layer_norm'])
+	# 	policy_optimizer = optim.Adam(
+	# 		qf.encoder.parameters(),
+	# 		lr=variant['qf_lr'],
+	# 	)
+	# else:
+	# 	qf = MlpPolicy(input_size=obs_dim,
+	# 					 output_size=action_dim,
+	# 					 hidden_sizes=[M, M, M, M, M],
+	# 					 layer_norm=variant['layer_norm'],
+	# 					 output_activation=Clamp(max=upper_q, min=lower_q),
+	# 					 )
+	# 	target_qf = MlpPolicy(input_size=obs_dim,
+	# 					 output_size=action_dim,
+	# 					 hidden_sizes=[M, M, M, M, M],
+	# 					 layer_norm=variant['layer_norm'],
+	# 					 output_activation=Clamp(max=upper_q, min=lower_q),
+	# 					 )
+	# 	optimizer = optim.Adam(
+	# 		qf.parameters(),
+	# 		lr=variant['qf_lr'],
+	# 	)
+
+	qf_decoder = MlpPolicy(input_size=obs_dim,
+						 output_size=action_dim,
+						 hidden_sizes=[M, M, M, M, M],
+						 layer_norm=variant['layer_norm'],
+						 output_activation=Clamp(max=upper_q, min=lower_q),
+						 )
+	target_qf_decoder = MlpPolicy(input_size=obs_dim,
+						 output_size=action_dim,
+						 hidden_sizes=[M, M, M, M, M],
+						 layer_norm=variant['layer_norm'],
+						 output_activation=Clamp(max=upper_q, min=lower_q),
+						 )
+	qf = TransferEncoderPolicy(qf_decoder,decoder_pred_dim=3,
+								layer_norm=variant['layer_norm'])
+	target_qf = TransferEncoderPolicy(target_qf_decoder,decoder_pred_dim=3,
+								layer_norm=variant['layer_norm'])
+	optimizer = optim.Adam(
+		qf.parameters(),
+		lr=variant['qf_lr'],
 	)
-	target_qf = QrGazeMlp(
-		input_size=obs_dim,
-		action_size=action_dim,
-		hidden_sizes=[M, M, M, M],
-		hidden_activation=F.leaky_relu,
-		layer_norm=True,
-		# output_activation=Clamp(max=0, min=-5e3),
-		output_activation=Clamp(max=upper_q, min=lower_q),
-		gaze_encoder=im_policy.encoder,
-		gaze_dim=im_policy.gaze_dim,
-		embedding_dim=im_policy.embedding_dim,
-	)
-	if variant['freeze_encoder']:
-		for param in qf.gaze_encoder.parameters():
-			param.requires_grad = False
+
+	# rf = RewardEnsemble(variant['rf_path'])
 	eval_policy = ArgmaxPolicy(
 		qf,
 	)
@@ -77,12 +100,12 @@ def experiment(variant):
 			logit_scale=variant['expl_kwargs']['logit_scale'])
 	else:
 		expl_policy = ArgmaxPolicy(
-			qf, eps=variant['expl_kwargs']['eps']
+			qf,
 		)
 	if variant['exploration_strategy'] == 'merge_arg':
 		expl_policy = ComparisonMergePolicy(env.rng, expl_policy, env.oracle.size)
 	elif variant['exploration_strategy'] == 'override':
-		expl_policy = UserInputPolicy(env, p=1, base_policy=expl_policy, intervene=True)
+		expl_policy = OverridePolicy(expl_policy, env, env.oracle.size)
 	expl_path_collector = FullPathCollector(
 		env,
 		expl_policy,
@@ -92,15 +115,16 @@ def experiment(variant):
 	trainer = DDQNCQLTrainer(
 		qf=qf,
 		target_qf=target_qf,
-		rf=rf,
+		# rf=rf,
+		optimizer=optimizer,
 		**variant['trainer_kwargs']
 		)
 	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		target_name='task_success',
-		false_prop=variant['false_prop'],
-		env_info_sizes={'task_success':1},
+		target_name='gaze',
+		# false_prop=variant['false_prop'],
+		env_info_sizes={'task_success':1, 'target1_reached':1, 'gaze':1},
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -116,27 +140,27 @@ def experiment(variant):
 		path_loader = SimplePathLoader(
 			demo_path=variant['demo_paths'],
 			demo_path_proportion=variant['demo_path_proportions'],
-			replay_buffers=[replay_buffer, replay_buffer, replay_buffer]
+			replay_buffer=replay_buffer,
 		)
 		path_loader.load_demos()
 	from rlkit.core import logger
-	if variant['pretrain_rf']:
-		logger.remove_tabular_output(
-			'progress.csv', relative_to_snapshot_dir=True,
-		)
-		logger.add_tabular_output(
-			'pretrain_rf.csv', relative_to_snapshot_dir=True,
-		)
-		from tqdm import tqdm
-		for _ in tqdm(range(int(1e5)), miniters=10, mininterval=10):
-			train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-			trainer.pretrain_rf(train_data)
-		logger.remove_tabular_output(
-			'pretrain_rf.csv', relative_to_snapshot_dir=True,
-		)
-		logger.add_tabular_output(
-			'progress.csv', relative_to_snapshot_dir=True,
-		)
+	# if variant['pretrain_rf']:
+	# 	logger.remove_tabular_output(
+	# 		'progress.csv', relative_to_snapshot_dir=True,
+	# 	)
+	# 	logger.add_tabular_output(
+	# 		'pretrain_rf.csv', relative_to_snapshot_dir=True,
+	# 	)
+	# 	from tqdm import tqdm
+	# 	for _ in tqdm(range(int(1e5)), miniters=10, mininterval=10):
+	# 		train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+	# 		trainer.pretrain_rf(train_data)
+	# 	logger.remove_tabular_output(
+	# 		'pretrain_rf.csv', relative_to_snapshot_dir=True,
+	# 	)
+	# 	logger.add_tabular_output(
+	# 		'progress.csv', relative_to_snapshot_dir=True,
+	# 	)
 
 	if variant['pretrain']:
 		import gtimer as gt
@@ -186,13 +210,14 @@ if __name__ == "__main__":
 	num_epochs = int(10)
 	variant = dict(
 		layer_size=128,
-		rf_path=os.path.join(main_dir, 'logs', 'test-b-reward-1'),
+		# rf_path=os.path.join(main_dir, 'logs', 'test-b-reward-1'),
+		decoder_path=os.path.join(main_dir, 'util_models', 'cql_transfer.pkl'),
 		exploration_argmax=True,
 		exploration_strategy='',
 		expl_kwargs=dict(
 			logit_scale=1000,
 		),
-		replay_buffer_size=int(5e4)*path_length,
+		replay_buffer_size=int(2e4)*path_length,
 		# intervention_prop=.5
 		trainer_kwargs=dict(
 			# qf_lr=1e-3,
@@ -230,11 +255,11 @@ if __name__ == "__main__":
 		),
 
 		load_demos=True,
-		demo_paths=[
-					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_15000_model1.npy"),
-					# os.path.join(main_dir, "demos", f"Bottle_model_noisy_9500_success.npy"),
-					os.path.join(main_dir, "demos", f"Kitchen_keyboard_on_policy_1_model.npy"),
-					],
+		# demo_paths=[
+		# 			os.path.join(main_dir, "demos", f"Bottle_model_on_policy_1000_bottle_two_target.npy"),
+		# 			# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_10000_bottle_two_target.npy"),
+		# 			# os.path.join(main_dir, "demos", f"OneSwitch_model_on_policy_10000_model.npy"),
+		# 			],
 		pretrain_rf=False,
 		pretrain=False,
 
@@ -243,40 +268,43 @@ if __name__ == "__main__":
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03, frame_skip=5,),
 
-			oracle='sim_gaze_model',
-			oracle_kwargs=dict(),
+			oracle='dummy_gaze',
+			oracle_kwargs=dict(
+				threshold=.5
+			),
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['high_dim_user', 'reward'],
+			adapts=['static_gaze', 'reward'],
+			gaze_dim=128,
 			apply_projection=False,
-			space=0,
-			num_obs=10,
-			num_nonnoop=0,
+			state_type=0,
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			reward_type='kitchen',
-			gaze_oracle_kwargs={'mode': 'rl'},
+			reward_type='part_sparse',
 		)},
 
 		logprob=False,
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000,2001,],
 
-		'trainer_kwargs.ground_truth': [True,],
 		'trainer_kwargs.temp': [1],
 		'trainer_kwargs.min_q_weight': [1],
-		'trainer_kwargs.reward_bias': [.5],
-		'env_kwargs.config.state_type': [1],
-		'env_kwargs.config.env_kwargs.debug': [False],
-		'env_kwargs.config.env_name': ['Kitchen'],
-		# 'env_kwargs.config.env_name': ['OneSwitch'],
+		'env_kwargs.config.env_name': ['Bottle'],
+		'use_pretrained_decoder': [False],
+		'trainer_kwargs.kl_weight': [0,],
+		'layer_norm': [True],
 
-		'demo_path_proportions':[[int(5.5e3),int(1e4)], ],
-		# 'demo_path_proportions':[[int(1.5e4)], ],
-		# 'demo_path_proportions':[[10], ],
+		'demo_paths': [[
+					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_1000_bottle_two_target.npy"),
+					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_100_bottle_two_target_static_gaze.npy"),
+					],[
+					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_1000_bottle_two_target.npy"),
+					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_1000_bottle_two_target_gaze.npy"),
+					],],
+		'demo_path_proportions':[[int(1e3),int(1e3)], ],
 		'false_prop': [.9],
 		'trainer_kwargs.qf_lr': [1e-5],
 	}

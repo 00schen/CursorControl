@@ -7,7 +7,7 @@ from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy, UserInputPolicy
 from rl.path_collectors import FullPathCollector
-from rl.env_wrapper import default_overhead
+from rl.misc.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer, QRDDQNCQLTrainer
 from rl.scripts.run_util import run_exp

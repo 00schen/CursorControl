@@ -4,6 +4,9 @@ from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.envs.env_utils import get_dim
 import numpy as np
 import warnings
+import h5py
+import os
+from pathlib import Path
 
 class BalancedReplayBuffer(EnvReplayBuffer):
 	def __init__(
@@ -11,10 +14,12 @@ class BalancedReplayBuffer(EnvReplayBuffer):
 			max_replay_buffer_size,
 			env,
 			target_name='noop',
-			env_info_sizes={'noop':1,'episode_success':1},
+			# env_info_sizes={'noop':1,'episode_success':1},
+			env_info_sizes={'noop':1,},
 			false_prop=.5,
 	):
-		env_info_sizes.update({'noop':1,'episode_success':1})
+		env_info_sizes.update({'noop':1,})
+		# env_info_sizes.update({'noop':1,'episode_success':1})
 		super().__init__(
 			max_replay_buffer_size=max_replay_buffer_size,
 			env=env,
@@ -55,3 +60,27 @@ class BalancedReplayBuffer(EnvReplayBuffer):
 			assert key not in batch.keys()
 			batch[key] = self._env_infos[key][indices]
 		return batch
+
+class CycleGANReplayBuffer(BalancedReplayBuffer):
+	def __init__(
+			self,
+			*args,
+			**kwargs
+	):
+		super().__init__(
+			*args,
+			**kwargs
+		)
+		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',f"Bottle_gaze_data_2.h5"),'r') as gaze_data:
+			self.gaze_dataset = {k:v[()] for k,v in gaze_data.items()}
+
+	def sample_gaze(self,size):
+		data = self.gaze_dataset['0']
+		data_ind = np.random.choice(len(data),size)
+		return data[data_ind]
+
+	def random_batch(self, batch_size):
+		batch = super().random_batch(batch_size)
+		batch['unstructured_gaze'] = np.array(self.sample_gaze(batch_size))
+		return batch
+

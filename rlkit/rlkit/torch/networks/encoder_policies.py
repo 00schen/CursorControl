@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from rlkit.torch.networks.mlp import Mlp
 from rlkit.torch.core import eval_np
+from rlkit.pythonplusplus import identity
+from rlkit.torch import pytorch_util as ptu
 
 
 class VectorQuantizer(nn.Module):
@@ -84,7 +86,7 @@ class VQGazePolicy(nn.Module):
 
 class VAEGazePolicy(nn.Module):
     def __init__(self, input_size, output_size, encoder_hidden_sizes=(64,), decoder_hidden_sizes=(128, 128, 128, 128),
-                 embedding_dim=1, layer_norm=False, gaze_dim=128, beta=1):
+                 embedding_dim=1, layer_norm=False, gaze_dim=128, beta=1, output_activation=identity):
         super(VAEGazePolicy, self).__init__()
 
         self.encoder = Mlp(input_size=gaze_dim,
@@ -95,7 +97,8 @@ class VAEGazePolicy(nn.Module):
         self.decoder = Mlp(input_size=embedding_dim + input_size - gaze_dim,
                            output_size=output_size,
                            hidden_sizes=decoder_hidden_sizes,
-                           layer_norm=layer_norm)
+                           layer_norm=layer_norm,
+                           output_activation=output_activation)
         self.gaze_dim = gaze_dim
         self.embedding_dim = embedding_dim
         self.beta = beta
@@ -110,7 +113,49 @@ class VAEGazePolicy(nn.Module):
         kl_loss = -0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar))
         kl_loss = self.beta * torch.mean(kl_loss)
 
-        return kl_loss, pred
+        return kl_loss, pred, sample
 
     def get_action(self, x):
         return eval_np(self, x)[1], {}
+
+from numpy import prod
+class TransferEncoderPolicy(nn.Module):
+    # def __init__(self, ecnoder, decoder, decoder_pred_dim,
+    #              gaze_dim=128, encoder_hidden_sizes=(64,64),
+    #              layer_norm=False, beta=1, output_activation=identity):
+    def __init__(self, encoder, decoder, beta=1):
+        super().__init__()
+
+        # self.encoder = Mlp(input_size=gaze_dim,
+        #                    output_size=decoder_pred_dim,
+        #                    hidden_sizes=encoder_hidden_sizes
+        #                    )
+
+        self.encoder = encoder
+        self.decoder = decoder
+        # self.layer_norm = ptu.zeros(1, requires_grad=True)
+        # self.layer_norm = nn.LayerNorm(decoder.output_size)
+        self.gaze_dim = encoder.input_size
+        # self.decoder_pred_dim = decoder_pred_dim
+
+    def forward(self, x, gaze=ptu.ones(1),):
+        if len(x.shape) < 2:
+            x = x[None,:]
+        gaze_x = x[gaze.bool()]
+        obs = x[torch.logical_not(gaze.bool())]
+        if prod(gaze_x.size()):
+            gaze_obs, gaze_feat = gaze_x[..., :-self.gaze_dim], gaze_x[..., -self.gaze_dim:]
+            latent = self.encoder(gaze_feat)
+            gaze_obs = torch.cat((gaze_obs, latent, ptu.zeros(latent.shape[0],self.gaze_dim-latent.shape[1])), dim=-1)
+            if prod(obs.size()):
+                obs = torch.cat((gaze_obs,obs))
+            else:
+                obs = gaze_obs
+        pred = self.decoder(obs)
+        # norm_pred = self.layer_norm(pred)
+        x = x.squeeze()
+
+        return pred
+
+    def get_action(self, x):
+        return eval_np(self, x), {}

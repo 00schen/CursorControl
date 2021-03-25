@@ -17,10 +17,11 @@ class ArgmaxPolicy(PyTorchModule):
 			obs = obs.cuda()
 
 		with th.no_grad():
-			# _, q_values = self.qf(obs)
-			q_values = self.qf(obs)
+			q_values, info = self.qf.get_action(obs)
+			q_values = ptu.tensor(q_values)
+			# q_values = self.qf(obs)
 			action = F.one_hot(q_values.argmax().long(),6).flatten()
-		return ptu.get_numpy(action), {}
+		return ptu.get_numpy(action), info
 		# q_values, info = self.qf.get_action(obs)
 		# action = np.zeros(6)
 		# action[np.argmax(q_values)] = 1
