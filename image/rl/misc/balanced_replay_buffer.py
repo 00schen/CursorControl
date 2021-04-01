@@ -28,10 +28,10 @@ class BalancedReplayBuffer(EnvReplayBuffer):
 		self.target_name = target_name
 		self.false_prop = false_prop
 
-	def modify_path(self,path):
-		for info in path['env_infos']:
-			# info['episode_success'] = path['env_infos'][-1]['task_success']
-			info['episode_success'] = len(path['env_infos']) < 150
+	# def modify_path(self,path):
+		# for info in path['env_infos']:
+		# 	# info['episode_success'] = path['env_infos'][-1]['task_success']
+		# 	info['episode_success'] = len(path['env_infos']) < 150
 
 	def terminate_episode(self):
 		if self.target_name in self._env_infos:
@@ -61,26 +61,45 @@ class BalancedReplayBuffer(EnvReplayBuffer):
 			batch[key] = self._env_infos[key][indices]
 		return batch
 
-class CycleGANReplayBuffer(BalancedReplayBuffer):
+class GazeReplayBuffer(BalancedReplayBuffer):
 	def __init__(
 			self,
+			data_path,
 			*args,
 			**kwargs
 	):
+		kwargs['env_info_sizes'].update({'unique_index': 1})
 		super().__init__(
 			*args,
 			**kwargs
 		)
-		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',f"Bottle_gaze_data_2.h5"),'r') as gaze_data:
+		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',data_path),'r') as gaze_data:
 			self.gaze_dataset = {k:v[()] for k,v in gaze_data.items()}
+		self.key_index_limits = [0]*len(self.gaze_dataset.keys())
 
-	def sample_gaze(self,size):
-		data = self.gaze_dataset['0']
-		data_ind = np.random.choice(len(data),size)
-		return data[data_ind]
+	def add_path(self, path):
+		target_index = path['env_infos'][0]['unique_index']
+		self.key_index_limits[int(target_index)] += 1
+		if True in [info['target1_reached'] for info in path['env_infos']]:
+			i = min([i for i in range(len(path['env_infos'])) if path['env_infos'][i]['target1_reached']])
+			target_index = path['env_infos'][i]['unique_index']
+			self.key_index_limits[int(target_index)] += 1
+		return super().add_path(path)
+
+	def sample_gaze(self,indices):
+		samples = []
+		for index in indices:
+			index = int(index)
+			data = self.gaze_dataset[str(index)]
+			data_ind = np.random.choice(len(data))
+			# data_ind = np.random.choice(min(len(data),self.key_index_limits[index]))
+			samples.append(data[data_ind].flatten())
+		return samples
 
 	def random_batch(self, batch_size):
 		batch = super().random_batch(batch_size)
-		batch['unstructured_gaze'] = np.array(self.sample_gaze(batch_size))
+		gaze_samples = np.array(self.sample_gaze(batch['unique_index'].flatten()))
+		batch['observations'][:,-128:] = gaze_samples
+		batch['next_observations'][:,-128:] = gaze_samples
 		return batch
 

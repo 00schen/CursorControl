@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
 		on_policy=True,
 		p=.9,
-		num_episodes=100,
+		num_episodes=5000,
 		path_length=path_length,
 		save_name_suffix="debug"
 	)
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 10
+		num_workers = 20
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]

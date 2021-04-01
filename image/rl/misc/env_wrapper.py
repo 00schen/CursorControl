@@ -38,7 +38,7 @@ def default_overhead(config):
 			self.adapts = [adapt(self, config) for adapt in self.adapts]
 			self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
 																self.adapts, (obs, r, done, info))
-			self.adapt_reset = lambda obs: reduce(lambda obs, adapt: adapt._reset(obs), self.adapts, (obs))
+			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs,info), self.adapts, (obs))
 
 		def step(self, action):
 			tran = super().step(action)
@@ -214,7 +214,7 @@ class oracle:
 			self._predict(obs,info)
 		return obs,r,done,info
 
-	def _reset(self,obs):
+	def _reset(self,obs,info=None):
 		self.oracle.reset()
 		self.master_env.recommend = np.zeros(self.oracle.size)
 		##### obs = [--raw observation--, --oracle recommendation--] #####
@@ -238,29 +238,32 @@ class static_gaze:
 		master_env.observation_space = spaces.Box(-np.inf,np.inf,(get_dim(master_env.observation_space)+self.gaze_dim,))
 		self.env_name = master_env.env_name
 		self.master_env = master_env
-		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',f"{self.env_name}_gaze_data_1.h5"),'r') as gaze_data:
+		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',config['gaze_path']),'r') as gaze_data:
 			self.gaze_dataset = {k:v[()] for k,v in gaze_data.items()}
 
-	def sample_gaze(self,index,target1_reached=False):
-		unique_target_index = 4+(index%2) if target1_reached else index//2
+	def sample_gaze(self,index):
+		unique_target_index = index
 		data = self.gaze_dataset[str(unique_target_index)]
 		return self.master_env.rng.choice(data)
 
 	def _step(self,obs,r,done,info):
 		# if info['gaze']:
-		if info[]
-		self.static_gaze = self.sample_gaze(info['target_index'],info['target1_reached'])
-		obs = np.concatenate((obs,static_gaze))
+		self.static_gaze = self.sample_gaze(info['unique_index'])
+		obs = np.concatenate((obs,self.static_gaze))
 		# else:
 		# 	state_func = np.concatenate([np.ravel(info['target_pos' if info['target1_reached'] else 'target1_pos']),])
 		# 	state_func = np.concatenate((state_func,np.zeros(self.gaze_dim-state_func.size)))
 		# 	obs = np.concatenate((obs,state_func))
 		return obs,r,done,info
 
-	def _reset(self,obs):
-		self.static_gaze = self.sample_gaze(self.master_env.base_env.target_index)
-		return np.concatenate((obs,self.static_gaze)
-		# return np.concatenate((obs,np.zeros(self.gaze_dim)))
+	def _reset(self,obs,info=None):
+		if info == None:
+			index = self.master_env.base_env.target_index//2
+		else:
+			index = info['unique_index']
+		self.static_gaze = self.sample_gaze(index)
+		# return np.concatenate((obs,self.static_gaze))
+		return np.concatenate((obs,np.zeros(self.gaze_dim)))
 
 def one_hot(np_indices,num_classes):
 	one_hots = np.zeros((*np_indices.shape,num_classes))
@@ -388,5 +391,5 @@ class reward:
 
 		return obs, r, done, info
 
-	def _reset(self, obs):
+	def _reset(self, obs,info=None):
 		return obs

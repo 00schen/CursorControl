@@ -87,9 +87,9 @@ class DiscreteCycleGANBCTrainerTorch(TorchBCTrainer):
     def train_from_torch(self, batch):
         obs = batch["observations"]
         actions = batch["actions"]
-        gaze = batch['gaze'].flatten()
+        # gaze = batch['gaze'].flatten()
         labels = torch.argmax(actions, dim=-1)
-        pred = self.policy(obs,gaze)
+        pred = self.policy(obs)
         bc_loss = torch.nn.CrossEntropyLoss()(pred, labels)
         loss = bc_loss
         self.policy_optimizer.zero_grad()
@@ -115,9 +115,9 @@ class DiscreteBCTrainerTorch(TorchBCTrainer):
     def train_from_torch(self, batch):
         obs = batch["observations"]
         actions = batch["actions"]
-        gaze = batch['gaze'].flatten()
+        # gaze = batch['gaze'].flatten()
         labels = torch.argmax(actions, dim=-1)
-        pred = self.policy(obs,gaze)
+        pred = self.policy(obs)
         bc_loss = torch.nn.CrossEntropyLoss()(pred, labels)
         loss = bc_loss
         self.policy_optimizer.zero_grad()

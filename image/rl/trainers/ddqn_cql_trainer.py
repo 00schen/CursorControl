@@ -26,7 +26,6 @@ class DQNTrainer(TorchTrainer):
             qf_criterion=None,
 
             discount=0.99,
-            reward_scale=1.0,
     ):
         super().__init__()
         self.qf = qf
@@ -36,7 +35,6 @@ class DQNTrainer(TorchTrainer):
         self.target_update_period = target_update_period
         self.qf_optimizer = optimizer
         self.discount = discount
-        self.reward_scale = reward_scale
         self.qf_criterion = qf_criterion or nn.MSELoss()
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -50,67 +48,41 @@ class DQNTrainer(TorchTrainer):
 
 class DDQNCQLTrainer(DQNTrainer):
 	def __init__(self,qf,target_qf,
-			# rf,
 			optimizer,
 			temp=1.0,
 			min_q_weight=1.0,
 			reward_update_period=.1,
 			add_ood_term=-1,
 			alpha = .4,
-			ground_truth=False,
-			target_name='noop',
-			reward_bias=.5,
-			kl_weight=1,
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
-		self.reward_bias = reward_bias
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 		self.add_ood_term = add_ood_term
 		self.alpha = alpha
-		self.ground_truth = ground_truth
-		self.target_name = target_name
-		self.kl_weight = kl_weight
-		# self.rf = rf
 
 	def train_from_torch(self, batch):
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
 		next_obs = batch['next_observations']
-		gaze = batch['gaze'].flatten()
+		# gaze = batch['gaze'].flatten()
 
 		"""
 		Reward and R loss
 		"""
-		# if not self.ground_truth:
-		# 	self.rf.train(False)
-		# 	r_pred = self.rf(obs,actions,next_obs).detach()
-		# 	# rewards = (F.sigmoid(r_pred)>self.reward_bias).float()-1
-		# 	rewards = (F.sigmoid(r_pred)>self.reward_bias).float() + 100*batch['task_success']
-		# 	terminals = th.logical_not(rewards).float()
-		# 	# rewards = F.logsigmoid(r_pred)/5
-		# 	accuracy = th.eq(r_pred.sigmoid()>.5, batch[self.target_name]).float().mean()
-		# 	if self._need_to_update_eval_statistics:
-		# 		self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
-		# else:
-		# 	# rewards = batch['noop']-1
-		# 	# rewards = batch['noop'] + 200*batch['task_success']
-		# 	# # terminals = th.logical_not(batch['noop']).float()
-		# 	# terminals = batch['task_success'].float()
 		rewards = batch['rewards']
-		# # rewards /= 100
 
 		# eps = th.normal(mean=ptu.zeros((obs.size(0), self.qf.embedding_dim)))
 		"""
 		Q loss
 		"""
 		# best_action_idxs = self.qf(next_obs,eps)[1].max(
-		best_action_idxs = self.qf(next_obs,gaze).max(
+		best_action_idxs = self.qf(next_obs).max(
 			1, keepdim=True
 		)[1]
 		# target_q_values = self.target_qf(next_obs,eps)[1].gather(
-		target_q_values = self.target_qf(next_obs,gaze).gather(
+		target_q_values = self.target_qf(next_obs).gather(
 											1, best_action_idxs
 										)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
@@ -118,7 +90,7 @@ class DDQNCQLTrainer(DQNTrainer):
 		
 		# actions is a one-hot vector
 		# kl_loss,curr_qf = self.qf(obs,eps)[:2]
-		curr_qf = self.qf(obs,gaze)
+		curr_qf = self.qf(obs)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
 		# loss = self.qf_criterion(y_pred, y_target) + self.kl_weight*kl_loss
 		loss = self.qf_criterion(y_pred, y_target)

@@ -28,6 +28,10 @@ def experiment(variant):
 	# embedding_dim = variant['embedding_dim']
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid'])
+	eval_config = variant['env_kwargs']['config'].copy()
+	eval_config['gaze_path'] = 'bottle_gaze_data_eval.h5'
+	eval_env = default_overhead(variant['env_kwargs']['config'])
+	eval_env.seed(variant['seedid']+1)
 	M = variant["layer_size"]
 	obs_dim = env.observation_space.low.size
 	action_dim = env.action_space.low.size
@@ -60,38 +64,40 @@ def experiment(variant):
 	# 	)
 	# policy.to(ptu.device)
 
-	policy_encoder = Mlp(input_size=gaze_dim,
-                           output_size=gaze_dim,
-                           hidden_sizes=(64,64)
-                           )
+	# policy_encoder = Mlp(input_size=gaze_dim,
+    #                        output_size=gaze_dim,
+    #                        hidden_sizes=(64,64)
+    #                        )
 	policy_decoder = MlpPolicy(input_size=obs_dim,
 						 output_size=action_dim,
 						 hidden_sizes=[M, M, M, M, M],
 						 layer_norm=variant['layer_norm'],
 						 )
-	policy = TransferEncoderPolicy(policy_encoder,policy_decoder)
+	policy = policy_decoder
+	# policy = TransferEncoderPolicy(policy_encoder,policy_decoder)
 	policy_optimizer = optim.Adam(
 		policy.parameters(),
 		lr=5e-4,
 	)
 
-	trainer_type = DiscreteCycleGANBCTrainerTorch
+	trainer_type = DiscreteBCTrainerTorch
 	trainer = trainer_type(
 		policy=policy,
 		optimizer=policy_optimizer,
-		encoder=policy_encoder,
-		gan_kwargs=variant['gan_kwargs']
+		# encoder=policy,
+		# gan_kwargs=variant['gan_kwargs']
 		# policy_lr=variant['trainer_kwargs']['lr']
 	)
 
-	replay_buffer = CycleGANReplayBuffer(
+	# replay_buffer = CycleGANReplayBuffer(
+	replay_buffer = BalancedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
-		# target_name=variant['balance_feature'],
+		target_name=variant['balance_feature'],
 		# env_info_sizes={variant['balance_feature']:1},
-		target_name='gaze',
+		# target_name='gaze',
 		# false_prop=variant['false_prop'],
-		env_info_sizes={'task_success':1, 'target1_reached':1, 'gaze':1},
+		env_info_sizes={'task_success':1, 'target1_reached':1},
 	)
 
 	path_loader = SimplePathLoader(
@@ -106,7 +112,7 @@ def experiment(variant):
 	)
 
 	eval_path_collector = FullPathCollector(
-		env,
+		eval_env,
 		eval_policy,
 		save_env_in_snapshot=False
 	)
@@ -203,6 +209,7 @@ if __name__ == "__main__":
 			# state_type=0,
 			adapts=['static_gaze'],
 			gaze_dim=128,
+			gaze_path='bottle_gaze_data_small.h5'
 		)},
 
 		# seedid=2000,
@@ -213,18 +220,18 @@ if __name__ == "__main__":
 	search_space = {
 		'seedid':[2000,2001,2002,2003],
 		# use_pretrained_decoder=[True,False],
-		'layer_norm':[False],
+		'layer_norm':[True],
 		# demo_path_proportions=[[1000,100],[1000,50],[1000,20],[1000,10]],
-		'demo_path_proportions':[[int(1e3),int(1000)], ],
+		'demo_path_proportions':[[int(5e3)], ],
 		'demo_paths':[[
 					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_1000_bottle_two_target.npy"),
 					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_100_bottle_two_target_static_gaze.npy"),
-					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_100_debug.npy"),
-					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_100_debug_gaze.npy"),
+					os.path.join(main_dir, "demos", f"Bottle_model_on_policy_5000_debug.npy"),
+					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_100_debug_gaze.npy"),
 					]],
-		'gan_kwargs.gaze_recon_w': [0],
-		'gan_kwargs.target_pos_recon_w': [0],
-		'gan_kwargs.adversarial_w': [0],
+		# 'gan_kwargs.gaze_recon_w': [0],
+		# 'gan_kwargs.target_pos_recon_w': [0],
+		# 'gan_kwargs.adversarial_w': [0],
 	}
 	# search_space = dict(
 	# 	seedid=[2000],

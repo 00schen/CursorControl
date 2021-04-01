@@ -52,6 +52,7 @@ class BottleEnv(AssistiveEnv):
 			'target1_pos': self.og_target1_pos.copy(),
 			'target_pos': self.target_pos.copy(),
 			'target1_reached': self.target1_reached,
+			'unique_index': 4+(self.target_index%2) if self.target1_reached else self.target_index//2
 		}
 		done = False
 
