@@ -142,46 +142,33 @@ class MixedPolicy(nn.Module):
                            hidden_sizes=decoder_hidden_sizes,
                            layer_norm=layer_norm)
 
-        self.auto_decoder = Mlp(input_size=embedding_dim, output_size=gaze_dim, hidden_sizes=encoder_hidden_sizes)
+        self.shared_dim = encoder_hidden_sizes[-1]
+        self.shared_decoder = Mlp(input_size=embedding_dim, output_size=self.shared_dim,
+                                  output_activation=F.relu, hidden_sizes=())
+
+        self.reconstructor = Mlp(input_size=self.shared_dim, output_size=gaze_dim,
+                                 hidden_sizes=encoder_hidden_sizes)
 
         self.gaze_dim = gaze_dim
         self.embedding_dim = embedding_dim
         self.num_encoders = num_encoders
 
-        data_paths = ['image/rl/gaze_capture/gaze_data_train.h5']
-        gaze_data = []
-        for path in data_paths:
-            loaded = h5py.File(path, 'r')
-            for key in loaded.keys():
-                gaze_data.append(loaded[key])
-
-        self.gaze_data = np.concatenate(gaze_data, axis=0)
         #self.gaze_data = np.concatenate([data[key][()] for key in data.keys()], axis=0)
         self.reconstruct_loss_fn = torch.nn.MSELoss()
 
     def forward(self, x, gaze=True, train=True):
         obs, aux = x[..., :-self.gaze_dim], x[..., -self.gaze_dim:]
-        reconstruct_loss = 0
         if gaze:
             if train:
                 encoder = np.random.choice(self.gaze_encoders)
                 latent = encoder(aux)
-                indices = np.random.choice(len(self.gaze_data), size=obs.size(0), replace=True)
-                gaze_batch = torch.from_numpy(self.gaze_data[indices]).to(ptu.device)
-                gaze_latent = encoder(gaze_batch)
-                pred = self.auto_decoder(gaze_latent)
-                reconstruct_loss = self.reconstruct_loss_fn(pred, gaze_batch)
-                latent_ret = torch.cat((latent, gaze_latent), dim=0)
             else:
                 latent = 0
                 for encoder in self.gaze_encoders:
                     latent += encoder(aux)
                 latent = latent / self.num_encoders
-
-                latent_ret = latent
         else:
             latent = aux[..., :self.embedding_dim]
-            latent_ret = latent
 
         # mean, logvar = latent[..., :self.embedding_dim], latent[..., self.embedding_dim:]
         # sample = mean #+ torch.exp(0.5 * logvar) * eps
@@ -191,7 +178,7 @@ class MixedPolicy(nn.Module):
         # kl_loss = -0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar))
         # kl_loss = self.beta * torch.mean(kl_loss)
 
-        return latent_ret, pred, reconstruct_loss
+        return latent, pred
 
     def get_action(self, x):
         return eval_np(self, x, train=False)[1], {}

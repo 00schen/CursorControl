@@ -136,7 +136,7 @@ if __name__ == "__main__":
             aux_loss_weight=1,
             discrim_hidden=(64,),
             l2_weight=0,
-            reconstruct_weight=0
+            reconstruct_weight=1
         ),
         bc_args=dict(
             batch_size=128,

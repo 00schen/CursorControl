@@ -6,6 +6,8 @@ from rlkit.torch.networks.mlp import Mlp
 import rlkit.torch.pytorch_util as ptu
 import torch.nn.functional as F
 import numpy as np
+import itertools
+import h5py
 
 
 class TorchBCTrainer(TorchTrainer):
@@ -76,16 +78,25 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
             reconstruct_weight=1
     ):
         super().__init__(policy=policy, policy_lr=policy_lr, optimizer_class=optimizer_class)
-        self.discrim = Mlp(input_size=policy.embedding_dim, output_size=1, hidden_sizes=discrim_hidden,
-                           hidden_activation=F.leaky_relu).to(ptu.device, )
+        self.discrim = Mlp(input_size=policy.shared_dim, output_size=1, hidden_sizes=discrim_hidden,
+                           ).to(ptu.device)
         self.discrim_optimizer = optimizer_class(
-            self.discrim.parameters(),
+            itertools.chain(self.discrim.parameters(), self.policy.shared_decoder.parameters()),
             lr=policy_lr,
             betas=(0.5, 0.999)
         )
         self.aux_loss_weight = aux_loss_weight
         self.l2_weight = l2_weight
         self.reconstruct_weight = reconstruct_weight
+
+        data_paths = ['image/rl/gaze_capture/gaze_data_train.h5']
+        gaze_data = []
+        for path in data_paths:
+            loaded = h5py.File(path, 'r')
+            for key in loaded.keys():
+                gaze_data.append(loaded[key])
+
+        self.gaze_data = np.concatenate(gaze_data, axis=0)
 
     def train_from_torch(self, batch):
         obs = batch["observations"]
@@ -95,37 +106,15 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
         gaze_obs = obs[:batch_size]
         prior_obs = obs[batch_size:]
 
-        gaze_latent, gaze_pred, reconstruct_loss = self.policy(gaze_obs, gaze=True)
-        prior_latent, prior_pred, _ = self.policy(prior_obs, gaze=False)
+        gaze_latent, gaze_pred = self.policy(gaze_obs, gaze=True)
+        prior_latent, prior_pred = self.policy(prior_obs, gaze=False)
 
         pred = torch.cat((gaze_pred, prior_pred), dim=0)
         bc_loss = torch.nn.CrossEntropyLoss()(pred, labels)
 
-        # for i in range(5):
-        #     discrim_loss = torch.mean(self.discrim(gaze_latent) - self.discrim(prior_latent))
-        #     eps = torch.rand((batch_size, 1)).to(ptu.device)
-        #     mix = eps * prior_latent + (1 - eps) * gaze_latent
-        #     mix_pred = torch.sum(self.discrim(mix))
-        #     mix_grads = torch.autograd.grad(outputs=mix_pred, inputs=mix)[0]
-        #     grad_pen = torch.mean((torch.norm(mix_grads, p=2, dim=1) - 1) ** 2)
-        #     discrim_loss += 10 * grad_pen
-        #
-        #     self.discrim_optimizer.zero_grad()
-        #     discrim_loss.backward(retain_graph=True)
-        #     self.discrim_optimizer.step()
-
-        # fake_gaze = torch.maximum(torch.normal(mean=gaze, std=std), torch.tensor(0).to(ptu.device))
-        # fake_latent = self.policy.gaze_encoder(fake_gaze)
-        # latent = torch.cat((gaze_latent, prior_latent), dim=0)
-        # discrim_pred = self.discrim(latent)
-        # discrim_labels = torch.cat((torch.zeros((gaze_latent.size(0), 1)),
-        #                             0.9 * torch.ones((prior_latent.size(0), 1))), dim=0).to(ptu.device)
-        # pos_weight = torch.tensor(gaze_latent.size(0) / prior_latent.size(0)).to(ptu.device)
-        # discrim_loss = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)(discrim_pred, discrim_labels)
-
         discrim_loss_fn = torch.nn.BCEWithLogitsLoss()
-        gaze_loss = discrim_loss_fn(self.discrim(gaze_latent), torch.zeros((gaze_latent.size(0), 1)).to(ptu.device))
-        prior_loss = discrim_loss_fn(self.discrim(prior_latent),
+        gaze_loss = discrim_loss_fn(self.discrim(self.policy.shared_decoder(gaze_latent)), torch.zeros((gaze_latent.size(0), 1)).to(ptu.device))
+        prior_loss = discrim_loss_fn(self.discrim(self.policy.shared_decoder(prior_latent)),
                                      0.9 * torch.ones((prior_latent.size(0), 1)).to(ptu.device))
         discrim_loss = (gaze_loss + prior_loss) / 2
 
@@ -133,13 +122,16 @@ class DiscreteMixedBCTrainerTorch(TorchBCTrainer):
         discrim_loss.backward(retain_graph=True)
         self.discrim_optimizer.step()
 
-        # aux_pred = self.discrim(gaze_latent)
-        # aux_loss = -torch.mean(aux_pred)
+        indices = np.random.choice(len(self.gaze_data), size=batch_size, replace=True)
+        extra_gaze_batch = torch.from_numpy(self.gaze_data[indices]).to(ptu.device)
+        extra_gaze_latent = self.policy.gaze_encoders[0](extra_gaze_batch)
+        pred = self.policy.reconstructor(self.policy.shared_decoder(extra_gaze_latent))
+        reconstruct_loss = self.policy.reconstruct_loss_fn(pred, extra_gaze_batch)
 
-        # fake_aux = torch.maximum(torch.normal(mean=gaze, std=std), torch.tensor(0).to(ptu.device))
-        # fake_aux_latent = self.policy.gaze_encoder(fake_aux)
-        aux_pred = self.discrim(gaze_latent)
-        aux_labels = torch.ones((gaze_latent.size(0), 1)).to(ptu.device)
+        combined_gaze_latent = torch.cat((extra_gaze_latent, gaze_latent), dim=0)
+
+        aux_pred = self.discrim(self.policy.shared_decoder(combined_gaze_latent))
+        aux_labels = torch.ones((combined_gaze_latent.size(0), 1)).to(ptu.device)
         aux_loss = torch.nn.BCEWithLogitsLoss()(aux_pred, aux_labels)
 
         l2_reg = 0
