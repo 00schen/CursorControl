@@ -90,7 +90,6 @@ class LibraryWrapper(Env):
 	def get_base_env(self):
 		return self.base_env
 
-
 def action_factory(base):
 	class Action(base):
 		def __init__(self, config):
@@ -280,8 +279,8 @@ class high_dim_user:
 		self.state_type = config['state_type']
 
 	def _step(self,obs,r,done,info):
-		info['one_hot_target'] = np.zeros(self.master_env.base_env.num_targets)
-		info['one_hot_target'][info['target_index']] = 1
+		# info['one_hot_target'] = np.zeros(self.master_env.base_env.num_targets)
+		# info['one_hot_target'][info['target_index']] = 1
 		state_func = {
 			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
 					['switch_pos',],
@@ -317,7 +316,7 @@ class high_dim_user:
 		obs = np.concatenate((obs,state_func))
 		return obs,r,done,info
 
-	def _reset(self,obs):
+	def _reset(self,obs,info=None):
 		return np.concatenate((obs,np.zeros(50)))
 
 

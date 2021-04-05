@@ -15,39 +15,40 @@ from rlkit.torch.torch_rl_algorithm import TorchTrainer
 from rlkit.core import logger
 
 class DQNTrainer(TorchTrainer):
-	def __init__(
-			self,
-			qf,
-			target_qf,
+    def __init__(
+            self,
+            qf,
+            target_qf,
 			optimizer,
-			learning_rate=1e-3,
-			soft_target_tau=1e-3,
-			target_update_period=1,
-			qf_criterion=None,
+            learning_rate=1e-3,
+            soft_target_tau=1e-3,
+            target_update_period=1,
+            qf_criterion=None,
 
-			discount=0.99,
-	):
-		super().__init__()
-		self.qf = qf
-		self.target_qf = target_qf
-		self.learning_rate = learning_rate
-		self.soft_target_tau = soft_target_tau
-		self.target_update_period = target_update_period
-		self.qf_optimizer = optimizer
-		self.discount = discount
-		self.qf_criterion = qf_criterion or nn.MSELoss()
-		self.eval_statistics = OrderedDict()
-		self._n_train_steps_total = 0
-		self._need_to_update_eval_statistics = True
+            discount=0.99,
+    ):
+        super().__init__()
+        self.policy
+        self.qf = qf
+        self.target_qf = target_qf
+        self.learning_rate = learning_rate
+        self.soft_target_tau = soft_target_tau
+        self.target_update_period = target_update_period
+        self.qf_optimizer = optimizer
+        self.discount = discount
+        self.qf_criterion = qf_criterion or nn.MSELoss()
+        self.eval_statistics = OrderedDict()
+        self._n_train_steps_total = 0
+        self._need_to_update_eval_statistics = True
 
-	def get_diagnostics(self):
-		return self.eval_statistics
+    def get_diagnostics(self):
+        return self.eval_statistics
 
-	def end_epoch(self, epoch):
-		self._need_to_update_eval_statistics = True
+    def end_epoch(self, epoch):
+        self._need_to_update_eval_statistics = True
 
-class DDQNCQLTrainer(DQNTrainer):
-	def __init__(self,qf,target_qf,
+class HDDQNCQLTrainer(DQNTrainer):
+	def __init__(self,encoder,qf,target_qf,
 			optimizer,
 			temp=1.0,
 			min_q_weight=1.0,
@@ -56,6 +57,7 @@ class DDQNCQLTrainer(DQNTrainer):
 			alpha = .4,
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
+        self.policy = policy
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 		self.add_ood_term = add_ood_term
@@ -66,50 +68,33 @@ class DDQNCQLTrainer(DQNTrainer):
 		actions = batch['actions']
 		obs = batch['observations']
 		next_obs = batch['next_observations']
-		gaze = batch['gaze']
+		# gaze = batch['gaze'].flatten()
+
+		"""
+		Reward and R loss
+		"""
 		rewards = batch['rewards']
 
-		"""
-		Policy and Alpha Loss
-		"""
-		new_obs_actions, policy_mean, policy_log_std, log_pi =\
-			self._get_policy_action_metrics(obs,self.policy)
-
-		if self.use_automatic_entropy_tuning:
-			self.log_alpha.requires_grad = True
-			alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
-			self.alpha_optimizer.zero_grad()
-			alpha_loss.backward()
-			self.alpha_optimizer.step()
-			self.log_alpha.requires_grad = False
-			alpha = self.log_alpha.exp()
-		else:
-			alpha_loss = 0
-			alpha = 1
-
-		q_new_actions = self.qf(obs, new_obs_actions)
-		policy_loss = (alpha*log_pi - q_new_actions).mean()
-
-		self._num_policy_update_steps += 1
-		self.policy_optimizer.zero_grad()
-		policy_loss.backward(retain_graph=False)
-		self.policy_optimizer.step()
-
+		# eps = th.normal(mean=ptu.zeros((obs.size(0), self.qf.embedding_dim)))
 		"""
 		Q loss
 		"""
+		# best_action_idxs = self.qf(next_obs,eps)[1].max(
 		best_action_idxs = self.qf(next_obs).max(
 			1, keepdim=True
 		)[1]
+		# target_q_values = self.target_qf(next_obs,eps)[1].gather(
 		target_q_values = self.target_qf(next_obs).gather(
 											1, best_action_idxs
 										)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
-
+		
 		# actions is a one-hot vector
+		# kl_loss,curr_qf = self.qf(obs,eps)[:2]
 		curr_qf = self.qf(obs)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
+		# loss = self.qf_criterion(y_pred, y_target) + self.kl_weight*kl_loss
 		loss = self.qf_criterion(y_pred, y_target)
 
 		"""CQL term"""

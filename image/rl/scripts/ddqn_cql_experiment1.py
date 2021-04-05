@@ -1,7 +1,6 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import Mlp, ConcatMlp, MlpPolicy
+from rlkit.torch.networks import ConcatMlp, MlpPolicy
 from rlkit.torch.networks import Clamp
-from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy
@@ -9,7 +8,7 @@ from rl.path_collectors import FullPathCollector, CustomPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import DDQNCQLTrainer
-from rl.misc.balanced_replay_buffer import BalancedReplayBuffer, GazeReplayBuffer
+from rl.misc.balanced_replay_buffer import BalancedReplayBuffer, GazeReplayBuffer, ContGazeReplayBuffer
 from rl.scripts.run_util import run_exp
 from rlkit.torch.networks import VAEGazePolicy, TransferEncoderPolicy
 
@@ -52,7 +51,7 @@ def experiment(variant):
 							output_activation=Clamp(max=upper_q, min=lower_q),
 							)
 	else:
-		file_name = variant['pretrain_path']
+		file_name = os.path.join('util_models',variant['pretrain_path'])
 		qf = th.load(file_name)['trainer/qf']
 		target_qf = th.load(file_name)['trainer/target_qf']
 	optimizer = optim.Adam(
@@ -92,8 +91,8 @@ def experiment(variant):
 		optimizer=optimizer,
 		**variant['trainer_kwargs']
 		)
-	# replay_buffer = GazeReplayBuffer(
-	replay_buffer = BalancedReplayBuffer(
+	# replay_buffer = ContGazeReplayBuffer(
+	replay_buffer = GazeReplayBuffer(
 		variant['env_kwargs']['config']['gaze_path'],
 		variant['replay_buffer_size'],
 		env,
@@ -137,7 +136,7 @@ if __name__ == "__main__":
 	path_length = 200
 	variant = dict(
 		# from_pretrain=True,
-		pretrain_path=os.path.join('logs','test-b-simple4','test-b-simple4_2021_04_02_11_24_29_0000--s-0','params.pkl'),
+		pretrain_path='cql_end_to_end.pkl',
 		layer_size=128,
 		exploration_argmax=True,
 		exploration_strategy='',
@@ -159,7 +158,7 @@ if __name__ == "__main__":
 			num_epochs=int(3e4),
 			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=path_length,
-			collect_new_paths=False,
+			collect_new_paths=True,
 			num_trains_per_train_loop=1000,
 		),
 
@@ -181,8 +180,8 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['high_dim_user', 'reward'],
-			gaze_dim=50,
+			adapts=['static_gaze', 'reward'],
+			gaze_dim=128,
 			apply_projection=False,
 			state_type=0,
 			reward_max=0,
@@ -197,11 +196,11 @@ if __name__ == "__main__":
 
 		'trainer_kwargs.temp': [1],
 		'from_pretrain': [False],
-		'trainer_kwargs.min_q_weight': [5,10],
+		'trainer_kwargs.min_q_weight': [0,1,5],
 		'env_kwargs.config.env_name': ['Bottle'],
 		'layer_norm': [True],
 
-		'demo_path_proportions':[[int(5e3),int(5e3)], ],
+		'demo_path_proportions':[[int(5e3)], ],
 		'trainer_kwargs.qf_lr': [1e-5],
 	}
 

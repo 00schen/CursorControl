@@ -45,53 +45,9 @@ class SimplePathLoader:
             action = info.get(env.action_type,action)
             next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
 
-            # if data_aug:
-            # 	r, done = -1, False
-
-            # if end_early:
-            # 	if r < 0:
-            # 		int_count += 1
-            # 		if int_count >= end_thresh:
-            # 			processed_trans = processed_trans[:-int_count + 2]
-            # 			prev = processed_trans[-1]
-            # 			prev = prev[0], prev[1], prev[2], -1, True, prev[5]
-            # 			processed_trans[-1] = prev
-            # 			break
-            # 	else:
-            # 		int_count = 0
-            #
-            # if adjust_r:
-            # 	if r >= 0 and curr_r < 0:
-            # 		prev = processed_trans[index]
-            # 		int_done = True if self.int_dones else prev[4]
-            # 		prev = prev[0], prev[1], prev[2], -1, int_done, prev[5]
-            # 		processed_trans[index] = prev
-            # 		curr_r = 0
-            # 	elif r < 0:
-            # 		if curr_r == 0:
-            # 			index = len(processed_trans)
-            # 		curr_r += r
-            #
-            # 	processed_trans.append((obs,next_obs,action,0,done,info))
-
-                # if r >= 0:
-                # 	processed_trans.append((obs, next_obs, action, r, done, info))
-                # 	interv = False
-                # else:
-                # 	if not interv:
-                # 		processed_trans.append((obs, next_obs, action, r, True, info))
-                # 	interv = True
-
             processed_trans.append((obs,next_obs,action,r,done,info))
             obs = next_obs
 
-        # if not end_early or int_count < end_thresh:
-        # if adjust_r and curr_r < 0:
-        # 	prev = processed_trans[index]
-        # 	int_done = True if self.int_dones else prev[4]
-        # 	prev = prev[0], prev[1], prev[2], -1, int_done, prev[5]
-        # 	processed_trans[index] = prev
-        # print([x[3] for x in processed_trans])
         new_path = dict(zip(
             ['observations','next_observations','actions','rewards','terminals','env_infos'],
             list(zip(*processed_trans))

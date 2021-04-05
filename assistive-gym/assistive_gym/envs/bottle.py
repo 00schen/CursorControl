@@ -121,7 +121,7 @@ class BottleEnv(AssistiveEnv):
 		p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
 		# Enable rendering
 		# p.resetDebugVisualizerCamera(cameraDistance = .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
-		p.resetDebugVisualizerCamera(cameraDistance= .1, cameraYaw=180, cameraPitch=-90, cameraTargetPosition=[0, -.2, 1.1], physicsClientId=self.id)
+		p.resetDebugVisualizerCamera(cameraDistance= .1, cameraYaw=180, cameraPitch=-30, cameraTargetPosition=[0, -.4, 1.1], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
 		return self._get_obs([0])
