@@ -19,6 +19,9 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			add_ood_term=-1,
 			alpha = .4,
 			ground_truth=False,
+			beta=1,
+			rew_class_weight=1,
+			sample=False,
 			**kwargs):
 		super().__init__(qf,target_qf,**kwargs)
 		self.reward_update_period = reward_update_period
@@ -33,6 +36,9 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			lr=1e-3,
 			weight_decay=1e-5,
 		)
+		self.beta = beta
+		self.rew_class_weight = rew_class_weight
+		self.sample = sample
 
 	def mixup(self,obs,next_obs,noop):
 		lambd = np.random.beta(self.alpha, self.alpha, obs.size(0))
@@ -98,30 +104,32 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		Q loss
 		"""
-		# best_action_idxs = th.min(self.qf1(next_obs),self.qf2(next_obs)).max(
-		# 	1, keepdim=True
-		# )[1]
-		# target_q_values = th.min(self.target_qf1(next_obs).gather(
-		# 									1, best_action_idxs
-		# 								),
-		# 							self.target_qf2(next_obs).gather(
-		# 									1, best_action_idxs
-		# 								)
-		# 						)
-		best_action_idxs = self.qf(next_obs).max(
+		eps = th.normal(mean=th.zeros((obs.size(0), self.qf.latent_dim)), std=1).to(ptu.device) if self.sample else None
+
+		best_action_idxs = self.qf(next_obs, eps=eps).max(
 			1, keepdim=True
 		)[1]
-		target_q_values = self.target_qf(next_obs).gather(
+
+		target_q_values = self.target_qf(next_obs, eps=eps).gather(
 											1, best_action_idxs
 										)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
-		curr_qf = self.qf(obs)
+
+		curr_qf, kl_loss = self.qf(obs, eps=eps, return_kl=True)
+		# curr_qf = self.qf(obs)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
-		qf_loss = self.qf_criterion(y_pred, y_target)
+		qf_loss = self.qf_criterion(y_pred, y_target) + self.beta * kl_loss
+		#qf_loss = self.qf_criterion(y_pred, y_target)
 
 
+		num_pos = th.sum(terminals)
+		num_neg = terminals.size(0) - num_pos
+
+		rew_class, rew_class_kl_loss = self.qf.rew_classification(next_obs, return_kl=True)
+		rew_class_loss = th.nn.BCEWithLogitsLoss(pos_weight=num_neg / (num_pos + 1e-6))(rew_class, terminals)
+		qf_loss += self.rew_class_weight * (rew_class_loss + self.beta + rew_class_kl_loss)
 
 		"""CQL term"""
 		min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1,).mean() * self.temp
@@ -130,6 +138,7 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		if self.add_ood_term < 0 or self._n_train_steps_total < self.add_ood_term:
 			qf_loss += min_qf_loss * self.min_q_weight
 
+		# qf_loss = th.nn.CrossEntropyLoss()(curr_qf, th.argmax(actions, dim=1))
 		"""
 		Update Q networks
 		"""

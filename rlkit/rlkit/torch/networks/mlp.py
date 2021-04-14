@@ -1,8 +1,6 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import numpy as np
-import h5py
 
 from rlkit.policies.base import Policy
 from rlkit.pythonplusplus import identity
@@ -350,6 +348,123 @@ class ParallelMlp(nn.Module):
         return flat.view(batch_size, -1, self.num_heads)
 
 
+class MlpGazePolicy(PyTorchModule):
+    def __init__(self,
+                 encoder_hidden_sizes,
+                 decoder_hidden_sizes,
+                 output_size,
+                 input_size,
+                 init_w=3e-3,
+                 hidden_activation=F.relu,
+                 output_activation=identity,
+                 hidden_init=ptu.fanin_init,
+                 b_init_value=0,
+                 layer_norm=False,
+                 layer_norm_kwargs=None,
+                 gaze_dim=128,
+                 embedding_dim=3,
+                 gaze_vae=None,
+                 decoder=None,
+                 ):
+        super().__init__()
+        if decoder is None:
+            self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=output_size,
+                               input_size=input_size - gaze_dim + embedding_dim,
+                               init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
+                               hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                               layer_norm_kwargs=layer_norm_kwargs)
+        else:
+            self.decoder = decoder
+        if gaze_vae is None:
+            self.gaze_vae = VAE(encoder_hidden_sizes, encoder_hidden_sizes,
+                                latent_size=embedding_dim, input_size=gaze_dim)
+        else:
+            self.gaze_vae = gaze_vae
+        self.gaze_dim = gaze_dim
+        self.latent_dim = embedding_dim
+
+        self.rew_classifier = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=1,
+                                  input_size=input_size - gaze_dim + embedding_dim,
+                                  init_w=init_w, hidden_activation=hidden_activation,
+                                  output_activation=output_activation,
+                                  hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
+                                  layer_norm_kwargs=layer_norm_kwargs)
+
+    def forward(self, obs, eps=None, return_kl=False, **kwargs):
+        gaze, h = obs[..., -self.gaze_dim:], obs[..., :-self.gaze_dim]
+        sample, kl_loss = self.gaze_vae.sample(gaze, eps, return_kl=True)
+        h = torch.cat((sample, h), dim=-1)
+
+        if return_kl:
+            return self.decoder(h, **kwargs), kl_loss
+        return self.decoder(h, **kwargs)
+
+    def rew_classification(self, obs, eps=None, return_kl=True):
+        gaze, h = obs[..., -self.gaze_dim:], obs[..., :-self.gaze_dim]
+        sample, kl_loss = self.gaze_vae.sample(gaze, eps, return_kl=True)
+        h = torch.cat((sample, h), dim=-1)
+
+        if return_kl:
+            return self.rew_classifier(h), kl_loss
+        return self.rew_classifier(h)
+
+    def get_actions(self, obs):
+        return eval_np(self, obs, return_kl=False)
+
+    def get_action(self, obs_np):
+        actions = self.get_actions(obs_np[None])
+        return actions[0, :], {}
+
+
+class VAE(PyTorchModule):
+    def __init__(
+            self,
+            encoder_hidden_sizes,
+            decoder_hidden_sizes,
+            latent_size,
+            input_size,
+            output_activation=F.relu,
+    ):
+        super().__init__()
+        self.encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * 2, input_size=input_size)
+        self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=input_size, input_size=latent_size,
+                           output_activation=output_activation)
+        self.latent_size = latent_size
+
+    def forward(self, x):
+        mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        x_reconstruct = self.decode(z)
+        return x_reconstruct, self.compute_loss(x, x_reconstruct, mean, logvar)
+
+    def compute_loss(self, x, x_reconstruct, mean, logvar):
+        reconstruct_loss = torch.nn.MSELoss()(x, x_reconstruct)
+        return reconstruct_loss, self.kl_loss(mean, logvar)
+
+    def kl_loss(self, mean, logvar):
+        return torch.mean(-0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar)))
+
+    def encode(self, x):
+        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=1)
+        return mean, logvar
+
+    def reparameterize(self, mean, logvar):
+        eps = torch.normal(torch.zeros(self.latent_size).to(ptu.device), 1)
+        return mean + eps * torch.exp(logvar * 0.5)
+
+    def decode(self, z):
+        return self.decoder(z)
+
+    def sample(self, x, eps=None, return_kl=True):
+        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=1)
+        sample = mean
+        if eps is not None:
+            sample = sample + torch.exp(logvar * 0.5) * eps
+        if return_kl:
+            return sample, self.kl_loss(mean, logvar)
+        return sample
+
+
 class QrMlp(Mlp):
     def __init__(
             self,
@@ -364,7 +479,6 @@ class QrMlp(Mlp):
             b_init_value=0.,
             layer_norm=False,
             layer_norm_kwargs=None,
-            reward_min=-1
     ):
         super().__init__(hidden_sizes=hidden_sizes, output_size=action_size * atom_size, input_size=input_size,
                          init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
@@ -372,14 +486,13 @@ class QrMlp(Mlp):
                          layer_norm_kwargs=layer_norm_kwargs)
         self.action_size = action_size
         self.atom_size = atom_size
-        self.reward_min = reward_min
 
     def forward(self, input, return_preactivations=False):
         output = super().forward(input, return_preactivations)
         preactivation = None
         if return_preactivations:
             output, preactivation = output
-        output = self.reward_min * torch.sigmoid(output)
+
         logits = torch.reshape(output, [-1, self.action_size, self.atom_size])
         q_values = torch.mean(logits, dim=2)
 
@@ -396,10 +509,10 @@ class QrMlp(Mlp):
 class QrGazeMlp(QrMlp):
     def __init__(
             self,
-            hidden_sizes,
+            encoder_hidden_sizes,
+            decoder_hidden_sizes,
             action_size,
             input_size,
-            gaze_encoder,
             atom_size=200,
             init_w=3e-3,
             hidden_activation=F.relu,
@@ -409,104 +522,23 @@ class QrGazeMlp(QrMlp):
             layer_norm=False,
             layer_norm_kwargs=None,
             gaze_dim=128,
-            embedding_dim=1,
-            reward_min=-1,
+            embedding_dim=3,
     ):
-        super().__init__(hidden_sizes=hidden_sizes, action_size=action_size,
+        super().__init__(hidden_sizes=decoder_hidden_sizes, action_size=action_size,
                          input_size=input_size - gaze_dim + embedding_dim, atom_size=atom_size,
                          init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
                          hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
-                         layer_norm_kwargs=layer_norm_kwargs, reward_min=reward_min)
-        self.gaze_encoder = gaze_encoder
+                         layer_norm_kwargs=layer_norm_kwargs)
+        self.gaze_encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=embedding_dim, input_size=gaze_dim)
         self.gaze_dim = gaze_dim
-        self.latent_dim = embedding_dim
+        self.embedding_dim = embedding_dim
 
     def forward(self, input, return_preactivations=False):
         gaze, h = input[..., -self.gaze_dim:], input[..., :-self.gaze_dim]
         latent = self.gaze_encoder(gaze)
-        latent = latent[..., :self.latent_dim]
         h = torch.cat((latent, h), dim=-1)
 
         return super().forward(h, return_preactivations)
 
     def get_action(self, input):
         return eval_np(self, input, return_preactivations=False)[1], {}
-
-
-class QrMixedMlp(QrMlp):
-    def __init__(
-            self,
-            hidden_sizes,
-            action_size,
-            input_size,
-            atom_size=200,
-            init_w=3e-3,
-            hidden_activation=F.relu,
-            output_activation=identity,
-            hidden_init=ptu.fanin_init,
-            b_init_value=0.,
-            layer_norm=False,
-            layer_norm_kwargs=None,
-            gaze_dim=128,
-            embedding_dim=1,
-            reward_min=-1,
-            num_encoders=3,
-            encoder_hidden_sizes=(32,)
-    ):
-        super().__init__(hidden_sizes=hidden_sizes, action_size=action_size,
-                         input_size=input_size - gaze_dim + embedding_dim, atom_size=atom_size,
-                         init_w=init_w, hidden_activation=hidden_activation, output_activation=output_activation,
-                         hidden_init=hidden_init, b_init_value=b_init_value, layer_norm=layer_norm,
-                         layer_norm_kwargs=layer_norm_kwargs, reward_min=reward_min)
-
-        self.gaze_dim = gaze_dim
-        self.gaze_encoders = []
-        for i in range(num_encoders):
-            encoder = Mlp(input_size=gaze_dim,
-                          output_size=embedding_dim,
-                          hidden_sizes=encoder_hidden_sizes)
-            self.__setattr__("gaze_encoder{}".format(i), encoder)
-            self.gaze_encoders.append(encoder)
-        self.embedding_dim = embedding_dim
-        self.num_encoders = num_encoders
-        self.auto_decoder = Mlp(input_size=embedding_dim, output_size=gaze_dim, hidden_sizes=encoder_hidden_sizes)
-
-        data_paths = ['image/rl/gaze_capture/gaze_data_train.h5',]
-        gaze_data = []
-        for path in data_paths:
-            loaded = h5py.File(path, 'r')
-            for key in loaded.keys():
-                gaze_data.append(loaded[key])
-
-        self.gaze_data = np.concatenate(gaze_data, axis=0)
-        self.reconstruct_loss_fn = torch.nn.MSELoss()
-
-    def forward(self, input, return_preactivations=False, gaze=True, train=True):
-        obs, aux = input[..., :-self.gaze_dim], input[..., -self.gaze_dim:]
-        reconstruct_loss = 0
-        if gaze:
-            if train:
-                encoder = np.random.choice(self.gaze_encoders)
-                latent = encoder(aux)
-                indices = np.random.choice(len(self.gaze_data), size=obs.size(0), replace=True)
-                gaze_batch = torch.from_numpy(self.gaze_data[indices]).to(ptu.device)
-                gaze_latent = encoder(gaze_batch)
-                eps = torch.normal(mean=(torch.zeros(gaze_latent.size())), std=1).to(ptu.device) * 0.1
-                pred = self.auto_decoder(gaze_latent)
-                reconstruct_loss = self.reconstruct_loss_fn(pred, gaze_batch)
-                latent_ret = torch.cat((latent, gaze_latent), dim=0)
-            else:
-                latent = 0
-                for encoder in self.gaze_encoders:
-                    latent += encoder(aux)
-                latent = latent / self.num_encoders
-                latent_ret = latent
-        else:
-            latent = aux[..., :self.embedding_dim]
-            latent_ret = latent
-
-        obs = torch.cat((obs, latent), dim=-1)
-        return (latent_ret, reconstruct_loss) + super().forward(obs, return_preactivations)
-
-    def get_action(self, input):
-        return eval_np(self, input, return_preactivations=False, train=False)[3], {}

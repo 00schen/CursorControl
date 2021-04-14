@@ -1,5 +1,5 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import Mlp, ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy, QrMixedMlp
+from rlkit.torch.networks import ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy, MlpGazePolicy
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
@@ -19,11 +19,27 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 import torch as th
 from torch.nn import functional as F
+import copy
 
 
 def experiment(variant):
     env = default_overhead(variant['env_kwargs']['config'])
     env.seed(variant['seedid'])
+
+    eval_env_config = copy.deepcopy(variant['env_kwargs']['config'])
+    eval_env_config['seedid'] += 100
+    eval_env_config['gaze_oracle_kwargs']['mode'] = 'eval'
+
+    eval_env = default_overhead(eval_env_config)
+    eval_env.seed(variant['seedid'] + 100)
+
+    gaze_vae = None
+    if variant['gaze_vae_path'] is not None:
+        gaze_vae = th.load(variant['gaze_vae_path'], map_location=th.device("cpu"))
+
+    decoder = None
+    if variant['decoder_path'] is not None:
+        decoder = th.load(variant['decoder_path'], map_location=th.device("cpu"))['trainer/qf'].decoder
 
     if not variant['from_pretrain']:
         obs_dim = env.observation_space.low.size
@@ -31,36 +47,44 @@ def experiment(variant):
         gaze_dim = 128
         embedding_dim = 3
         M = variant["layer_size"]
-        lower_q = variant['env_kwargs']['config']['reward_min'] * variant['env_kwargs']['config']['step_limit']
-        # im_path = os.path.join(main_dir, 'logs', 'bc-gaze', 'bc_gaze_2021_02_28_21_44_17_0000--s-0', 'pretrain.pkl')
-        # im_policy = th.load(im_path,map_location=th.device("cpu"))
-        qf = QrMixedMlp(
+        qf = MlpGazePolicy(
             input_size=obs_dim,
-            action_size=action_dim,
-            hidden_sizes=[M, M, M, M],
+            output_size=action_dim,
+            encoder_hidden_sizes=[M],
+            decoder_hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
-            reward_min=lower_q,
+            gaze_vae=gaze_vae,
             gaze_dim=gaze_dim,
             embedding_dim=embedding_dim,
-            num_encoders=5,
-            atom_size=200,
-            encoder_hidden_sizes=(32,)
+            decoder=decoder
         )
-        target_qf = QrMixedMlp(
+        target_qf = MlpGazePolicy(
             input_size=obs_dim,
-            action_size=action_dim,
-            hidden_sizes=[M, M, M, M],
+            output_size=action_dim,
+            encoder_hidden_sizes=[M],
+            decoder_hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
-            reward_min=lower_q,
+            gaze_vae=copy.deepcopy(gaze_vae),
             gaze_dim=gaze_dim,
             embedding_dim=embedding_dim,
-            num_encoders=5,
-            atom_size=200,
-            encoder_hidden_sizes=(32,)
-
+            decoder=copy.deepcopy(decoder)
         )
+        # qf = MlpPolicy(
+        #     input_size=obs_dim,
+        #     output_size=action_dim,
+        #     hidden_sizes=[M, M, M, M],
+        #     hidden_activation=F.relu,
+        #     layer_norm=True,
+        # )
+        # target_qf = MlpPolicy(
+        #     input_size=obs_dim,
+        #     output_size=action_dim,
+        #     hidden_sizes=[M, M, M, M],
+        #     hidden_activation=F.relu,
+        #     layer_norm=True,
+        # )
         rf = ConcatMlp(
             input_size=obs_dim * 2,
             output_size=1,
@@ -71,12 +95,12 @@ def experiment(variant):
         )
     else:
         pretrain_file_path = variant['pretrain_file_path']
-        qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['qf']
-        target_qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['target_qf']
-        rf = th.load(pretrain_file_path, map_location=th.device("cpu"))['rf']
+        qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['trainer/qf']
+        target_qf = th.load(pretrain_file_path, map_location=th.device("cpu"))['trainer/target_qf']
+        rf = th.load(pretrain_file_path, map_location=th.device("cpu"))['trainer/rf']
 
     if variant['freeze_encoder']:
-        for param in qf.gaze_encoder.parameters():
+        for param in qf.gaze_vae.parameters():
             param.requires_grad = False
 
     eval_policy = ArgmaxPolicy(
@@ -104,76 +128,41 @@ def experiment(variant):
         expl_policy,
         save_env_in_snapshot=False
     )
-    trainer = QRDDQNCQLTrainer(
+    trainer = DDQNCQLTrainer(
         qf=qf,
         target_qf=target_qf,
         rf=rf,
         **variant['trainer_kwargs']
     )
-    gaze_buffer = EnvReplayBuffer(
+
+    online_buffer = EnvReplayBuffer(
+         variant['replay_buffer_size'],
+         env,
+    )
+    offline_buffer = EnvReplayBuffer(
         variant['replay_buffer_size'],
         env,
-    )
-    prior_buffer = EnvReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-    )
-    replay_buffer = BalancedReplayBuffer(
-        gaze_buffer, prior_buffer
     )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
-        evaluation_env=env,
+        evaluation_env=eval_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
-        replay_buffer=replay_buffer,
+        replay_buffer=online_buffer,
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
-    # if variant['pretrain_rf']:
-    # 	path_loader = SimplePathLoader(
-    # 		demo_path=variant['demo_paths'],
-    # 		demo_path_proportion=[1,1],
-    # 		replay_buffer=replay_buffer,
-    # 	)
-    # 	path_loader.load_demos()
-    # 	from tqdm import tqdm
-    # 	for _ in tqdm(range(int(1e5)),miniters=10,mininterval=10):
-    # 		train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-    # 		trainer.pretrain_rf(train_data)
-    # 	algorithm.replay_buffer = None
-    # 	del replay_buffer
-    # 	replay_buffer = EnvReplayBuffer(
-    # 		variant['replay_buffer_size'],
-    # 		env,
-    # 	)
-    # 	algorithm.replay_buffer = replay_buffer
+
     if variant.get('load_demos', False):
         path_loader = SimplePathLoader(
             demo_path=variant['demo_paths'],
             demo_path_proportion=variant['demo_path_proportions'],
-            replay_buffers=[gaze_buffer, prior_buffer]
+            replay_buffers=[offline_buffer]
+            # replay_buffers=[gaze_buffer, prior_buffer]
         )
         path_loader.load_demos()
     from rlkit.core import logger
-    if variant['pretrain_rf']:
-        logger.remove_tabular_output(
-            'progress.csv', relative_to_snapshot_dir=True,
-        )
-        logger.add_tabular_output(
-            'pretrain_rf.csv', relative_to_snapshot_dir=True,
-        )
-        from tqdm import tqdm
-        for _ in tqdm(range(int(1e5)), miniters=10, mininterval=10):
-            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-            trainer.pretrain_rf(train_data)
-        logger.remove_tabular_output(
-            'pretrain_rf.csv', relative_to_snapshot_dir=True,
-        )
-        logger.add_tabular_output(
-            'progress.csv', relative_to_snapshot_dir=True,
-        )
 
     if variant['pretrain']:
         logger.remove_tabular_output(
@@ -181,36 +170,14 @@ def experiment(variant):
         )
         logger.add_tabular_output(
             'pretrain.csv', relative_to_snapshot_dir=True, )
-        # data = h5py.File('image/rl/gaze_capture/gaze_data.h5', 'r')
-        # features = []
-        # labels = []
-        # for i, key in enumerate(data.keys()):
-        # 	features.extend(data[key][()])
-        # 	for j in range(len(data[key][()])):
-        # 		labels.append(i)
-        # batch = {'features': np.array(features), 'labels': np.array(labels)}
-        # torch_batch = np_to_pytorch_batch(batch)
-        # optimizer = optim.Adam(
-        # 	vq_vae.parameters(),
-        # 	lr=1e-3,
-        # )
-        # for i in range(1000):
-        # 	optimizer.zero_grad()
-        # 	vq_loss, pred, perplexity = vq_vae(torch_batch['features'])
-        # 	pred_loss = F.cross_entropy(pred, torch_batch['labels'].long())
-        # 	loss = pred_loss + vq_loss
-        # 	loss.backward()
-        # 	optimizer.step()
-        # 	print(vq_loss, pred_loss)
-        # ptu.copy_model_params_from_to(qf, target_qf)
 
         bc_algorithm = TorchBatchRLAlgorithm(
             trainer=trainer,
             exploration_env=env,
-            evaluation_env=env,
+            evaluation_env=eval_env,
             exploration_data_collector=expl_path_collector,
             evaluation_data_collector=eval_path_collector,
-            replay_buffer=replay_buffer,
+            replay_buffer=offline_buffer,
             **variant['bc_args']
         )
         bc_algorithm.to(ptu.device)
@@ -224,19 +191,18 @@ def experiment(variant):
         )
         pretrain_file_path = os.path.join(logger.get_snapshot_dir(), 'pretrain.pkl')
         th.save(trainer.get_snapshot(), pretrain_file_path)
+
     if variant.get('render', False):
         env.render('human')
 
-    # for g in trainer.qf_optimizer.param_groups:
-    #     g['lr'] = 5e-4
-
+    trainer.min_q_weight = 0
     algorithm.train()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='sparse_mixed')
+    parser.add_argument('--exp_name', default='gaze_sanity')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -249,8 +215,11 @@ if __name__ == "__main__":
     num_epochs = int(1e4)
     variant = dict(
         from_pretrain=False,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'sparse-gaze', 'sparse_gaze_2021_02_24_09_01_35_0000--s-0',
-                                        'pretrain.pkl'),
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'gaze-sanity', 'gaze_sanity_2021_04_09_21_31_21_0000--s-0',
+                                        'params.pkl'),
+        decoder_path=os.path.join(main_dir, 'logs', 'gaze-sanity', 'gaze_sanity_2021_04_10_10_02_49_0000--s-0',
+                                        'params.pkl'),
+        gaze_vae_path=os.path.join(main_dir, 'logs', 'gaze_vae', '2021-04-08--18-38-06.pkl'),
         layer_size=128,
         exploration_argmax=True,
         exploration_strategy='',
@@ -266,91 +235,72 @@ if __name__ == "__main__":
             qf_criterion=None,
             discount=0.99,
             reward_scale=1.0,
-            num_discrims=1,
-            discrim_hidden=(32,),
-            l2_weight=0.01,
-            reconstruct_weight=0
             # temp=1.0,
             # min_q_weight=1.0,
+            beta=0.1,
+            rew_class_weight=1,
+            sample=False
         ),
         algorithm_args=dict(
-            batch_size=64,
+            batch_size=128,
             max_path_length=path_length,
             eval_path_length=path_length,
-            num_epochs=0,
-            num_eval_steps_per_epoch=path_length * 3,
-            num_expl_steps_per_train_loop=1,
+            num_epochs=200,
+            num_eval_steps_per_epoch=1000,
+            num_trains_per_train_loop=100,
+            num_expl_steps_per_train_loop=500,
+            min_num_steps_before_training=1000,
             num_train_loops_per_epoch=10,
-            # num_trains_per_train_loop=50,
-            # min_num_steps_before_training=1000,
         ),
         bc_args=dict(
-            batch_size=64,
+            batch_size=256,
             max_path_length=path_length,
             num_epochs=200,
-            num_eval_steps_per_epoch=path_length * 3,
+            num_eval_steps_per_epoch=500,
             num_expl_steps_per_train_loop=0,
             collect_new_paths=False,
             num_trains_per_train_loop=1000,
         ),
 
-        load_demos=True,
+        load_demos=False,
         # demo_paths=[os.path.join(main_dir,"demos",demo)\
         # 			for demo in os.listdir(os.path.join(main_dir,"demos")) if f"{args.env_name}" in demo],
         demo_paths=[
             os.path.join(main_dir, "demos",
-                         f"int_OneSwitch_sim_gaze_on_policy_100_all_debug_1615418204600284881.npy"),
-            os.path.join(main_dir, "demos",
-                         f"int_OneSwitch_sim_goal_model_on_policy_1000_all_debug_1615835470059229510.npy"),
-
-
+                         f"int_OneSwitch_sim_model_on_policy_1000_all_debug_1617655710048679887.npy"),
 
         ],
         # demo_path_proportions=[1]*9,
         pretrain_rf=False,
-        pretrain=True,
+        pretrain=False,
 
         env_kwargs={'config': dict(
             env_name=args.env_name,
             step_limit=path_length,
             env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
-            # env_kwargs=dict(path_length=path_length,frame_skip=5),
-
             oracle='sim_gaze_model',
             oracle_kwargs=dict(),
             action_type='disc_traj',
             smooth_alpha=.8,
-
             adapts=['high_dim_user', 'reward'],
-            space=0,
-            num_obs=10,
-            num_nonnoop=0,
-            reward_max=0,
-            reward_min=-1,
-            # input_penalty=1,
-            reward_type='user_penalty',
+            reward_type='user_input',
             input_in_obs=True,
-            gaze_oracle_kwargs={'mode': 'eval'},
+            gaze_oracle_kwargs={'mode': 'train'},
         )},
     )
     search_space = {
         'freeze_encoder': [False],
         'seedid': [2000],
         'trainer_kwargs.temp': [1],
-        'trainer_kwargs.min_q_weight': [20],
-        'trainer_kwargs.aux_loss_weight': [20],
+        'trainer_kwargs.min_q_weight': [10],
         'env_kwargs.config.oracle_kwargs.threshold': [.5],
         'env_kwargs.config.apply_projection': [False],
         'env_kwargs.config.input_penalty': [1],
-        # 'demo_path_proportions':[[int(1e4),int(1e4)],[int(1e4),0],[int(5e3),0]],
-        'demo_path_proportions': [[100, 1000]],
-        # 'demo_path_proportions':[[25,25],[50,50],[100,100],[250,250]],
-        'trainer_kwargs.qf_lr': [5e-5],
-        'algorithm_args.num_trains_per_train_loop': [100],
-        # 'trainer_kwargs.reward_update_period':[10],
+        'demo_path_proportions': [[1000]],
+        'trainer_kwargs.qf_lr': [5e-4],
         'trainer_kwargs.ground_truth': [True],
         'trainer_kwargs.add_ood_term': [-1],
-        'expl_kwargs.eps': [0],
+        'expl_kwargs.eps': [0.1],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

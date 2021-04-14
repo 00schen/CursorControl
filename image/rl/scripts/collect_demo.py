@@ -77,13 +77,12 @@ if __name__ == "__main__":
             step_limit=path_length,
             env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
 
-            oracle='sim_gaze_model',
+            oracle='sim_model',
             oracle_kwargs={},
             gaze_oracle_kwargs={'mode': 'train',
                                 # 'gaze_demos_path': os.path.join(main_dir, 'demos',
                                 #                                 'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
                                 #                                 '1614378227763030936.npy'),
-                                'synth_gaze': False,
                                 'per_step': False
                                 },
             input_in_obs=True,

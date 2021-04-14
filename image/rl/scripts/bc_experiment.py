@@ -1,5 +1,5 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import VAEGazePolicy, MlpPolicy, MixedPolicy
+from rlkit.torch.networks import MlpPolicy
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
 from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
 

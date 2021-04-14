@@ -226,12 +226,10 @@ class oracle:
             obs = self._predict(obs, info)
         else:
             self._predict(obs, info)
-        # obs[-self.oracle.size:] = self.curr_input
         return obs, r, done, info
 
     def _reset(self, obs):
         # TODO: handle all cases properly
-        # self.curr_input = None
         self.oracle.reset()
         if not self.input_in_obs and obs.size >= self.full_obs_size:
             obs = obs[:-self.oracle.size]
@@ -244,16 +242,13 @@ class oracle:
             recommend, _info = self.oracle.get_action(obs, info)
             info['oracle_input'] = recommend
             info['noop'] = not self.oracle.status.curr_intervention  # TODO: maintain compatibility with non status oracles
-            info['nostart'] = not self.oracle.status.new_intervention
-        # if self.curr_input is None:
-        #     self.curr_input = info['oracle_input']
         return np.concatenate((obs,info['oracle_input']))
 
 
 class high_dim_user:
     def __init__(self, master_env, config):
         self.env_name = master_env.env_name
-        self.high_dim_size = 9 if self.env_name == 'OneSwitch' else 50
+        self.high_dim_size = 16 if self.env_name == 'OneSwitch' else 50
         self.full_obs_size = get_dim(master_env.observation_space) + self.high_dim_size
 
         master_env.observation_space = spaces.Box(-np.inf, np.inf,
@@ -267,7 +262,8 @@ class high_dim_user:
         state_func = {
             # 'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
             #                                      ['switch_pos', 'tool_pos']]),
-            'OneSwitch': lambda: np.concatenate([np.ravel(info['switch_pos'])]),
+            'OneSwitch': lambda: np.concatenate([np.ravel(info['switch_pos']), np.ravel(info['tool_orient']),
+                                                 np.ravel(info['current_string'])]),
             'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in
                                                    ['lever_angle', 'target_string', 'current_string',
                                                     'switch_pos', 'aux_switch_pos', 'tool_pos', ]]),
@@ -346,7 +342,6 @@ class reward:
     """ rewards capped at 'cap' """
 
     def __init__(self, master_env, config):
-        self.range = (config['reward_min'], config['reward_max'])
         self.input_penalty = config['input_penalty']
         self.master_env = master_env
         self.reward_type = config['reward_type']
@@ -354,23 +349,24 @@ class reward:
     def _step(self, obs, r, done, info):
         if self.reward_type == 'user_penalty':
             r = -1
-            # r -= self.input_penalty * (not info['nostart'])
             if info['task_success']:
                 r = 0
-            r = np.clip(r, *self.range)
         elif self.reward_type == 'custom':
             r = 0
             if not info['task_success']:
                 target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
                 target_pos = np.array(info['switch_pos'])[target_indices[0]]
                 r += -1 + (norm(info['old_tool_pos'] - target_pos) - norm(info['tool_pos'] - target_pos))
+        elif self.reward_type == 'goal':
+            r = 0
+            if not info['task_success']:
+                target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
+                target_pos = np.array(info['switch_pos'])[target_indices[0]]
+                r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos)) - 1
         else:
             r = -1 + info['task_success']
 
-        if self.range[1] <= 0:
-            done = info['task_success']
-        else:
-            done = False
+        done = info['task_success']
         return obs, r, done, info
 
     def _reset(self, obs):

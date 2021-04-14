@@ -67,7 +67,6 @@ class SimGazeOracle(Oracle):
         else:
             data_path = {'train': 'image/rl/gaze_capture/gaze_data_train.h5',
                          'eval': 'image/rl/gaze_capture/gaze_data_eval.h5'}[mode]
-
             self.data = h5py.File(data_path, 'r')
 
         self.size = 128
@@ -91,7 +90,8 @@ class SimGazeOracle(Oracle):
 
 class RealGazeKeyboardOracle(KeyboardOracle):
     def __init__(self,
-                 predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
+                 predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat',
+                 per_step=True):
         super().__init__()
         self.size = 128
         self.webcam = cv2.VideoCapture(0)
@@ -107,8 +107,9 @@ class RealGazeKeyboardOracle(KeyboardOracle):
             state = torch.load('image/rl/gaze_capture/checkpoint.pth.tar',
                                map_location=torch.device('cpu'))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
-        self.gaze_input = np.zeros(self.size)
+        self.gaze_input = None
         self.gaze_thread = None
+        self.per_step = per_step
 
     def get_gaze_input(self):
         _, frame = self.webcam.read()
@@ -122,47 +123,28 @@ class RealGazeKeyboardOracle(KeyboardOracle):
             self.gaze_input = i_tracker_features[0]
 
     def get_action(self, obs, info=None):
-        if self.gaze_thread is None or not self.gaze_thread.is_alive():
-            self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
-            self.gaze_thread.start()
+        if self.gaze_input is None or self.per_step:
+            if self.gaze_thread is None or not self.gaze_thread.is_alive():
+                self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
+                self.gaze_thread.start()
+        while self.gaze_input is None:
+            pass
         self.set_action()
         return self.gaze_input, {}
 
+    def reset(self):
+        super().reset()
+        self.gaze_input = None
+
 
 class SimGazeModelOracle(SimGazeOracle):
-    def __init__(self, base_oracle, mode='il', gaze_demos_path=None, per_step=False, synth_gaze=False):
+    def __init__(self, base_oracle, mode='train', gaze_demos_path=None, per_step=False, synth_gaze=False):
         super().__init__(mode=mode, gaze_demos_path=gaze_demos_path, per_step=per_step, synth_gaze=synth_gaze)
         self.base_oracle = base_oracle
-        # self.thresh = thresh
-        # self.count = 0
-        # self.inter = 0
-        # self.inter_len = inter_len
-        # self.p = p
 
     def get_action(self, obs, info=None):
         action, user_info = self.base_oracle.get_action(obs, info)
 
-        # if self.inter > 0:
-            # self.inter -= 1
-            # self.status.new_intervention = False
-            # self.status.curr_intervention = True
-
-        # else:
-        #     if np.count_nonzero(action) > 0:
-        #         self.count += 1
-        #         if self.count >= self.thresh:
-        #             if np.random.rand() < self.p:
-        #                 np.random.shuffle(action)
-        #             self.status.action = action
-        #             self.status.new_intervention = not self.status.curr_intervention
-        #             self.status.curr_intervention = True
-        #             self.inter = self.inter_len - 1
-        #
-        #     else:
-        #         self.count = 0
-        #         self.status.action = np.zeros(action.shape)
-        #         self.status.new_intervention = False
-        #         self.status.curr_intervention = False
         self.status.action = action
         if np.count_nonzero(action) > 0:
             self.status.new_intervention = not self.status.curr_intervention
@@ -178,12 +160,14 @@ class SimGazeModelOracle(SimGazeOracle):
 
     def reset(self):
         super().reset()
-        self.inter = 0
-        self.count = 0
         self.base_oracle.reset()
 
 
 class SimOneHotModelOracle(SimGazeModelOracle):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size = 3
+
     def get_gaze_input(self, info):
         target = np.where(info['target_string'] == 0)[0][0]
         self.gaze_input = np.zeros(self.size)
@@ -193,6 +177,7 @@ class SimOneHotModelOracle(SimGazeModelOracle):
 class SimGoalPosModelOracle(SimGazeModelOracle):
     def __init__(self, **kwargs):
         super().__init__(**kwargs, per_step=True)
+        self.size = 3
 
     def get_gaze_input(self, info):
         target = np.where(info['target_string'] == 0)[0][0]
@@ -212,20 +197,24 @@ class SimGazeKeyboardOracle(KeyboardOracle, SimGazeOracle):
 
 
 class RealGazeModelOracle(RealGazeKeyboardOracle):
-    def __init__(self, base_oracle, predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat'):
+    def __init__(self, base_oracle,
+                 predictor_path='./image/rl/gaze_capture/model_files/shape_predictor_68_face_landmarks.dat',
+                 per_step=True):
         super().__init__(predictor_path)
         self.base_oracle = base_oracle
         self.size = 128
+        self.per_step = per_step
 
     def get_action(self, obs, info=None):
-        if self.gaze_thread is None or not self.gaze_thread.is_alive():
-            self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
-            self.gaze_thread.start()
+        if self.gaze_input is None or self.per_step:
+            if self.gaze_thread is None or not self.gaze_thread.is_alive():
+                self.gaze_thread = threading.Thread(target=self.get_gaze_input, name='gaze_thread')
+                self.gaze_thread.start()
+        while self.gaze_input is None:
+            pass
 
         action, user_info = self.base_oracle.get_action(obs, info)
         self.status.action = action
-
-        # self.status.new_intervention = np.count_nonzero(action) > 0
 
         if np.count_nonzero(action) > 0:
             self.status.new_intervention = not self.status.curr_intervention
