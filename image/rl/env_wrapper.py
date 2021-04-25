@@ -13,6 +13,7 @@ import assistive_gym as ag
 from gym import spaces, Env
 from rlkit.envs.env_utils import get_dim
 import gym
+import torch
 
 from .oracles import *
 
@@ -198,6 +199,9 @@ class oracle:
                 self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
             elif 'sim_goal' in self.oracle_type:
                 self.oracle = master_env.oracle = SimGoalPosModelOracle(base_oracle=self.oracle)
+            elif 'sim_latent' in self.oracle_type:
+                self.oracle = master_env.oracle = SimLatentModelOracle(base_oracle=self.oracle,
+                                                                       **config['gaze_oracle_kwargs'])
             elif 'sim' in self.oracle_type:
                 self.oracle = master_env.oracle = SimOneHotModelOracle(base_oracle=self.oracle)
         else:
@@ -345,8 +349,11 @@ class reward:
         self.input_penalty = config['input_penalty']
         self.master_env = master_env
         self.reward_type = config['reward_type']
+        if self.reward_type == 'rew_fn':
+            self.rew_fn = config['rew_fn']
 
     def _step(self, obs, r, done, info):
+        done = info['task_success']
         if self.reward_type == 'user_penalty':
             r = -1
             if info['task_success']:
@@ -363,10 +370,11 @@ class reward:
                 target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
                 target_pos = np.array(info['switch_pos'])[target_indices[0]]
                 r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos)) - 1
+        elif self.reward_type == 'rew_fn':
+            r = -1 + torch.sigmoid(self.rew_fn(torch.Tensor(obs))).detach().numpy()[0]
+            done = r > -0.5
         else:
             r = -1 + info['task_success']
-
-        done = info['task_success']
         return obs, r, done, info
 
     def _reset(self, obs):

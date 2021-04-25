@@ -9,6 +9,7 @@ from rlkit.util.io import load_local_or_remote_file
 import threading
 import random
 import h5py
+import pickle as pkl
 
 
 class KeyboardOracle(Oracle):
@@ -71,6 +72,7 @@ class SimGazeOracle(Oracle):
 
         self.size = 128
         self.gaze_input = None
+        self.gazes = []
 
     def get_gaze_input(self, info):
         if self.from_gaze_demos:
@@ -81,6 +83,7 @@ class SimGazeOracle(Oracle):
         else:
             target = np.where(info['target_string'] == 0)[0][0]
             self.gaze_input = random.choice(self.data[str(target)][()])
+        self.gazes.append(self.gaze_input)
 
     def reset(self):
         self.status.new_intervention = False
@@ -172,6 +175,27 @@ class SimOneHotModelOracle(SimGazeModelOracle):
         target = np.where(info['target_string'] == 0)[0][0]
         self.gaze_input = np.zeros(self.size)
         self.gaze_input[target] = 1
+
+
+class SimLatentModelOracle(SimGazeModelOracle):
+    def __init__(self, gazes_path=None, encoder=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size = 3
+        gazes = None
+        if gazes_path is not None:
+            with open(gazes_path, 'rb') as f:
+                gazes = torch.Tensor(pkl.load(f))
+        if gazes is not None and encoder is not None:
+            means, _ = torch.split(encoder.encoder(gazes), self.size, dim=1)
+            means = means.detach().numpy()
+            self.mean = np.mean(means, axis=0)
+            self.std = np.std(means, axis=0)
+        else:
+            self.mean = np.zeros(self.size)
+            self.std = 1
+
+    def get_gaze_input(self, info):
+        self.gaze_input = np.random.normal(loc=np.zeros(self.size), scale=self.std)
 
 
 class SimGoalPosModelOracle(SimGazeModelOracle):

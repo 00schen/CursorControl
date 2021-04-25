@@ -3,6 +3,7 @@ import torch as th
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+from itertools import chain
 
 from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.core.eval_util import create_stats_ordered_dict
@@ -22,6 +23,10 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 			beta=1,
 			rew_class_weight=1,
 			sample=False,
+			latent_train=False,
+			train_encoder_on_rew_class=True,
+			freeze_decoder=False,
+			train_qf_head=True,
 			**kwargs):
 		super().__init__(qf,target_qf,**kwargs)
 		self.reward_update_period = reward_update_period
@@ -39,6 +44,17 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		self.beta = beta
 		self.rew_class_weight = rew_class_weight
 		self.sample = sample
+		self.latent_train = latent_train
+		self.train_encoder_on_rew_class = train_encoder_on_rew_class
+
+		params = self.qf.gaze_vae.encoder.parameters() if freeze_decoder else self.qf.parameters()
+		if freeze_decoder and train_qf_head:
+			params = chain(params, self.qf.decoder.last_fc.parameters())
+
+		self.qf_optimizer = optim.Adam(
+			params,
+			lr=self.learning_rate,
+		)
 
 	def mixup(self,obs,next_obs,noop):
 		lambd = np.random.beta(self.alpha, self.alpha, obs.size(0))
@@ -106,30 +122,32 @@ class DDQNCQLTrainer(DoubleDQNTrainer):
 		"""
 		eps = th.normal(mean=th.zeros((obs.size(0), self.qf.latent_dim)), std=1).to(ptu.device) if self.sample else None
 
-		best_action_idxs = self.qf(next_obs, eps=eps).max(
+		best_action_idxs = self.qf(next_obs, eps=eps, skip_encoder=self.latent_train).max(
 			1, keepdim=True
 		)[1]
 
-		target_q_values = self.target_qf(next_obs, eps=eps).gather(
+		target_q_values = self.target_qf(next_obs, eps=eps, skip_encoder=self.latent_train).gather(
 											1, best_action_idxs
 										)
 		y_target = rewards + (1. - terminals) * self.discount * target_q_values
 		y_target = y_target.detach()
 		# actions is a one-hot vector
 
-		curr_qf, kl_loss = self.qf(obs, eps=eps, return_kl=True)
+		curr_qf, kl_loss = self.qf(obs, eps=eps, return_kl=True, skip_encoder=self.latent_train)
 		# curr_qf = self.qf(obs)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
-		qf_loss = self.qf_criterion(y_pred, y_target) + self.beta * kl_loss
+		qf_loss = self.qf_criterion(y_pred, y_target)
+		if not self.latent_train:
+			qf_loss = qf_loss + self.beta * kl_loss
 		#qf_loss = self.qf_criterion(y_pred, y_target)
 
-
-		num_pos = th.sum(terminals)
-		num_neg = terminals.size(0) - num_pos
-
-		rew_class, rew_class_kl_loss = self.qf.rew_classification(next_obs, return_kl=True)
-		rew_class_loss = th.nn.BCEWithLogitsLoss(pos_weight=num_neg / (num_pos + 1e-6))(rew_class, terminals)
-		qf_loss += self.rew_class_weight * (rew_class_loss + self.beta + rew_class_kl_loss)
+		if not self.latent_train and hasattr(self.qf, 'rew_classification'):
+			num_pos = th.sum(terminals)
+			num_neg = terminals.size(0) - num_pos
+			rew_class, rew_class_kl_loss = self.qf.rew_classification(next_obs, eps=eps, return_kl=True,
+																	  train_encoder=self.train_encoder_on_rew_class)
+			rew_class_loss = th.nn.BCEWithLogitsLoss(pos_weight=num_neg / (num_pos + 1e-6))(rew_class, terminals)
+			qf_loss += self.rew_class_weight * rew_class_loss + self.beta + rew_class_kl_loss
 
 		"""CQL term"""
 		min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1,).mean() * self.temp

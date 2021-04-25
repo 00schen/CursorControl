@@ -7,4 +7,4 @@ from .laptop_oracle import LaptopOracle
 from .bottle_oracle import BottleOracle
 from .base_oracles import UserInputOracle
 from .gaze_oracle import RealGazeKeyboardOracle, RealGazeModelOracle, SimGazeModelOracle, SimGazeKeyboardOracle,\
-    SimOneHotModelOracle, SimGoalPosModelOracle
+    SimOneHotModelOracle, SimGoalPosModelOracle, SimLatentModelOracle

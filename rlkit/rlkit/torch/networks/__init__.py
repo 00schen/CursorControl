@@ -20,7 +20,8 @@ from rlkit.torch.networks.mlp import (
     QrMlp,
     QrGazeMlp,
     MlpGazePolicy,
-    VAE
+    VAE,
+    MlpVQVAEGazePolicy
 )
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
 from rlkit.torch.networks.two_headed_mlp import TwoHeadMlp

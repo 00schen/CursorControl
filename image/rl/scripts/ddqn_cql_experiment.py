@@ -1,15 +1,15 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import ConcatMlp, QrGazeMlp, QrMlp, MlpPolicy, MlpGazePolicy
+from rlkit.torch.networks import ConcatMlp, MlpPolicy, MlpGazePolicy, MlpVQVAEGazePolicy
 from rlkit.torch.networks import Clamp
 from rlkit.data_management.env_replay_buffer import EnvReplayBuffer
-from rlkit.data_management.balanced_replay_buffer import BalancedReplayBuffer
+from rlkit.data_management.env_relabeling_replay_buffer import EnvRelabelingReplayBuffer
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
 from rl.policies import BoltzmannPolicy, OverridePolicy, ComparisonMergePolicy, ArgmaxPolicy, UserInputPolicy
 from rl.path_collectors import FullPathCollector
 from rl.env_wrapper import default_overhead
 from rl.simple_path_loader import SimplePathLoader
-from rl.trainers import DDQNCQLTrainer, QRDDQNCQLTrainer
+from rl.trainers import DDQNCQLTrainer, DDQNVQCQLTrainer
 
 import os
 import gtimer as gt
@@ -20,10 +20,36 @@ import argparse
 import torch as th
 from torch.nn import functional as F
 import copy
+import pickle as pkl
 
 
 def experiment(variant):
-    env = default_overhead(variant['env_kwargs']['config'])
+    gaze_vae = None
+    if variant['gaze_vae_path'] is not None:
+        gaze_vae = th.load(variant['gaze_vae_path'], map_location=th.device("cpu"))
+
+    encoder = None
+    decoder = None
+    rew_classifier = None
+    if variant['pretrain_file_path'] is not None:
+        load = th.load(variant['pretrain_file_path'], map_location=th.device("cpu"))['trainer/qf']
+        if variant['load_encoder']:
+            encoder = load.gaze_vae
+        if variant['load_decoder']:
+            decoder = load.decoder
+        if variant['load_rew_classifier']:
+            rew_classifier = load.rew_classifier
+        if hasattr(load, 'rew_classifier'):
+            variant['env_kwargs']['config']['rew_fn'] = load.rew_classifier
+
+    env_config = copy.deepcopy(variant['env_kwargs']['config'])
+    if variant['trainer_kwargs']['latent_train']:
+        env_config['oracle'] = 'sim_latent_model'
+        env_config['reward_type'] = 'rew_fn'
+        env_config['gaze_oracle_kwargs']['gazes_path'] = variant['gazes_path']
+        env_config['gaze_oracle_kwargs']['encoder'] = encoder
+
+    env = default_overhead(env_config)
     env.seed(variant['seedid'])
 
     eval_env_config = copy.deepcopy(variant['env_kwargs']['config'])
@@ -33,58 +59,41 @@ def experiment(variant):
     eval_env = default_overhead(eval_env_config)
     eval_env.seed(variant['seedid'] + 100)
 
-    gaze_vae = None
-    if variant['gaze_vae_path'] is not None:
-        gaze_vae = th.load(variant['gaze_vae_path'], map_location=th.device("cpu"))
-
-    decoder = None
-    if variant['decoder_path'] is not None:
-        decoder = th.load(variant['decoder_path'], map_location=th.device("cpu"))['trainer/qf'].decoder
-
     if not variant['from_pretrain']:
-        obs_dim = env.observation_space.low.size
-        action_dim = env.action_space.low.size
-        gaze_dim = 128
-        embedding_dim = 3
+        obs_dim = eval_env.observation_space.low.size
+        action_dim = eval_env.action_space.low.size
+        gaze_dim = 128 if 'gaze' in eval_env_config['oracle'] else variant['embedding_dim'] * variant['n_latents']
         M = variant["layer_size"]
         qf = MlpGazePolicy(
             input_size=obs_dim,
             output_size=action_dim,
-            encoder_hidden_sizes=[M],
+            encoder_hidden_sizes=[64],
             decoder_hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
             gaze_vae=gaze_vae,
             gaze_dim=gaze_dim,
-            embedding_dim=embedding_dim,
-            decoder=decoder
+            embedding_dim=variant['embedding_dim'],
+            decoder=decoder,
+            rew_classifier=rew_classifier,
+            # n_embed_per_latent=variant['n_embed_per_latent'],
+            # n_latents=variant['n_latents']
         )
         target_qf = MlpGazePolicy(
             input_size=obs_dim,
             output_size=action_dim,
-            encoder_hidden_sizes=[M],
+            encoder_hidden_sizes=[64],
             decoder_hidden_sizes=[M, M, M, M],
             hidden_activation=F.relu,
             layer_norm=True,
             gaze_vae=copy.deepcopy(gaze_vae),
             gaze_dim=gaze_dim,
-            embedding_dim=embedding_dim,
-            decoder=copy.deepcopy(decoder)
+            embedding_dim=variant['embedding_dim'],
+            decoder=copy.deepcopy(decoder),
+            rew_classifier=copy.deepcopy(rew_classifier),
+            # n_embed_per_latent=variant['n_embed_per_latent'],
+            # n_latents=variant['n_latents']
         )
-        # qf = MlpPolicy(
-        #     input_size=obs_dim,
-        #     output_size=action_dim,
-        #     hidden_sizes=[M, M, M, M],
-        #     hidden_activation=F.relu,
-        #     layer_norm=True,
-        # )
-        # target_qf = MlpPolicy(
-        #     input_size=obs_dim,
-        #     output_size=action_dim,
-        #     hidden_sizes=[M, M, M, M],
-        #     hidden_activation=F.relu,
-        #     layer_norm=True,
-        # )
         rf = ConcatMlp(
             input_size=obs_dim * 2,
             output_size=1,
@@ -107,7 +116,7 @@ def experiment(variant):
         qf
     )
     eval_path_collector = FullPathCollector(
-        env,
+        eval_env,
         eval_policy,
         save_env_in_snapshot=False
     )
@@ -117,7 +126,7 @@ def experiment(variant):
             logit_scale=variant['expl_kwargs']['logit_scale'])
     else:
         expl_policy = ArgmaxPolicy(
-            qf, eps=variant['expl_kwargs']['eps']
+            qf, eps=variant['expl_kwargs']['eps'], skip_encoder=variant['trainer_kwargs']['latent_train']
         )
     if variant['exploration_strategy'] == 'merge_arg':
         expl_policy = ComparisonMergePolicy(env.rng, expl_policy, env.oracle.size)
@@ -135,11 +144,13 @@ def experiment(variant):
         **variant['trainer_kwargs']
     )
 
-    online_buffer = EnvReplayBuffer(
+    buffer_type = EnvRelabelingReplayBuffer if variant['her'] else EnvReplayBuffer
+
+    online_buffer = buffer_type(
          variant['replay_buffer_size'],
          env,
     )
-    offline_buffer = EnvReplayBuffer(
+    offline_buffer = buffer_type(
         variant['replay_buffer_size'],
         env,
     )
@@ -159,7 +170,6 @@ def experiment(variant):
             demo_path=variant['demo_paths'],
             demo_path_proportion=variant['demo_path_proportions'],
             replay_buffers=[offline_buffer]
-            # replay_buffers=[gaze_buffer, prior_buffer]
         )
         path_loader.load_demos()
     from rlkit.core import logger
@@ -195,14 +205,25 @@ def experiment(variant):
     if variant.get('render', False):
         env.render('human')
 
-    trainer.min_q_weight = 0
     algorithm.train()
 
+    if hasattr(env.oracle, 'gazes'):
+        gaze_save_path = os.path.join(logger.get_snapshot_dir(), 'gazes.pkl')
+        with open(gaze_save_path, 'wb') as f:
+            pkl.dump(env.oracle.gazes, f)
+
+# online params
+# from pretrain = False
+# pretrain file path = pretrain
+# sample = False
+# latent train = False
+# rew class weight = 1
+# train encoder on rew class = True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='gaze_sanity')
+    parser.add_argument('--exp_name', default='vq_her')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -214,32 +235,40 @@ if __name__ == "__main__":
     path_length = 200
     num_epochs = int(1e4)
     variant = dict(
+        her=True,
         from_pretrain=False,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'gaze-sanity', 'gaze_sanity_2021_04_09_21_31_21_0000--s-0',
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'her/her_2021_04_23_21_15_39_0000--s-0',
                                         'params.pkl'),
-        decoder_path=os.path.join(main_dir, 'logs', 'gaze-sanity', 'gaze_sanity_2021_04_10_10_02_49_0000--s-0',
-                                        'params.pkl'),
-        gaze_vae_path=os.path.join(main_dir, 'logs', 'gaze_vae', '2021-04-08--18-38-06.pkl'),
+        # pretrain_file_path=os.path.join(main_dir, 'logs', 'pretrain/pretrain_2021_04_18_10_23_44_0000--s-0',
+                                        # 'params.pkl'),
+        load_decoder=False,
+        load_encoder=False,
+        load_rew_classifier=False,
+        gaze_vae_path=None,#os.path.join(main_dir, 'logs', 'gaze_vae', '2021-04-08--18-38-06.pkl'),
+        gazes_path=os.path.join(main_dir, 'logs', 'online/online_2021_04_18_12_54_28_0000--s-0', 'gazes.pkl'),
         layer_size=128,
+        embedding_dim=3,
+        n_latents=1,
+        n_embed_per_latent=50,
         exploration_argmax=True,
         exploration_strategy='',
         expl_kwargs=dict(
             logit_scale=10,
         ),
-        replay_buffer_size=int(5e4) * path_length,
+        replay_buffer_size=100000,
         trainer_kwargs=dict(
-            # qf_lr=1e-3,
             soft_target_tau=1e-2,
             target_update_period=1,
-            # reward_update_period=int(1e8),
             qf_criterion=None,
             discount=0.99,
             reward_scale=1.0,
-            # temp=1.0,
-            # min_q_weight=1.0,
             beta=0.1,
             rew_class_weight=1,
-            sample=False
+            sample=True,
+            latent_train=False,
+            train_encoder_on_rew_class=False,
+            freeze_decoder=False,
+            train_qf_head=False,
         ),
         algorithm_args=dict(
             batch_size=128,
@@ -251,6 +280,15 @@ if __name__ == "__main__":
             num_expl_steps_per_train_loop=500,
             min_num_steps_before_training=1000,
             num_train_loops_per_epoch=10,
+            # batch_size=128,
+            # max_path_length=path_length,
+            # eval_path_length=path_length,
+            # num_epochs=100,
+            # num_eval_steps_per_epoch=1,
+            # num_trains_per_train_loop=5,
+            # num_expl_steps_per_train_loop=1,
+            # min_num_steps_before_training=1000,
+            # num_train_loops_per_epoch=1,
         ),
         bc_args=dict(
             batch_size=256,
@@ -278,7 +316,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
-            oracle='sim_gaze_model',
+            oracle='sim_goal_model',
             oracle_kwargs=dict(),
             action_type='disc_traj',
             smooth_alpha=.8,
@@ -292,7 +330,7 @@ if __name__ == "__main__":
         'freeze_encoder': [False],
         'seedid': [2000],
         'trainer_kwargs.temp': [1],
-        'trainer_kwargs.min_q_weight': [10],
+        'trainer_kwargs.min_q_weight': [0],
         'env_kwargs.config.oracle_kwargs.threshold': [.5],
         'env_kwargs.config.apply_projection': [False],
         'env_kwargs.config.input_penalty': [1],
