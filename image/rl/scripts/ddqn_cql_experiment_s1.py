@@ -248,8 +248,8 @@ if __name__ == "__main__":
 		'demo_path_proportions':[[int(5e3)], ],
 		'trainer_kwargs.beta': [.001],
 		'freeze_decoder': [False],
-		'buffer_type': [ModdedReplayBuffer],
-		# 'buffer_type': [HERReplayBuffer],
+		# 'buffer_type': [ModdedReplayBuffer],
+		'buffer_type': [HERReplayBuffer],
 		'replay_buffer_size': [int(1e7),int(2e6)],
 
 	}

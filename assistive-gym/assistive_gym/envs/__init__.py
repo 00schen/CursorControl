@@ -14,3 +14,4 @@ from assistive_gym.envs.bottle import *
 from assistive_gym.envs.kitchen import *
 from assistive_gym.envs.reach import *
 from assistive_gym.envs.reference_arm import JacoReference
+from assistive_gym.envs.point_reaching import AnySwitchJacoEnv

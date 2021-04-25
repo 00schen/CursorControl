@@ -189,7 +189,7 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
-		pretrain_path='switch_params1.pkl',
+		pretrain_path='params_ckpt.pkl',
 
 		layer_size=256,
 		exploration_argmax=True,

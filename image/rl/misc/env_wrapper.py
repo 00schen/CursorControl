@@ -61,6 +61,7 @@ class LibraryWrapper(Env):
 			"Laptop": ag.LaptopJacoEnv,
 			"OneSwitch": ag.OneSwitchJacoEnv,
 			"ThreeSwitch": ag.ThreeSwitchJacoEnv,
+			"AnySwitch": ag.AnySwitchJacoEnv,
 			"Bottle": ag.BottleJacoEnv,
 			"Kitchen": ag.KitchenJacoEnv,
 		}[config['env_name']]
@@ -183,6 +184,7 @@ class oracle:
 				"Feeding": StraightLineOracle,
 				"Laptop": LaptopOracle,
 				"OneSwitch": OneSwitchOracle,
+				"AnySwitch": OneSwitchOracle,
 				"ThreeSwitch": ThreeSwitchOracle,
 				"Bottle": BottleOracle,
 				"Kitchen": StraightLineOracle,
@@ -245,10 +247,7 @@ class static_gaze:
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
-		if info == None:
-			index = self.master_env.base_env.target_index//2
-		else:
-			index = info['unique_index']
+		index = self.master_env.base_env.unique_index
 		obs['gaze_features'] = self.static_gaze = self.sample_gaze(index)
 		return obs
 
@@ -261,9 +260,13 @@ class goal:
 		self.master_env = master_env
 		self.goal_feat_func = dict(
 			Bottle=lambda info: ['target_pos',] if info['target1_reached'] else ['target1_pos',],
+			OneSwitch=lambda info: ['switch_pos','tool_orient','current_string'],
+			AnySwitch=lambda info: ['switch_pos'],
 		)[self.env_name]
 		self.hindsight_feat = dict(
-			Bottle={'tool_pos': 3}
+			Bottle={'tool_pos': 3},
+			OneSwitch={'tool_pos':3,'tool_orient':4,'current_string':3},
+			AnySwitch={'tool_pos':3}
 		)[self.env_name]
 		master_env.feature_sizes['goal'] = self.goal_size = sum(self.hindsight_feat.values())
 
@@ -297,6 +300,11 @@ class reward:
 			if info['target1_reached']:
 				r = -.5
 				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/2
+			if info['task_success']:
+				r = 0
+		elif self.reward_type == 'custom_switch':
+			r = -1 
+			r += np.exp(-norm(info['tool_pos'] - info['switch_pos']))
 			if info['task_success']:
 				r = 0
 		elif self.reward_type == 'sparse':

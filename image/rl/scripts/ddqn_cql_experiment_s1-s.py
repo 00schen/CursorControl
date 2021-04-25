@@ -7,8 +7,8 @@ from rl.policies import BoltzmannPolicy, ArgmaxPolicy, EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
-from rl.trainers import DDQNCQLTrainer,EncDecCQLTrainer1
-from rl.replay_buffers import ModdedReplayBuffer, pad_buffer_factory
+from rl.trainers import DDQNCQLTrainer,EncDecCQLTrainer
+from rl.replay_buffers import HERReplayBuffer, ModdedReplayBuffer, balanced_buffer_factory, pad_buffer_factory
 from rl.scripts.run_util import run_exp
 
 import os
@@ -26,8 +26,7 @@ def experiment(variant):
 	env = default_overhead(variant['env_config'])
 	env.seed(variant['seedid'])
 	eval_config = variant['env_config'].copy()
-	# eval_config['gaze_path'] = 'bottle_gaze_data_eval1.h5'
-	eval_config['gaze_path'] = 'switch_gaze_data_train.h5'
+	eval_config['gaze_path'] = 'bottle_gaze_data_eval1.h5'
 	eval_env = default_overhead(variant['env_config'])
 	eval_env.seed(variant['seedid']+1)
 
@@ -38,13 +37,13 @@ def experiment(variant):
 	lower_q = -500
 
 	if not variant['from_pretrain']:
-		rf = ConcatMlpPolicy(input_size=10*2,
+		rf = ConcatMlpPolicy(input_size=(env.observation_space.low.size+3)*2,
 							output_size=1,
 							hidden_sizes=[M, M],
 							layer_norm=variant['layer_norm'],
 							hidden_activation=F.leaky_relu
 							)
-		encoder = ConcatMlpPolicy(input_size=7,
+		encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
 							output_size=3*2,
 							hidden_sizes=[M, M],
 							layer_norm=variant['layer_norm'],
@@ -52,14 +51,14 @@ def experiment(variant):
 							)
 		# gt_noise = ptu.zeros(1, requires_grad=True)
 		gaze_noise = ptu.zeros(1, requires_grad=True)
-		qf = ConcatMlpPolicy(input_size=10,
+		qf = ConcatMlpPolicy(input_size=(env.observation_space.low.size+3),
 							output_size=action_dim,
 							hidden_sizes=[M, M, M],
 							layer_norm=variant['layer_norm'],
 							output_activation=Clamp(max=upper_q, min=lower_q),
 							hidden_activation=F.leaky_relu
 							)
-		target_qf = ConcatMlpPolicy(input_size=10,
+		target_qf = ConcatMlpPolicy(input_size=(env.observation_space.low.size+3),
 							output_size=action_dim,
 							hidden_sizes=[M, M, M],
 							layer_norm=variant['layer_norm'],
@@ -69,36 +68,23 @@ def experiment(variant):
 	else:
 		file_name = os.path.join('util_models',variant['pretrain_path'])
 		rf = th.load(file_name)['trainer/rf']
-		gt_encoder = th.load(file_name)['trainer/encoder']
-		# encoder = th.load(file_name)['trainer/encoder']
-		# encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
-		encoder = ConcatMlpPolicy(input_size=env.feature_sizes['gaze_features'],
-							output_size=3*2,
-							hidden_sizes=[M, M],
-							layer_norm=variant['layer_norm'],
-							hidden_activation=F.leaky_relu
-							)
+		# gt_encoder = th.load(file_name)['trainer/encoder']
+		encoder = th.load(file_name)['trainer/encoder']
+		# encoder = ConcatMlpPolicy(input_size=env.feature_sizes['goal'],
+		# 					output_size=3*2,
+		# 					hidden_sizes=[M, M],
+		# 					layer_norm=variant['layer_norm'],
+		# 					hidden_activation=F.leaky_relu
+		# 					)
 		# gt_noise = th.load(file_name)['trainer/gt_noise']
 		gaze_noise = ptu.zeros(1, requires_grad=True)
 		qf = th.load(file_name)['trainer/qf']
-		target_qf = th.load(file_name)['trainer/qf']
-		recon_decoder = ConcatMlpPolicy(input_size=3,
-							output_size=encoder.input_size,
-							hidden_sizes=[M, M],
-							layer_norm=variant['layer_norm'],
-							hidden_activation=F.leaky_relu
-							)
-	optim_params = list(encoder.parameters())+[gaze_noise]
-	if not variant['freeze_decoder']:
-		optim_params += list(qf.parameters())
-	if not variant['freeze_gt']:
-		optim_params += list(gt_encoder.parameters())
-	if not variant['freeze_rf'] or not variant['freeze_decoder']:
-		optim_params += list(rf.parameters())
+		target_qf = th.load(file_name)['trainer/target_qf']
+	
 	optimizer = optim.Adam(
-			optim_params,
-			lr=variant['qf_lr'],
-		)
+		list(rf.parameters())+list(qf.parameters())+list(encoder.parameters())+[gaze_noise],
+		lr=variant['qf_lr'],
+	)
 
 	# eval_policy = ArgmaxPolicy(
 	# 	qf,
@@ -135,11 +121,10 @@ def experiment(variant):
 		save_env_in_snapshot=False,
 	)
 	# trainer = DDQNCQLTrainer(
-	trainer = EncDecCQLTrainer1(
+	trainer = EncDecCQLTrainer(
 		rf=rf,
-		gt_encoder=gt_encoder,
+		# gt_encoder=gt_encoder,
 		encoder=encoder,
-		recon_decoder=recon_decoder,
 		# gt_logvar=gt_noise,
 		gaze_logvar=gaze_noise,
 		qf=qf,
@@ -147,11 +132,12 @@ def experiment(variant):
 		optimizer=optimizer,
 		**variant['trainer_kwargs']
 		)
-	replay_buffer = pad_buffer_factory(ModdedReplayBuffer)(
-		variant['env_config']['gaze_dim'],
+	replay_buffer = variant['buffer_type'](
 		variant['replay_buffer_size'],
 		env,
-		sample_base=int(5000*200),
+		# target_name='target1_reached',
+		# env_info_sizes={'target1_reached': 1},
+		sample_base=int(5000*100),
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -187,9 +173,9 @@ if __name__ == "__main__":
 	args, _ = parser.parse_known_args()
 	main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
-	path_length = 200
+	path_length = 100
 	variant = dict(
-		pretrain_path='switch_params1.pkl',
+		pretrain_path='params_ckpt.pkl',
 
 		layer_size=256,
 		exploration_argmax=True,
@@ -197,7 +183,7 @@ if __name__ == "__main__":
 			# logit_scale=100,
 		),
 		# replay_buffer_size=int(1e5*200),
-		replay_buffer_size=int(2e6),
+		# replay_buffer_size=int(4e6),
 		trainer_kwargs=dict(
 			soft_target_tau=1e-4,
 			target_update_period=1,
@@ -209,7 +195,7 @@ if __name__ == "__main__":
 			temp=1,
 			min_q_weight=0,
 
-			use_gaze_noise=False,
+			use_gaze_noise=True,
 			global_noise=False,
 		),
 		algorithm_args=dict(
@@ -221,12 +207,12 @@ if __name__ == "__main__":
 			num_train_loops_per_epoch=100,
 			collect_new_paths=True,
 			num_trains_per_train_loop=5,
-			min_num_steps_before_training=int(1e3)
+			min_num_steps_before_training=int(1e4)
 		),
 
 		demo_paths=[
 					# os.path.join(main_dir, "demos", f"bottle_debug.npy"),
-					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_5000_debug1.npy"),
+					os.path.join(main_dir, "demos", f"AnySwitch_model_on_policy_5000_debug.npy"),
 					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_5000_noisy.npy"),
 					],
 
@@ -241,32 +227,30 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['static_gaze','goal','reward'],
+			adapts=['goal','reward'],
 			gaze_dim=128,
-			goal_dim=128,
 			state_type=0,
 			reward_max=0,
 			reward_min=-1,
-			reward_type='part_sparse',
-			# gaze_path='Bottle_gaze_data_large1.h5'
-			gaze_path='switch_gaze_data_train.h5'
+			# reward_type='part_sparse',
+			gaze_path='Bottle_gaze_data_large1.h5'
 		)
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000],
 
-		'from_pretrain': [True],
-		# 'env_config.env_name': ['Bottle'],
-		'env_config.env_name': ['OneSwitch'],
+		'from_pretrain': [False],
+		'env_config.env_name': ['AnySwitch'],
 		'layer_norm': [False],
-		'expl_kwargs.logit_scale': [-1],
+		'expl_kwargs.logit_scale': [10],
 
-		'demo_path_proportions':[[0], ],
-		'trainer_kwargs.beta': [0],
-		'freeze_decoder': [False,True],
-		'freeze_rf': [True],
-		'freeze_gt': [True],
-		'trainer_kwargs.use_supervised': ['target']
+		'demo_path_proportions':[[int(5e3)], ],
+		'trainer_kwargs.beta': [.001],
+		'freeze_decoder': [False],
+		'env_config.reward_type': ['sparse','custom_switch'],
+		'buffer_type': [ModdedReplayBuffer,HERReplayBuffer],
+		'replay_buffer_size': [int(1e7),int(2e6)],
+
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

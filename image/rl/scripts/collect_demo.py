@@ -47,8 +47,8 @@ def collect_demonstrations(variant):
 			)
 			# success_found = False
 			for path in collected_paths:
-				path['observations'] = [obs['raw_obs'] for obs in path['observations']]
-				path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
+				# path['observations'] = [obs['raw_obs'] for obs in path['observations']]
+				# path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
 				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
 				paths.append(path)
 				success_count += path['env_infos'][-1]['task_success']
@@ -66,12 +66,12 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 400
+	path_length = 100
 	variant = dict(
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='OneSwitch',
+			env_name='AnySwitch',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
 			oracle='model',
@@ -94,9 +94,9 @@ if __name__ == "__main__":
 
 		on_policy=True,
 		p=.9,
-		num_episodes=5,
+		num_episodes=5000,
 		path_length=path_length,
-		save_name_suffix="noisy"
+		save_name_suffix="debug"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 20
+		num_workers = 10
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]

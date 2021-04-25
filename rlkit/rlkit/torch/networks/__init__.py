@@ -13,7 +13,7 @@ from rlkit.torch.networks.image_state import ImageStatePolicy, ImageStateQ
 from rlkit.torch.networks.linear_transform import LinearTransform
 from rlkit.torch.networks.normalization import LayerNorm
 from rlkit.torch.networks.mlp import (
-    Mlp, ConcatMlp, ConcatMlpPolicy, MlpPolicy, TanhMlpPolicy,
+    Mlp, ConcatMlp, ConcatMlpPolicy, MlpPolicy, TanhMlpPolicy, MlpGazePolicy, VAE,
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,

@@ -12,11 +12,12 @@ class HERReplayBuffer(ModdedReplayBuffer):
 			self,
 			max_replay_buffer_size,
 			env,
-			env_info_sizes={'episode_success':1, 'target1_reached': 1},
-			# env_info_sizes={'noop':1,},
+			# env_info_sizes={'episode_success':1, 'target1_reached': 1},
+			env_info_sizes={'episode_success':1, },
 			sample_base=5000*200,
 	):
-		env_info_sizes.update({'episode_success':1, 'target1_reached': 1})
+		# env_info_sizes.update({'episode_success':1, 'target1_reached': 1})
+		env_info_sizes.update({'episode_success':1,})
 		super().__init__(
 			max_replay_buffer_size=max_replay_buffer_size,
 			env=env,
@@ -58,8 +59,10 @@ class HERReplayBuffer(ModdedReplayBuffer):
 		batch['curr_goal'][:len(indices)] = self._hindsight_goals[indices,hindsight_ind]
 		batch['next_goal'][:len(indices)] = self._hindsight_goals[indices,hindsight_ind]
 		hindsight_success = self._hindsight_success[indices,hindsight_ind]
-		batch['terminals'][:len(indices)] = np.where(hindsight_success,batch['target1_reached'][:len(indices)],batch['terminals'][:len(indices)])
-		batch['rewards'][:len(indices)] = np.where(hindsight_success,-1 + .5*(batch['target1_reached'][:len(indices)]+1),batch['rewards'][:len(indices)])
+		# batch['terminals'][:len(indices)] = np.where(hindsight_success,batch['target1_reached'][:len(indices)],batch['terminals'][:len(indices)])
+		# batch['rewards'][:len(indices)] = np.where(hindsight_success,-1 + .5*(batch['target1_reached'][:len(indices)]+1),batch['rewards'][:len(indices)])
+		batch['terminals'][:len(indices)] = np.where(hindsight_success,True,batch['terminals'][:len(indices)])
+		batch['rewards'][:len(indices)] = np.where(hindsight_success,0,batch['rewards'][:len(indices)])
 
 		return batch
 

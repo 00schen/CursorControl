@@ -109,9 +109,9 @@ class EncDecCQLTrainer(DQNTrainer):
 		user_latent = self.encoder(*real_obs_features)
 		user_mean,user_logvar = user_latent[:,:3],user_latent[:,3:]
 		user_logvar = self.gaze_logvar if self.global_noise else user_logvar
-		gt_latent = self.gt_encoder(target_pos)
-		gt_mean, gt_logvar = gt_latent[:,:3],gt_latent[:,3:]
 		if self.use_supervised == 'target':
+			gt_latent = self.gt_encoder(target_pos)
+			gt_mean, gt_logvar = gt_latent[:,:3],gt_latent[:,3:]
 			supervised_loss = F.mse_loss(user_mean,gt_mean)
 			loss += supervised_loss
 
@@ -141,9 +141,10 @@ class EncDecCQLTrainer(DQNTrainer):
 			recon = self.recon_decoder(noisy_pred_pos)
 			recon_loss = F.mse_loss(recon,real_obs_features[0])
 			loss += recon_loss
-		pred_success = self.rf(*curr_obs_features,*next_obs_features)
-		accuracy = th.eq(episode_success.bool(),F.sigmoid(pred_success.detach())>.5).float().mean()
+		
 		if 'success' in self.use_supervised:
+			pred_success = self.rf(*curr_obs_features,*next_obs_features)
+			accuracy = th.eq(episode_success.bool(),F.sigmoid(pred_success.detach())>.5).float().mean()
 			rf_loss = F.binary_cross_entropy_with_logits(pred_success.flatten(),episode_success.flatten())
 			loss += rf_loss
 
@@ -193,7 +194,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(loss))
 			self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(min_qf_loss))
-			self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+			# self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
 			self.eval_statistics['Predicted Logvar'] = np.mean(ptu.get_numpy(user_logvar))
 			# self.eval_statistics['Prior Logvar'] = np.mean(ptu.get_numpy(prior_logvar))
 			# self.eval_statistics['Predicted Mean'] = np.mean(ptu.get_numpy(gt_mean))
