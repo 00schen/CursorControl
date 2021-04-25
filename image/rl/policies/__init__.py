@@ -8,3 +8,5 @@ from .argmax_policy import ArgmaxPolicy
 from .user_input_policy import UserInputPolicy
 from .dummy_policy import DummyPolicy
 from .recur_argmax_policy import RecurArgmaxPolicy
+from .encdec_policy import EncDecPolicy
+from .recur_encdec_policy import RecurEncDecPolicy

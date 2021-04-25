@@ -4,7 +4,7 @@ class FollowerPolicy:
 	def __init__(self,env):
 		self.env = env
 	def get_action(self,obs):
-		recommend = self.env.recommend
+		recommend = obs['recommend']
 		if np.count_nonzero(recommend):
 			self.action_index = np.argmax(recommend)
 		action = np.zeros(6)

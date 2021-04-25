@@ -47,11 +47,11 @@ def collect_demonstrations(variant):
 			)
 			# success_found = False
 			for path in collected_paths:
+				path['observations'] = [obs['raw_obs'] for obs in path['observations']]
+				path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
 				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
 				paths.append(path)
 				success_count += path['env_infos'][-1]['task_success']
-				for info in path['env_infos']:
-					info['gaze'] = False
 			# if success_found:
 			target_index += 1
 			print("total paths collected: ", len(paths), "successes: ", success_count)
@@ -71,24 +71,17 @@ if __name__ == "__main__":
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Bottle',
+			env_name='OneSwitch',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
 			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
-			gaze_oracle_kwargs={'mode': 'il',
-                                # 'gaze_demos_path': os.path.join(main_dir, 'demos',
-                                #                                 'int_OneSwitch_sim_gaze_on_policy_100_all_debug_'
-                                #                                 '1614378227763030936.npy'),
-                                'synth_gaze': False,
-                                'per_step': True
-                                },
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts = [],
+			adapts = ['oracle'],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
 			apply_projection=False,
@@ -100,8 +93,8 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.6,
-		num_episodes=5000,
+		p=.9,
+		num_episodes=5,
 		path_length=path_length,
 		save_name_suffix="noisy"
 	)

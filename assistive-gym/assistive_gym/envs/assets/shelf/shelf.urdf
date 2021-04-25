@@ -50,6 +50,20 @@
     </collision>
 
     <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+      <material name="Caramel"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+				<box size=".02 .25 .4"/>
+      </geometry>
+    </collision>
+
+    <visual>
       <origin rpy="0 0 0" xyz="-.25 0 0"/>
       <geometry>
 				<box size=".02 .25 .4"/>

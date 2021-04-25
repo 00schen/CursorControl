@@ -142,6 +142,31 @@ class ConcatMlp(Mlp):
         flat_inputs = torch.cat(inputs, dim=self.dim)
         return super().forward(flat_inputs, **kwargs)
 
+class ConcatMlpPolicy(ConcatMlp, Policy):
+    """
+    A simpler interface for creating policies.
+    """
+
+    def __init__(
+            self,
+            *args,
+            obs_normalizer: TorchFixedNormalizer = None,
+            **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.obs_normalizer = obs_normalizer
+
+    def forward(self, *obs, **kwargs):
+        # if self.obs_normalizer:
+        #     obs = self.obs_normalizer.normalize(obs)
+        return super().forward(*obs, **kwargs)
+
+    def get_action(self, *obs_np):
+        actions = self.get_actions(*[obs[None] for obs in obs_np])
+        return actions[0, :], {}
+
+    def get_actions(self, *obs):
+        return eval_np(self, *obs)
 
 class MlpPolicy(Mlp, Policy):
     """

@@ -28,13 +28,13 @@ def default_overhead(config):
 			self.rng = default_rng(config['seedid'])
 			super().__init__(config)
 			adapt_map = {
+				'oracle': oracle,
 				'static_gaze': static_gaze,
-				'high_dim_user': high_dim_user,
-				'stack': stack,
+				'goal': goal,
 				'reward': reward,
 			}
 			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
-			self.adapts = [oracle] + self.adapts
+			# self.adapts = [array_to_dict] + self.adapts
 			self.adapts = [adapt(self, config) for adapt in self.adapts]
 			self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
 																self.adapts, (obs, r, done, info))
@@ -67,16 +67,15 @@ class LibraryWrapper(Env):
 		self.base_env = self.base_env(**config['env_kwargs'])
 		self.observation_space = self.base_env.observation_space
 		self.action_space = self.base_env.action_space
+		self.feature_sizes = self.base_env.feature_sizes
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
-		info['raw_obs'] = obs
 		done = info['task_success']
 		return obs, r, done, info
 
 	def reset(self):
-		obs = self.base_env.reset()
-		return obs
+		return self.base_env.reset()
 
 	def render(self, mode=None, **kwargs):
 		return self.base_env.render(mode)
@@ -164,6 +163,18 @@ def action_factory(base):
 
 	return Action
 
+class array_to_dict:
+	def __init__(self,master_env,config):
+		pass
+	def _step(self,obs,r,done,info):
+		if not isinstance(obs,dict):
+			obs = {'raw_obs': obs}
+		return obs,r,done,info
+	def _reset(self,obs,info=None):
+		if not isinstance(obs,dict):
+			obs = {'raw_obs': obs}
+		return obs
+
 class oracle:
 	def __init__(self,master_env,config):
 		self.oracle_type = config['oracle']
@@ -195,46 +206,29 @@ class oracle:
 				self.oracle = master_env.oracle = oracle_type(master_env.rng,**config['oracle_kwargs'])
 			else:
 				self.oracle = master_env.oracle = oracle_type()
-
-		self.og_obs_size = get_dim(master_env.observation_space)
-		self.input_in_obs = config.get('input_in_obs',False)
-		if self.input_in_obs:
-			master_env.observation_space = spaces.Box(-np.inf,np.inf, (self.og_obs_size+self.oracle.size,))
 		self.master_env = master_env
+		del master_env.feature_sizes['goal']
+		master_env.feature_sizes['recommend'] = self.oracle.size
 
 	def _step(self,obs,r,done,info):
-		# obs = info['raw_obs']
-		##### obs = [--raw observation--, --oracle recommendation--] #####
-		if not self.input_in_obs and obs.size > self.og_obs_size: # only true if trans from demo
-			obs = obs[:self.og_obs_size]
-		if self.input_in_obs and obs.size == self.og_obs_size: # not 'model' case is depricated in this code
-			obs = self._predict(obs,info)
-		else:
-			self._predict(obs,info)
+		self._predict(obs,info)
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
 		self.oracle.reset()
-		self.master_env.recommend = np.zeros(self.oracle.size)
-		##### obs = [--raw observation--, --oracle recommendation--] #####
-		if not self.input_in_obs and obs.size > self.og_obs_size:
-			obs = obs[:self.og_obs_size]
-		if self.input_in_obs and obs.size == self.og_obs_size:
-			obs = np.concatenate((obs,self.master_env.recommend))
+		self.master_env.recommend = obs['recommend'] = np.zeros(self.oracle.size)
 		return obs
 
 	def _predict(self,obs,info):
 		recommend,_info = self.oracle.get_action(obs,info)
-		self.master_env.recommend = info['recommend'] = recommend
+		self.master_env.recommend = obs['recommend'] = info['recommend'] = recommend
 		info['noop'] = not self.oracle.status.curr_intervention
-		if 'gaze' not in info:
-			info['gaze'] = 'gaze' in self.oracle_type
-		return np.concatenate((obs,recommend))
 
 class static_gaze:
 	def __init__(self,master_env,config):
 		self.gaze_dim = config['gaze_dim']
-		master_env.observation_space = spaces.Box(-np.inf,np.inf,(get_dim(master_env.observation_space)+self.gaze_dim,))
+		del master_env.feature_sizes['goal']
+		master_env.feature_sizes['gaze_features'] = self.gaze_dim
 		self.env_name = master_env.env_name
 		self.master_env = master_env
 		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',config['gaze_path']),'r') as gaze_data:
@@ -246,13 +240,8 @@ class static_gaze:
 		return self.master_env.rng.choice(data)
 
 	def _step(self,obs,r,done,info):
-		# if info['gaze']:
 		self.static_gaze = self.sample_gaze(info['unique_index'])
-		obs = np.concatenate((obs,self.static_gaze))
-		# else:
-		# 	state_func = np.concatenate([np.ravel(info['target_pos' if info['target1_reached'] else 'target1_pos']),])
-		# 	state_func = np.concatenate((state_func,np.zeros(self.gaze_dim-state_func.size)))
-		# 	obs = np.concatenate((obs,state_func))
+		obs['gaze_features'] = self.static_gaze
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
@@ -260,129 +249,65 @@ class static_gaze:
 			index = self.master_env.base_env.target_index//2
 		else:
 			index = info['unique_index']
-		self.static_gaze = self.sample_gaze(index)
-		# return np.concatenate((obs,self.static_gaze))
-		return np.concatenate((obs,np.zeros(self.gaze_dim)))
+		obs['gaze_features'] = self.static_gaze = self.sample_gaze(index)
+		return obs
 
-def one_hot(np_indices,num_classes):
-	one_hots = np.zeros((*np_indices.shape,num_classes))
-	one_hots[np.arange(np_indices.shape),np_indices] = 1
-class high_dim_user:
+class goal:
+	"""
+	Chooses what features from info to add to obs
+	"""
 	def __init__(self,master_env,config):
-		master_env.observation_space = spaces.Box(-np.inf,np.inf,(get_dim(master_env.observation_space)+50,))
 		self.env_name = master_env.env_name
 		self.master_env = master_env
-		# self.random_projection = master_env.rng.normal(0,10,(50,50))
-		# self.random_projection,*_ = np.linalg.qr(self.random_projection)
-		# self.apply_projection = config['apply_projection']
-		self.high_dim_size = config['gaze_dim']
-		self.state_type = config['state_type']
+		self.goal_feat_func = dict(
+			Bottle=lambda info: ['target_pos',] if info['target1_reached'] else ['target1_pos',],
+		)[self.env_name]
+		self.hindsight_feat = dict(
+			Bottle={'tool_pos': 3}
+		)[self.env_name]
+		master_env.feature_sizes['goal'] = self.goal_size = sum(self.hindsight_feat.values())
 
 	def _step(self,obs,r,done,info):
-		# info['one_hot_target'] = np.zeros(self.master_env.base_env.num_targets)
-		# info['one_hot_target'][info['target_index']] = 1
-		state_func = {
-			'OneSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
-					['switch_pos',],
-					['aux_switch_pos',],
-					['lever_angle','switch_pos',],
-					['lever_angle','target_string','current_string',
-					'switch_pos','aux_switch_pos',],
-					][self.state_type]]),
-			'ThreeSwitch': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['lever_angle','target_string','current_string',
-					 'switch_pos','aux_switch_pos',]]),
-			'Laptop': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in 
-					['target_pos','lid_pos','lever_angle',]]),
-			'Bottle': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
-						(['target_pos',] if info['target1_reached'] else ['target1_pos',]),
-						(['target_pos',] if info['target1_reached'] else ['target1_pos',])+['one_hot_target'],
-						['one_hot_target'],
-						['bottle_pos',],
-						['target1_reached','bottle_pos','tool_pos'],
-						['target1_pos','bottle_pos',],
-						['target_pos','target1_pos','bottle_pos',],
-						['target_pos','target1_pos','bottle_pos',],
-						['aux_target_pos','target_pos','target1_pos','bottle_pos',],
-						# ['cos_error','aux_target_pos','target_pos','target1_pos','bottle_pos',],
-					][self.state_type]]),
-			'Kitchen': lambda: np.concatenate([np.ravel(info[state_component]) for state_component in [
-						['slide_dist','microwave_angle','microwave_closed','item_placed','item_reached','og_item_poses','item_poses','target_poses',],
-					][self.state_type]]),
-		}[self.env_name]()
-		state_func = np.concatenate((state_func,np.zeros(self.high_dim_size-state_func.size)))
-		# if self.apply_projection:
-		# 	state_func = state_func @ self.random_projection
-		obs = np.concatenate((obs,state_func))
+		goal_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.goal_feat_func(info)])
+		# goal_feat = np.concatenate((goal_feat,np.zeros(self.high_dim_size-goal_feat.size)))
+		hindsight_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
+		# hindsight_feat = np.concatenate((hindsight_feat,np.zeros(self.high_dim_size-hindsight_feat.size)))
+		obs['goal'] = goal_feat
+		obs['hindsight_goal'] = hindsight_feat
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
-		return np.concatenate((obs,np.zeros(50)))
-
-
-class stack:
-	""" 'num_obs' most recent steps and 'num_nonnoop' most recent input steps stacked """
-
-	def __init__(self, master_env, config):
-		self.history_shape = (config['num_obs'], get_dim(master_env.observation_space))
-		self.nonnoop_shape = (config['num_nonnoop'], get_dim(master_env.observation_space))
-		master_env.observation_space = spaces.Box(-np.inf, np.inf,
-												  (np.prod(self.history_shape) + np.prod(self.nonnoop_shape),))
-		self.master_env = master_env
-
-	def _step(self, obs, r, done, info):
-		if len(self.history) == self.history.maxlen:
-			old_obs = self.history[0]
-			oracle_size = self.master_env.oracle.size
-			if np.count_nonzero(old_obs[-oracle_size:]) > 0:
-				self.prev_nonnoop.append(old_obs)
-		self.history.append(obs)
-		# info['current_obs'] = obs
-		return np.concatenate((*self.prev_nonnoop, *self.history,)), r, done, info
-
-	def _reset(self, obs):
-		self.history = deque(np.zeros(self.history_shape), self.history_shape[0])
-		self.prev_nonnoop = deque(np.zeros(self.nonnoop_shape), self.nonnoop_shape[0])
-		obs, _r, _d, _i = self._step(obs, 0, False, {})
+		obs['goal'] = np.zeros(self.goal_size)
+		obs['hindsight_goal'] = np.zeros(self.goal_size)
 		return obs
-
 
 class reward:
 	""" rewards capped at 'cap' """
 
 	def __init__(self, master_env, config):
 		self.range = (config['reward_min'], config['reward_max'])
-		self.input_penalty = config['input_penalty']
 		self.master_env = master_env
 		self.reward_type = config['reward_type']
 
 	def _step(self, obs, r, done, info):
-		if self.reward_type == 'user_penalty':
-			r = 0
-			r -= self.input_penalty * (not info['noop'])
-			# if info['task_success']:
-			#     r = 1
-			done = info['task_success']
-		elif self.reward_type == 'custom':
-			r = 0
-			if not info['task_success']:
-				target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))[0]
-				target_pos = np.array(info['switch_pos'])[target_indices[0]]
-				r += -1 + (norm(info['old_tool_pos'] - target_pos) - norm(info['tool_pos'] - target_pos))
-				# done = done
+		r = 0
+		if self.reward_type == 'custom':
+			r = -1 
+			r += np.exp(-norm(info['tool_pos'] - info['target1_pos']))/2
+			if info['target1_reached']:
+				r = -.5
+				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/2
+			if info['task_success']:
+				r = 0
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
-			done = info['task_success']
 		elif self.reward_type == 'part_sparse':
 			r = -1 + .5*(info['task_success']+info['target1_reached'])
-			done = info['task_success']
 		elif self.reward_type == 'terminal_interrupt':
 			r = info['noop']
 			# done = info['noop']
-			done = info['task_success']
 		elif self.reward_type == 'kitchen':
 			r = -1 + sum(info['item_placed']+info['item_reached']+[info['microwave_closed']])/len(info['item_placed']+info['item_reached']+[1])
-			done = info['task_success']
 		else:
 			error
 

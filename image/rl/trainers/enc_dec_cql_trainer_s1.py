@@ -46,29 +46,89 @@ class DQNTrainer(TorchTrainer):
 	def end_epoch(self, epoch):
 		self._need_to_update_eval_statistics = True
 
-class DDQNCQLTrainer(DQNTrainer):
-	def __init__(self,qf,target_qf,
+class EncDecCQLTrainer(DQNTrainer):
+	def __init__(self,
+			rf,
+			# gt_encoder,
+			encoder,
+			# gt_logvar,
+			gaze_logvar,
+			qf,target_qf,
 			optimizer,
 			temp=1.0,
 			min_q_weight=1.0,
-			reward_update_period=.1,
 			add_ood_term=-1,
 			alpha = .4,
+			beta = 1,
+			use_gaze_noise = False,
+			global_noise = True,
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
+		# self.qf_optimizer also optimizes encoder
+		self.rf = rf
+		# self.gt_encoder = gt_encoder
+		self.encoder = encoder
+		# self.gt_logvar = gt_logvar
+		self.gaze_logvar = gaze_logvar
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 		self.add_ood_term = add_ood_term
 		self.alpha = alpha
+		self.beta = beta
+		self.use_gaze_noise = use_gaze_noise
+		self.global_noise = global_noise
 
 	def train_from_torch(self, batch):
+		# terminals = batch['terminals'].repeat(2,1)
+		# actions = batch['actions'].repeat(2,1)
+		# obs = batch['observations'].repeat(2,1)
+		# next_obs = batch['next_observations'].repeat(2,1)
+		# rewards = batch['rewards'].repeat(2,1)
+		# target_pos = th.cat((batch['current_target'],ptu.zeros((batch['current_target'].shape[0],self.encoder.input_size-batch['current_target'].shape[1]))),dim=1)
+		# episode_success = batch['episode_success'].repeat(2,1)
 		terminals = batch['terminals']
 		actions = batch['actions']
 		obs = batch['observations']
 		next_obs = batch['next_observations']
 		rewards = batch['rewards']
-		curr_obs_features = [batch[key] for key in batch.keys() if 'curr' in key]
-		next_obs_features = [batch[key] for key in batch.keys() if 'next' in key]
+		episode_success = batch['episode_success']
+
+		loss = 0
+
+		"""
+		Supervised loss
+		"""
+		real_obs_features = [batch[key] for key in batch.keys() if 'curr_' in key]
+		pred_pos = self.encoder(*real_obs_features)
+		pred_pos,pred_logvar = pred_pos[:,:3],pred_pos[:,3:]
+		pred_logvar = self.gaze_logvar if self.global_noise else pred_logvar
+		# supervised_loss = F.mse_loss(pred_pos,target_pos)
+		# loss = supervised_loss
+		# pred_target_pos = self.gt_encoder(target_pos)
+
+		# noisy_target_pos = th.normal(pred_target_pos,th.exp(self.gt_logvar/2))
+		if self.use_gaze_noise:
+			noisy_pred_pos = pred_pos+th.normal(ptu.zeros(pred_pos.shape),1)*th.exp(pred_logvar/2)
+			# gt_kl_loss = -0.5 * (1 + self.gt_logvar - th.square(pred_target_pos) - self.gt_logvar.exp()).sum(dim=1).mean()
+			gaze_kl_loss = -0.5 * (1 + pred_logvar - th.square(pred_pos) - pred_logvar.exp()).sum(dim=1).mean()
+			loss += self.beta*(gaze_kl_loss)
+			# loss += self.beta*(gt_kl_loss + gaze_kl_loss)
+		else:
+			noisy_pred_pos = pred_pos
+		
+		# curr_obs_features = [obs,th.cat((noisy_pred_pos,noisy_target_pos))]
+		# next_obs_features = [next_obs,th.cat((noisy_pred_pos,noisy_target_pos))]
+		curr_obs_features = [obs,noisy_pred_pos]
+		next_obs_features = [next_obs,noisy_pred_pos]
+
+
+		"""
+		Rf loss
+		"""
+		pred_success = self.rf(*curr_obs_features,*next_obs_features)
+		rf_loss = F.binary_cross_entropy_with_logits(pred_success.flatten(),episode_success.flatten())
+		loss += rf_loss
+		accuracy = th.eq(episode_success.bool(),F.sigmoid(pred_success.detach())>.5).float().mean()
 
 		"""
 		Q loss
@@ -83,9 +143,9 @@ class DDQNCQLTrainer(DQNTrainer):
 		y_target = y_target.detach()
 
 		# actions is a one-hot vector
-		curr_qf = self.qf(obs,*curr_obs_features)
+		curr_qf = self.qf(*curr_obs_features)
 		y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
-		loss = self.qf_criterion(y_pred, y_target)
+		loss += self.qf_criterion(y_pred, y_target)
 
 		"""CQL term"""
 		min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1,).mean() * self.temp
@@ -116,10 +176,9 @@ class DDQNCQLTrainer(DQNTrainer):
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(loss))
 			self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(min_qf_loss))
-			self.eval_statistics.update(create_stats_ordered_dict(
-				'R Predictions',
-				ptu.get_numpy(rewards),
-			))
+			self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+			self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+			self.eval_statistics['Predicted Logvar'] = np.mean(ptu.get_numpy(pred_logvar))			
 			self.eval_statistics.update(create_stats_ordered_dict(
 				'Q Predictions',
 				ptu.get_numpy(y_pred),
@@ -128,7 +187,9 @@ class DDQNCQLTrainer(DQNTrainer):
 	@property
 	def networks(self):
 		nets = [
-			# self.rf,
+			self.rf,
+			# self.gt_encoder,
+			self.encoder,
 			self.qf,
 			self.target_qf,
 		]
@@ -136,7 +197,11 @@ class DDQNCQLTrainer(DQNTrainer):
 
 	def get_snapshot(self):
 		return dict(
-			# rf =self.rf,
+			rf = self.rf,
+			# gt_encoder = self.gt_encoder,
+			encoder = self.encoder,
+			# gt_noise = self.gt_logvar,
+			gaze_noise = self.gaze_logvar,
 			qf = self.qf,
 			target_qf = self.target_qf,
 		)

@@ -13,13 +13,14 @@ from rlkit.torch.networks.image_state import ImageStatePolicy, ImageStateQ
 from rlkit.torch.networks.linear_transform import LinearTransform
 from rlkit.torch.networks.normalization import LayerNorm
 from rlkit.torch.networks.mlp import (
-    Mlp, ConcatMlp, MlpPolicy, TanhMlpPolicy,
+    Mlp, ConcatMlp, ConcatMlpPolicy, MlpPolicy, TanhMlpPolicy,
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,
     QrMlp,
     QrGazeMlp,
 )
+from rlkit.torch.networks.rnn import (ConcatRNN,ConcatRNNPolicy)
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
 from rlkit.torch.networks.two_headed_mlp import TwoHeadMlp
 from rlkit.torch.networks.encoder_policies import VQGazePolicy, VAEGazePolicy, TransferEncoderPolicy
