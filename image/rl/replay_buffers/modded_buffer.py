@@ -31,11 +31,11 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 		self._obs_dict_keys = env.feature_sizes.keys()
 		self.sample_base=sample_base
 
-	def _advance(self):
-		self._top = ((self._top + 1 - self.sample_base) % (self._max_replay_buffer_size - self.sample_base)) + self.sample_base \
-					if self._top > self.sample_base else self._top + 1
-		if self._size < self._max_replay_buffer_size:
-			self._size += 1
+	# def _advance(self):
+	# 	self._top = ((self._top + 1 - self.sample_base) % (self._max_replay_buffer_size - self.sample_base)) + self.sample_base \
+	# 				if self._top > self.sample_base else self._top + 1
+	# 	if self._size < self._max_replay_buffer_size:
+	# 		self._size += 1
 
 	def modify_path(self,path):
 		for info in path['env_infos']:

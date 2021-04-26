@@ -71,8 +71,7 @@ def experiment(variant):
 		rf = th.load(file_name)['trainer/rf']
 		gt_encoder = th.load(file_name)['trainer/encoder']
 		# encoder = th.load(file_name)['trainer/encoder']
-		# encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
-		encoder = ConcatMlpPolicy(input_size=env.feature_sizes['gaze_features'],
+		encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
 							output_size=3*2,
 							hidden_sizes=[M, M],
 							layer_norm=variant['layer_norm'],
@@ -91,10 +90,10 @@ def experiment(variant):
 	optim_params = list(encoder.parameters())+[gaze_noise]
 	if not variant['freeze_decoder']:
 		optim_params += list(qf.parameters())
-	if not variant['freeze_gt']:
-		optim_params += list(gt_encoder.parameters())
-	if not variant['freeze_rf'] or not variant['freeze_decoder']:
-		optim_params += list(rf.parameters())
+	# if not variant['freeze_gt']:
+	# 	optim_params += list(gt_encoder.parameters())
+	# if not variant['freeze_rf'] or not variant['freeze_decoder']:
+	# 	optim_params += list(rf.parameters())
 	optimizer = optim.Adam(
 			optim_params,
 			lr=variant['qf_lr'],
@@ -147,8 +146,7 @@ def experiment(variant):
 		optimizer=optimizer,
 		**variant['trainer_kwargs']
 		)
-	replay_buffer = pad_buffer_factory(ModdedReplayBuffer)(
-		variant['env_config']['gaze_dim'],
+	replay_buffer = ModdedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
 		sample_base=int(5000*200),
@@ -189,7 +187,7 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
-		pretrain_path='params_ckpt.pkl',
+		pretrain_path='switch_params1.pkl',
 
 		layer_size=256,
 		exploration_argmax=True,
@@ -197,9 +195,9 @@ if __name__ == "__main__":
 			# logit_scale=100,
 		),
 		# replay_buffer_size=int(1e5*200),
-		replay_buffer_size=int(2e6),
+		# replay_buffer_size=int(2e6),
 		trainer_kwargs=dict(
-			soft_target_tau=1e-4,
+			soft_target_tau=1e-2,
 			target_update_period=1,
 			qf_criterion=None,
 			qf_lr=5e-4,
@@ -209,18 +207,18 @@ if __name__ == "__main__":
 			temp=1,
 			min_q_weight=0,
 
-			use_gaze_noise=False,
+			use_gaze_noise=True,
 			global_noise=False,
 		),
 		algorithm_args=dict(
 			batch_size=256,
 			max_path_length=path_length,
-			num_epochs=int(1e6),
+			num_epochs=int(1e4),
 			num_eval_steps_per_epoch=5*path_length,
 			num_expl_steps_per_train_loop=path_length,
 			num_train_loops_per_epoch=100,
 			collect_new_paths=True,
-			num_trains_per_train_loop=5,
+			num_trains_per_train_loop=10,
 			min_num_steps_before_training=int(1e3)
 		),
 
@@ -241,32 +239,31 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['static_gaze','goal','reward'],
+			adapts=['static_gaze','reward'],
 			gaze_dim=128,
-			goal_dim=128,
 			state_type=0,
 			reward_max=0,
 			reward_min=-1,
-			reward_type='part_sparse',
+			reward_type='sparse',
 			# gaze_path='Bottle_gaze_data_large1.h5'
 			gaze_path='switch_gaze_data_train.h5'
 		)
 	)
 	search_space = {
 		'seedid': [2000,2001],
-
+		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
 		'from_pretrain': [True],
-		# 'env_config.env_name': ['Bottle'],
 		'env_config.env_name': ['OneSwitch'],
 		'layer_norm': [False],
 		'expl_kwargs.logit_scale': [-1],
 
 		'demo_path_proportions':[[0], ],
-		'trainer_kwargs.beta': [0],
+		'trainer_kwargs.beta': [0,],
 		'freeze_decoder': [False,True],
 		'freeze_rf': [True],
 		'freeze_gt': [True],
-		'trainer_kwargs.use_supervised': ['target']
+		'replay_buffer_size': [int(2e6)],
+		'trainer_kwargs.use_supervised': ['none']
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

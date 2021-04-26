@@ -14,7 +14,7 @@ class EncDecPolicy(PyTorchModule):
 		self.logit_scale = logit_scale
 
 	def get_action(self, obs):
-		features = [obs[k] for k in self.features_keys if 'goal' not in k]
+		features = [obs[k] for k in self.features_keys]
 		with th.no_grad():
 			raw_obs = obs['raw_obs']
 			features.append(np.zeros(self.encoder.input_size-sum([len(f) for f in features])))

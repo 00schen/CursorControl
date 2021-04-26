@@ -26,7 +26,7 @@ def experiment(variant):
 	env = default_overhead(variant['env_config'])
 	env.seed(variant['seedid'])
 	eval_config = variant['env_config'].copy()
-	eval_config['gaze_path'] = 'bottle_gaze_data_eval1.h5'
+	eval_config['gaze_path'] = 'switch_gaze_data_train.h5'
 	eval_env = default_overhead(variant['env_config'])
 	eval_env.seed(variant['seedid']+1)
 
@@ -79,10 +79,10 @@ def experiment(variant):
 		# gt_noise = th.load(file_name)['trainer/gt_noise']
 		gaze_noise = ptu.zeros(1, requires_grad=True)
 		qf = th.load(file_name)['trainer/qf']
-		target_qf = th.load(file_name)['trainer/target_qf']
+		target_qf = th.load(file_name)['trainer/qf']
 	
 	optimizer = optim.Adam(
-		list(rf.parameters())+list(qf.parameters())+list(encoder.parameters())+[gaze_noise],
+		list(qf.parameters())+list(encoder.parameters())+[gaze_noise],
 		lr=variant['qf_lr'],
 	)
 
@@ -137,7 +137,7 @@ def experiment(variant):
 		env,
 		# target_name='target1_reached',
 		# env_info_sizes={'target1_reached': 1},
-		sample_base=int(5000*100),
+		sample_base=int(5000*200),
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
-		pretrain_path='params_ckpt.pkl',
+		pretrain_path='switch_params1.pkl',
 
 		layer_size=256,
 		exploration_argmax=True,
@@ -202,17 +202,17 @@ if __name__ == "__main__":
 			batch_size=256,
 			max_path_length=path_length,
 			num_epochs=int(1e4),
-			num_eval_steps_per_epoch=5*path_length,
+			num_eval_steps_per_epoch=path_length,
 			num_expl_steps_per_train_loop=path_length,
-			num_train_loops_per_epoch=100,
+			num_train_loops_per_epoch=10,
 			collect_new_paths=True,
 			num_trains_per_train_loop=10,
-			# min_num_steps_before_training=int(1e4)
+			min_num_steps_before_training=int(1e3)
 		),
 
 		demo_paths=[
 					# os.path.join(main_dir, "demos", f"bottle_debug.npy"),
-					os.path.join(main_dir, "demos", f"AnySwitch_model_on_policy_5000_debug1.npy"),
+					# os.path.join(main_dir, "demos", f"AnySwitch_model_on_policy_5000_debug1.npy"),
 					# os.path.join(main_dir, "demos", f"Bottle_model_on_policy_5000_noisy.npy"),
 					],
 
@@ -237,18 +237,17 @@ if __name__ == "__main__":
 		)
 	)
 	search_space = {
-		'seedid': [2000,2001],
-		'trainer_kwargs.soft_target_tau': [1e-2,],
+		'seedid': [2000],
+		'trainer_kwargs.soft_target_tau': [1e-2,5e-4],
+		'from_pretrain': [True],
+		'env_config.env_name': ['OneSwitch'],
+		'layer_norm': [False],
+		'expl_kwargs.logit_scale': [-1],
 
-		'from_pretrain': [False],
-		'env_config.env_name': ['AnySwitch'],
-		'layer_norm': [True],
-		'expl_kwargs.logit_scale': [100],
-
-		'demo_path_proportions':[[int(5e3)], ],
+		'demo_path_proportions':[[int(5e1)], ],
 		'trainer_kwargs.beta': [.001],
 		'freeze_decoder': [False],
-		'env_config.reward_type': ['sparse','custom_switch'],
+		'env_config.reward_type': ['sparse',],
 		'buffer_type': [ModdedReplayBuffer],
 		'replay_buffer_size': [int(2e6)],
 	}

@@ -91,7 +91,7 @@ class EncDecCQLTrainer(DQNTrainer):
 		# next_obs = batch['next_observations'].repeat(2,1)
 		# rewards = batch['rewards'].repeat(2,1)
 		# gt_target_pos = th.cat((batch['current_target'],ptu.zeros((batch['current_target'].shape[0],self.encoder.input_size-batch['current_target'].shape[1]))),dim=1)
-		target_pos = batch['curr_goal']
+		# target_pos = batch['curr_goal']
 		# episode_success = batch['episode_success'].repeat(2,1)
 		terminals = batch['terminals']
 		actions = batch['actions']
@@ -118,27 +118,27 @@ class EncDecCQLTrainer(DQNTrainer):
 		# (prior_pos,prior_logvar) = (gt_mean.mean(dim=0,keepdim=True).detach(),gt_logvar.mean(dim=0,keepdim=True).detach()) if self.gt_prior else (0,0)
 		(prior_pos,prior_logvar) =  (0,0)
 		if self.use_gaze_noise:
-			noisy_pred_pos = user_mean+th.normal(ptu.zeros(user_mean.shape),1)*th.exp(user_logvar/2)
+			noisy_user_pos = user_mean+th.normal(ptu.zeros(user_mean.shape),1)*th.exp(user_logvar/2)
 			# noisy_target_pos = gt_mean+th.normal(ptu.zeros(user_mean.shape),1)*th.exp(gt_logvar/2)
 			# gt_kl_loss = -0.5 * (1 + gt_logvar - th.square(gt_mean) - gt_logvar.exp()).sum(dim=1).mean()
-			gaze_kl_loss = -0.5 * (1 + (user_logvar-prior_logvar) - th.square(user_mean-prior_pos) - (user_logvar-prior_logvar).exp()).sum(dim=1).mean()
+			user_kl_loss = -0.5 * (1 + (user_logvar-prior_logvar) - th.square(user_mean-prior_pos) - (user_logvar-prior_logvar).exp()).sum(dim=1).mean()
 			
 			# loss += self.beta*(gt_kl_loss + gaze_th.square(user_mean-prior_pos) kl_loss)
 		else:
-			noisy_pred_pos = user_mean
-			gaze_kl_loss = -0.5 * th.square(user_mean-prior_pos).mean()
-		loss += self.beta*(gaze_kl_loss)
+			noisy_user_pos = user_mean
+			user_kl_loss = -0.5 * th.square(user_mean-prior_pos).mean()
+		loss += self.beta*(user_kl_loss)
 		
-		# curr_obs_features = [obs,th.cat((noisy_pred_pos,noisy_target_pos))]
-		# next_obs_features = [next_obs,th.cat((noisy_pred_pos,noisy_target_pos))]
-		curr_obs_features = [obs,noisy_pred_pos]
-		next_obs_features = [next_obs,noisy_pred_pos]
+		# curr_obs_features = [obs,th.cat((noisy_user_pos,noisy_target_pos))]
+		# next_obs_features = [next_obs,th.cat((noisy_user_pos,noisy_target_pos))]
+		curr_obs_features = [obs,noisy_user_pos]
+		next_obs_features = [next_obs,noisy_user_pos]
 
 		"""
 		Rf loss
 		"""
 		if 'recon' in self.use_supervised:
-			recon = self.recon_decoder(noisy_pred_pos)
+			recon = self.recon_decoder(noisy_user_pos)
 			recon_loss = F.mse_loss(recon,real_obs_features[0])
 			loss += recon_loss
 		

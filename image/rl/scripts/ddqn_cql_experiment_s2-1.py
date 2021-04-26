@@ -196,7 +196,7 @@ if __name__ == "__main__":
 		# replay_buffer_size=int(1e5*200),
 		replay_buffer_size=int(2e6),
 		trainer_kwargs=dict(
-			soft_target_tau=1e-4,
+			soft_target_tau=1e-2,
 			target_update_period=1,
 			qf_criterion=None,
 			qf_lr=5e-4,
@@ -206,18 +206,18 @@ if __name__ == "__main__":
 			temp=1,
 			min_q_weight=0,
 
-			use_gaze_noise=False,
+			use_gaze_noise=True,
 			global_noise=False,
 		),
 		algorithm_args=dict(
-			batch_size=5,
+			batch_size=256,
 			max_path_length=path_length,
-			num_epochs=int(1e6),
-			num_eval_steps_per_epoch=5*path_length,
-			num_expl_steps_per_train_loop=path_length,
-			num_train_loops_per_epoch=100,
+			num_epochs=int(1e4),
+			num_eval_steps_per_epoch=path_length,
+			num_expl_steps_per_train_loop=5*path_length,
+			num_train_loops_per_epoch=10,
 			collect_new_paths=True,
-			num_trains_per_train_loop=5,
+			num_trains_per_train_loop=10,
 			min_num_steps_before_training=int(1e3)
 		),
 
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 		)
 	)
 	search_space = {
-		'seedid': [2000,],
+		'seedid': [2000,2001],
 
 		'from_pretrain': [True],
 		'env_config.env_name': ['Bottle'],
@@ -259,8 +259,8 @@ if __name__ == "__main__":
 		'demo_path_proportions':[[0], ],
 		'trainer_kwargs.beta': [0],
 		'freeze_decoder': [False,True],
-		'freeze_rf': [False,True,],
-		'trainer_kwargs.use_supervised': ['none','success','success_recon']
+		'freeze_rf': [True,],
+		'trainer_kwargs.use_supervised': ['target']
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

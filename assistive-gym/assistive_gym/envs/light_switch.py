@@ -12,7 +12,7 @@ HIGH_LIMIT = .2
 class LightSwitchEnv(AssistiveEnv):
 	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',capture_frames=False,stochastic=True,debug=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(3,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(19,), dtype=np.float32)
 		self.success_dist = success_dist
 		self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
 		self.num_targets = 3
@@ -110,6 +110,8 @@ class LightSwitchEnv(AssistiveEnv):
 		return obs, reward, done, info
 
 	def move_lever(self,switch):
+		# print(switch)
+		switch_pos,switch_orient = p.getLinkState(switch,0)[:2]
 		old_j_pos = robot_joint_position = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
 		contacts = p.getContactPoints(bodyA=self.robot, bodyB=switch, linkIndexB=0, physicsClientId=self.id)
 		contacts += p.getContactPoints(bodyA=self.tool, bodyB=switch, linkIndexB=0, physicsClientId=self.id)
@@ -117,9 +119,9 @@ class LightSwitchEnv(AssistiveEnv):
 			return 0, 0
 
 		normal = contacts[0][7]
-		joint_pos,__ = p.multiplyTransforms(*p.getLinkState(switch,0)[:2], p.getJointInfo(switch,0,self.id)[14], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+		joint_pos,__ = p.multiplyTransforms(switch_pos,switch_orient, p.getJointInfo(switch,0,self.id)[14], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		radius = np.array(contacts[0][6]) - np.array(joint_pos)
-		axis,_ = p.multiplyTransforms(np.zeros(3),p.getLinkState(switch,0)[1], [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
+		axis,_ = p.multiplyTransforms(np.zeros(3),switch_orient, [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
 		k = -.2
@@ -156,7 +158,7 @@ class LightSwitchEnv(AssistiveEnv):
 		# switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
 		# robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([tool_pos]),
+			raw_obs = np.concatenate([np.array(self.target_pos).ravel(),tool_orient,self.current_string,tool_pos]),
 			hindsight_goal = np.concatenate([self.current_string,]),
 			goal = self.goal,
 		)

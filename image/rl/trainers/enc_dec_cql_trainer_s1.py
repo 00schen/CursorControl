@@ -62,6 +62,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			beta = 1,
 			use_gaze_noise = False,
 			global_noise = True,
+			use_supervised = 'False',
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
 		# self.qf_optimizer also optimizes encoder
@@ -77,6 +78,7 @@ class EncDecCQLTrainer(DQNTrainer):
 		self.beta = beta
 		self.use_gaze_noise = use_gaze_noise
 		self.global_noise = global_noise
+		self.use_supervised = use_supervised
 
 	def train_from_torch(self, batch):
 		# terminals = batch['terminals'].repeat(2,1)
@@ -125,10 +127,11 @@ class EncDecCQLTrainer(DQNTrainer):
 		"""
 		Rf loss
 		"""
-		pred_success = self.rf(*curr_obs_features,*next_obs_features)
-		rf_loss = F.binary_cross_entropy_with_logits(pred_success.flatten(),episode_success.flatten())
-		loss += rf_loss
-		accuracy = th.eq(episode_success.bool(),F.sigmoid(pred_success.detach())>.5).float().mean()
+		if 'success' in self.use_supervised:
+			pred_success = self.rf(*curr_obs_features,*next_obs_features)
+			rf_loss = F.binary_cross_entropy_with_logits(pred_success.flatten(),episode_success.flatten())
+			loss += rf_loss
+			accuracy = th.eq(episode_success.bool(),F.sigmoid(pred_success.detach())>.5).float().mean()
 
 		"""
 		Q loss
@@ -176,8 +179,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(loss))
 			self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(min_qf_loss))
-			self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
-			self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
+			# self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
 			self.eval_statistics['Predicted Logvar'] = np.mean(ptu.get_numpy(pred_logvar))			
 			self.eval_statistics.update(create_stats_ordered_dict(
 				'Q Predictions',
