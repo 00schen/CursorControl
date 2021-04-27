@@ -16,11 +16,12 @@ def pad_buffer_factory(base):
 
 		def random_batch(self, batch_size):
 			batch = super().random_batch(batch_size)
-			batch_shape = batch['curr_goal'].shape
-			batch['curr_goal'] = np.concatenate((batch['curr_goal'],
-									np.zeros((batch_shape[0],self.full_size-batch_shape[1],))),axis=1)
-			batch['next_goal'] = np.concatenate((batch['next_goal'],
-									np.zeros((batch_shape[0],self.full_size-batch_shape[1],))),axis=1)
+			if 'curr_goal' in batch:
+				batch_shape = batch['curr_goal'].shape
+				batch['curr_goal'] = np.concatenate((batch['curr_goal'],
+										np.zeros((*batch_shape[:-1],self.full_size-batch_shape[-1],))),axis=-1)
+				batch['next_goal'] = np.concatenate((batch['next_goal'],
+										np.zeros((*batch_shape[:-1],self.full_size-batch_shape[-1],))),axis=-1)
 			return batch
 	
 	return PadReplayBuffer

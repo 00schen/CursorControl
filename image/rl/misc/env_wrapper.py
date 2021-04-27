@@ -20,7 +20,11 @@ from rl.oracles import *
 
 
 def default_overhead(config):
-	factories = [action_factory]
+	factory_map = {
+				'session': session_factory,
+			}
+	factories = [factory_map[factory] for factory in config['factories']]
+	factories = [action_factory]+factories
 	wrapper = reduce(lambda value, func: func(value), factories, LibraryWrapper)
 
 	class Overhead(wrapper):
@@ -164,6 +168,23 @@ def action_factory(base):
 
 	return Action
 
+def session_factory(base):
+	class Session(base):
+		def __init__(self, config):
+			config['session_goal'] = True
+			super().__init__(config)
+			self.goal_reached = False
+		def new_goal(self):
+			self.base_env.new_goal()
+			self.goal_reached = False
+		def step(self,action):
+			o,r,d,info = super().step(action)
+			if info['task_success']:
+				self.goal_reached = True
+			return o,r,d,info
+	return Session
+		
+
 class array_to_dict:
 	def __init__(self,master_env,config):
 		pass
@@ -268,7 +289,7 @@ class goal:
 			OneSwitch={'tool_pos':3,},
 			AnySwitch={'tool_pos':3}
 		)[self.env_name]
-		master_env.feature_sizes['goal'] = self.goal_size = sum(self.hindsight_feat.values())
+		master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
 
 	def _step(self,obs,r,done,info):
 		goal_feat = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
@@ -291,6 +312,8 @@ class reward:
 		self.range = (config['reward_min'], config['reward_max'])
 		self.master_env = master_env
 		self.reward_type = config['reward_type']
+		if self.master_env.env_name == 'Bottle' and self.reward_type == 'sparse':
+			self.reward_type = 'part_sparse'
 
 	def _step(self, obs, r, done, info):
 		r = 0

@@ -1,88 +1,39 @@
 import torch as th
 from torch import nn
 import torch.nn.functional as F
-import torch.optim as optim
 import numpy as np
 
-from collections import OrderedDict
-
-from rlkit.torch.core import np_to_pytorch_batch
 from rlkit.core.eval_util import create_stats_ordered_dict
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import Mlp
-# from rlkit.torch.dqn.double_dqn import DoubleDQNTrainer
-from rlkit.torch.torch_rl_algorithm import TorchTrainer
-from rlkit.core import logger
-
-class DQNTrainer(TorchTrainer):
-	def __init__(
-			self,
-			qf,
-			target_qf,
-			optimizer,
-			learning_rate=1e-3,
-			soft_target_tau=1e-3,
-			target_update_period=1,
-			qf_criterion=None,
-
-			discount=0.99,
-	):
-		super().__init__()
-		self.qf = qf
-		self.target_qf = target_qf
-		self.learning_rate = learning_rate
-		self.soft_target_tau = soft_target_tau
-		self.target_update_period = target_update_period
-		self.qf_optimizer = optimizer
-		self.discount = discount
-		self.qf_criterion = qf_criterion or nn.MSELoss()
-		self.eval_statistics = OrderedDict()
-		self._n_train_steps_total = 0
-		self._need_to_update_eval_statistics = True
-
-	def get_diagnostics(self):
-		return self.eval_statistics
-
-	def end_epoch(self, epoch):
-		self._need_to_update_eval_statistics = True
+from .dqn_trainer import DQNTrainer
 
 class EncDecCQLTrainer(DQNTrainer):
 	def __init__(self,
 			rf,
-			# gt_encoder,
 			encoder,
-			# gt_logvar,
 			recon_decoder,
-			gaze_logvar,
+			pred_logvar,
 			qf,target_qf,
 			optimizer,
 			temp=1.0,
 			min_q_weight=1.0,
 			add_ood_term=-1,
-			alpha = .4,
 			beta = 1,
-			use_gaze_noise = False,
-			global_noise = True,
+			use_noise = True,
 			use_supervised = 'none',
-			gt_prior = True,
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
 		# self.qf_optimizer also optimizes encoder
 		self.rf = rf
-		# self.gt_encoder = gt_encoder
 		self.encoder = encoder
 		self.recon_decoder = recon_decoder
-		# self.gt_logvar = gt_logvar
-		self.gaze_logvar = gaze_logvar
+		self.pred_logvar = pred_logvar
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 		self.add_ood_term = add_ood_term
-		self.alpha = alpha
 		self.beta = beta
-		self.use_gaze_noise = use_gaze_noise
-		self.global_noise = global_noise
+		self.use_noise = use_noise
 		self.use_supervised = use_supervised
-		self.gt_prior = gt_prior
 
 	def train_from_torch(self, batch):
 		terminals = batch['terminals']
@@ -93,27 +44,28 @@ class EncDecCQLTrainer(DQNTrainer):
 		next_obs = batch['next_observations']
 		rewards = batch['rewards']
 		episode_success = batch['episode_success']
+		gt_goal = batch['curr_goal']
+		inputs = batch['curr_recommend']
 
 		loss = 0
 
 		"""
 		Supervised loss
 		"""
-		real_obs_features = [batch[key] for key in batch.keys() if 'curr_' in key]
-		pred_pos,_hx = self.encoder(obs,*real_obs_features)
-		pred_pos,pred_logvar = pred_pos[...,:3],pred_pos[...,3:]
+		pred_goal,_hx = self.encoder(obs,inputs)
+		if self.use_supervised == 'target':
+			supervised_loss = (F.mse_loss(pred_goal,gt_goal,reduction='none')*masks).sum()/masks_sum
+			loss += supervised_loss
 
-		(prior_pos,prior_logvar) =  (0,0)
-		if self.use_gaze_noise:
-			noisy_pred_pos = pred_pos+th.normal(ptu.zeros(pred_pos.shape),1)*th.exp(pred_logvar/2)
-			gaze_kl_loss = -0.5 * (1 + (pred_logvar-prior_logvar) - th.square(pred_pos-prior_pos) - (pred_logvar-prior_logvar).exp()).sum(dim=2).mean()
+		if self.use_noise:
+			noisy_goal = pred_goal+th.normal(ptu.zeros(pred_goal.shape),1)*th.exp(self.pred_logvar/2)
+			# gaze_kl_loss = 0.5 * (1 + (pred_logvar-prior_logvar) - th.square(pred_goal-prior_pos) - (pred_logvar-prior_logvar).exp()).sum(dim=2).mean()
 		else:
-			noisy_pred_pos = pred_pos
-			gaze_kl_loss = -0.5 * th.square(pred_pos-prior_pos).mean()
-		loss += self.beta*(gaze_kl_loss)
+			noisy_goal = gt_goal
+		# loss += self.beta*(gaze_kl_loss)
 		
-		curr_obs_features = [obs,noisy_pred_pos]
-		next_obs_features = [next_obs,noisy_pred_pos]
+		curr_obs_features = [obs,noisy_pred_goal]
+		next_obs_features = [next_obs,noisy_pred_goal]
 
 		"""
 		Rf loss
@@ -175,7 +127,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			self._need_to_update_eval_statistics = False
 			self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(loss))
 			# self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(min_qf_loss))
-			self.eval_statistics['Predicted Logvar'] = np.mean(ptu.get_numpy(pred_logvar))
+			# self.eval_statistics['Predicted Logvar'] = np.mean(ptu.get_numpy(pred_logvar))
 			self.eval_statistics.update(create_stats_ordered_dict(
 				'Q Predictions',
 				ptu.get_numpy(y_pred),
@@ -200,7 +152,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			encoder = self.encoder,
 			recon_decoder=self.recon_decoder,
 			# gt_noise = self.gt_logvar,
-			gaze_noise = self.gaze_logvar,
+			gaze_noise = self.pred_logvar,
 			qf = self.qf,
 			target_qf = self.target_qf,
 		)

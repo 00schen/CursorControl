@@ -6,7 +6,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 
 class EncDecPolicy(PyTorchModule):
-	def __init__(self, encoder, qf, features_keys, logit_scale=-1):
+	def __init__(self,  qf, features_keys, encoder=None, logit_scale=-1):
 		super().__init__()
 		self.encoder = encoder
 		self.qf = qf
@@ -17,8 +17,11 @@ class EncDecPolicy(PyTorchModule):
 		features = [obs[k] for k in self.features_keys]
 		with th.no_grad():
 			raw_obs = obs['raw_obs']
-			features.append(np.zeros(self.encoder.input_size-sum([len(f) for f in features])))
-			pred_features,_ = self.encoder.get_action(*features)
+			if self.encoder != None:
+				# features.append(np.zeros(self.encoder.input_size-sum([len(f) for f in features])))
+				pred_features,_ = self.encoder.get_action(*features)
+			else:
+				pred_features = np.concatenate(features)
 			q_values, ainfo = self.qf.get_action(raw_obs,pred_features[:3])
 			q_values = ptu.tensor(q_values)
 			if self.logit_scale != -1:

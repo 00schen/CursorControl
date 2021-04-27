@@ -71,7 +71,7 @@ if __name__ == "__main__":
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='AnySwitch',
+			env_name='OneSwitch',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
 			oracle='model',
@@ -93,10 +93,10 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.9,
+		p=.4,
 		num_episodes=5000,
 		path_length=path_length,
-		save_name_suffix="debug"
+		save_name_suffix="noisy"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise

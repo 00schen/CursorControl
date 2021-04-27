@@ -26,8 +26,7 @@ def experiment(variant):
 	env = default_overhead(variant['env_config'])
 	env.seed(variant['seedid'])
 	eval_config = variant['env_config'].copy()
-	# eval_config['gaze_path'] = 'bottle_gaze_data_eval1.h5'
-	eval_config['gaze_path'] = 'switch_gaze_data_train.h5'
+	eval_config['gaze_path'] = 'bottle_gaze_data_eval1.h5'
 	eval_env = default_overhead(variant['env_config'])
 	eval_env.seed(variant['seedid']+1)
 
@@ -71,8 +70,7 @@ def experiment(variant):
 		rf = th.load(file_name)['trainer/rf']
 		gt_encoder = th.load(file_name)['trainer/encoder']
 		# encoder = th.load(file_name)['trainer/encoder']
-		# encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
-		encoder = ConcatMlpPolicy(input_size=env.feature_sizes['gaze_features'],
+		encoder = ConcatMlpPolicy(input_size=sum(env.feature_sizes.values()),
 							output_size=3*2,
 							hidden_sizes=[M, M],
 							layer_norm=variant['layer_norm'],
@@ -189,7 +187,7 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
-		pretrain_path='switch_params1.pkl',
+		pretrain_path='params_ckpt.pkl',
 
 		layer_size=256,
 		exploration_argmax=True,
@@ -199,10 +197,10 @@ if __name__ == "__main__":
 		# replay_buffer_size=int(1e5*200),
 		replay_buffer_size=int(2e6),
 		trainer_kwargs=dict(
-			soft_target_tau=1e-4,
+			# soft_target_tau=1e-4,
 			target_update_period=1,
 			qf_criterion=None,
-			qf_lr=5e-4,
+			# qf_lr=5e-4,
 
 			discount=1-(1/path_length),
 			add_ood_term=-1,
@@ -216,7 +214,7 @@ if __name__ == "__main__":
 			batch_size=256,
 			max_path_length=path_length,
 			num_epochs=int(1e6),
-			num_eval_steps_per_epoch=5*path_length,
+			num_eval_steps_per_epoch=10*path_length,
 			num_expl_steps_per_train_loop=path_length,
 			num_train_loops_per_epoch=100,
 			collect_new_paths=True,
@@ -241,24 +239,24 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['static_gaze','goal','reward'],
+			adapts=['goal','static_gaze','reward'],
 			gaze_dim=128,
 			goal_dim=128,
 			state_type=0,
 			reward_max=0,
 			reward_min=-1,
 			reward_type='part_sparse',
-			# gaze_path='Bottle_gaze_data_large1.h5'
-			gaze_path='switch_gaze_data_train.h5'
+			gaze_path='Bottle_gaze_data_large1.h5'
 		)
 	)
 	search_space = {
 		'seedid': [2000,2001],
 
 		'from_pretrain': [True],
-		# 'env_config.env_name': ['Bottle'],
-		'env_config.env_name': ['OneSwitch'],
-		'layer_norm': [False],
+		'env_config.env_name': ['Bottle'],
+		'trainer_kwargs.qf_lr': [5e-4,1e-3],
+		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
+		'layer_norm': [False,True],
 		'expl_kwargs.logit_scale': [-1],
 
 		'demo_path_proportions':[[0], ],
@@ -266,7 +264,7 @@ if __name__ == "__main__":
 		'freeze_decoder': [False,True],
 		'freeze_rf': [True],
 		'freeze_gt': [True],
-		'trainer_kwargs.use_supervised': ['target']
+		'trainer_kwargs.use_supervised': ['none','success']
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

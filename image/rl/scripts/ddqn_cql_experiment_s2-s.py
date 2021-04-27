@@ -254,7 +254,7 @@ if __name__ == "__main__":
 		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
 		'from_pretrain': [True],
 		'env_config.env_name': ['OneSwitch'],
-		'layer_norm': [False],
+		'layer_norm': [False,True],
 		'expl_kwargs.logit_scale': [-1],
 
 		'demo_path_proportions':[[0], ],

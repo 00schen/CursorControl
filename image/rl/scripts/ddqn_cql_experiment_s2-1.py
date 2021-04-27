@@ -8,7 +8,7 @@ from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import RecurEncDecCQLTrainer
-from rl.replay_buffers import ModdedTrajReplayBuffer, balanced_traj_buffer_factory
+from rl.replay_buffers import ModdedTrajReplayBuffer, balanced_traj_buffer_factory, pad_buffer_factory
 from rl.scripts.run_util import run_exp
 
 import os
@@ -69,7 +69,7 @@ def experiment(variant):
 		file_name = os.path.join('util_models',variant['pretrain_path'])
 		rf = th.load(file_name)['trainer/rf']
 		rf.dim = -1
-		# gt_encoder = th.load(file_name)['trainer/encoder']
+		gt_encoder = th.load(file_name)['trainer/encoder']
 		# encoder = th.load(file_name)['trainer/encoder']
 		encoder = ConcatRNNPolicy(input_size=obs_dim,
 							output_size=3*2,
@@ -132,7 +132,7 @@ def experiment(variant):
 	# trainer = DDQNCQLTrainer(
 	trainer = RecurEncDecCQLTrainer(
 		rf=rf,
-		# gt_encoder=gt_encoder,
+		gt_encoder=gt_encoder,
 		encoder=encoder,
 		recon_decoder=recon_decoder,
 		# gt_logvar=gt_noise,
@@ -142,7 +142,8 @@ def experiment(variant):
 		optimizer=optimizer,
 		**variant['trainer_kwargs']
 		)
-	replay_buffer = ModdedTrajReplayBuffer(
+	replay_buffer = pad_buffer_factory(ModdedTrajReplayBuffer)(
+		variant['env_config']['gaze_dim'],
 		variant['replay_buffer_size'],
 		env=env,
 		traj_len=200,
@@ -234,7 +235,7 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			adapts=['oracle','reward'],
+			adapts=['goal','oracle','reward'],
 			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5

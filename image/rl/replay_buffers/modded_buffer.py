@@ -25,10 +25,12 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 		)
 		self._obs_dict = {}
 		self._next_obs_dict = {}
-		for key, size in env.feature_sizes.items():
+		self._obs_dict_keys = set(env.feature_sizes.keys()) | set(['goal'])
+		iter_dict = {'goal': env.goal_size}
+		iter_dict.update(env.feature_sizes)
+		for key, size in iter_dict.items():
 			self._obs_dict[key] = np.zeros((max_replay_buffer_size, size))
 			self._next_obs_dict[key] = np.zeros((max_replay_buffer_size, size))
-		self._obs_dict_keys = env.feature_sizes.keys()
 		self.sample_base=sample_base
 
 	# def _advance(self):
@@ -91,17 +93,17 @@ class ModdedTrajReplayBuffer(ModdedReplayBuffer):
 		)
 		self._max_replay_buffer_size //= traj_len
 		self.sample_base=sample_base
-		for store in [self._observations,self._next_obs,self._actions,self._rewards,self._terminals]:
-			store.shape = (store.shape[0]//traj_len,traj_len,-1)
+		self._observations = self._observations.reshape((max_replay_buffer_size//traj_len,traj_len,-1))
+		self._next_obs = self._next_obs.reshape((max_replay_buffer_size//traj_len,traj_len,-1))
+		self._actions = self._actions.reshape((max_replay_buffer_size//traj_len,traj_len,-1))
+		self._rewards = self._rewards.reshape((max_replay_buffer_size//traj_len,traj_len,-1))
+		self._terminals = self._terminals.reshape((max_replay_buffer_size//traj_len,traj_len,-1))
 		for k in self._env_info_keys:
-			store = self._env_infos[k]
-			store.shape = (store.shape[0]//traj_len,traj_len,-1)
+			self._env_infos[k] = self._env_infos[k].reshape((max_replay_buffer_size//traj_len,traj_len,-1))
 		for k in self._obs_dict.keys():
-			store = self._obs_dict[k]
-			store.shape = (store.shape[0]//traj_len,traj_len,-1)
+			self._obs_dict[k] = self._obs_dict[k].reshape((max_replay_buffer_size//traj_len,traj_len,-1))
 		for k in self._next_obs_dict.keys():
-			store = self._next_obs_dict[k]
-			store.shape = (store.shape[0]//traj_len,traj_len,-1)
+			self._next_obs_dict[k] = self._next_obs_dict[k].reshape((max_replay_buffer_size//traj_len,traj_len,-1))
 
 	def _advance(self):
 		self._top = ((self._top + 1 - self.sample_base) % (self._max_replay_buffer_size - self.sample_base)) + self.sample_base \
@@ -121,7 +123,7 @@ class ModdedTrajReplayBuffer(ModdedReplayBuffer):
 		self.modify_path(path)
 		self._actions[self._top,:len(path['actions'])] = np.array(path['actions'])
 		self._rewards[self._top,:len(path['rewards'])] = np.array(path['rewards'])
-		self._terminals[self._top,:len(path['terminals'])] = np.array(path['terminals'])
+		self._terminals[self._top,:len(path['terminals'])] = np.array(path['terminals']).reshape((-1,1))
 		for i, (
 				obs,
 				next_obs,
