@@ -51,6 +51,7 @@ class DDQNVQCQLTrainer(DDQNCQLTrainer):
 		qf_loss = self.qf_criterion(y_pred, y_target)
 		if not self.latent_train:
 			qf_loss = qf_loss + self.beta * 2 * vq_loss1 + self.beta * vq_loss2
+			#qf_loss = qf_loss + vq_loss1 + self.beta * vq_loss2
 
 		if not self.latent_train and hasattr(self.qf, 'rew_classification'):
 			num_pos = th.sum(terminals)
@@ -59,6 +60,8 @@ class DDQNVQCQLTrainer(DDQNCQLTrainer):
 																			   train_encoder=self.train_encoder_on_rew_class)
 			rew_class_loss = th.nn.BCEWithLogitsLoss(pos_weight=num_neg / (num_pos + 1e-6))(rew_class, terminals)
 			qf_loss += self.rew_class_weight * rew_class_loss + self.beta * 2 * rew_vq_loss1 + self.beta + vq_loss2
+			#qf_loss += self.rew_class_weight * rew_class_loss + rew_vq_loss1 + self.beta + vq_loss2
+
 
 		"""CQL term"""
 		min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1,).mean() * self.temp

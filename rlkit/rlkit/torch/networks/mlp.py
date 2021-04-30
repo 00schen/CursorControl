@@ -575,7 +575,7 @@ class VQVAE(PyTorchModule):
     ):
         super().__init__()
         self.encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * n_latents, input_size=input_size)
-        self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=input_size, input_size=latent_size,
+        self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=input_size, input_size=latent_size * n_latents,
                            output_activation=output_activation)
         self.n_latents = n_latents
         self.latent_size = latent_size

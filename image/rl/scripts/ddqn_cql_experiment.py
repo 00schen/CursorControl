@@ -62,9 +62,9 @@ def experiment(variant):
     if not variant['from_pretrain']:
         obs_dim = eval_env.observation_space.low.size
         action_dim = eval_env.action_space.low.size
-        gaze_dim = 128 if 'gaze' in eval_env_config['oracle'] else variant['embedding_dim'] * variant['n_latents']
+        gaze_dim = 128 if 'gaze' in eval_env_config['oracle'] else 3 #variant['embedding_dim'] * variant['n_latents']
         M = variant["layer_size"]
-        qf = MlpGazePolicy(
+        qf = MlpVQVAEGazePolicy(
             input_size=obs_dim,
             output_size=action_dim,
             encoder_hidden_sizes=[64],
@@ -76,10 +76,10 @@ def experiment(variant):
             embedding_dim=variant['embedding_dim'],
             decoder=decoder,
             rew_classifier=rew_classifier,
-            # n_embed_per_latent=variant['n_embed_per_latent'],
-            # n_latents=variant['n_latents']
+            n_embed_per_latent=variant['n_embed_per_latent'],
+            n_latents=variant['n_latents']
         )
-        target_qf = MlpGazePolicy(
+        target_qf = MlpVQVAEGazePolicy(
             input_size=obs_dim,
             output_size=action_dim,
             encoder_hidden_sizes=[64],
@@ -91,8 +91,8 @@ def experiment(variant):
             embedding_dim=variant['embedding_dim'],
             decoder=copy.deepcopy(decoder),
             rew_classifier=copy.deepcopy(rew_classifier),
-            # n_embed_per_latent=variant['n_embed_per_latent'],
-            # n_latents=variant['n_latents']
+            n_embed_per_latent=variant['n_embed_per_latent'],
+            n_latents=variant['n_latents']
         )
         rf = ConcatMlp(
             input_size=obs_dim * 2,
@@ -137,7 +137,7 @@ def experiment(variant):
         expl_policy,
         save_env_in_snapshot=False
     )
-    trainer = DDQNCQLTrainer(
+    trainer = DDQNVQCQLTrainer(
         qf=qf,
         target_qf=target_qf,
         rf=rf,
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     variant = dict(
         her=True,
         from_pretrain=False,
-        pretrain_file_path=os.path.join(main_dir, 'logs', 'her/her_2021_04_23_21_15_39_0000--s-0',
+        pretrain_file_path=os.path.join(main_dir, 'logs', 'vq/vq_2021_04_26_16_47_48_0000--s-0',
                                         'params.pkl'),
         # pretrain_file_path=os.path.join(main_dir, 'logs', 'pretrain/pretrain_2021_04_18_10_23_44_0000--s-0',
                                         # 'params.pkl'),
@@ -248,8 +248,8 @@ if __name__ == "__main__":
         gazes_path=os.path.join(main_dir, 'logs', 'online/online_2021_04_18_12_54_28_0000--s-0', 'gazes.pkl'),
         layer_size=128,
         embedding_dim=3,
-        n_latents=1,
-        n_embed_per_latent=50,
+        n_latents=3,
+        n_embed_per_latent=100,
         exploration_argmax=True,
         exploration_strategy='',
         expl_kwargs=dict(
@@ -264,9 +264,9 @@ if __name__ == "__main__":
             reward_scale=1.0,
             beta=0.1,
             rew_class_weight=1,
-            sample=True,
+            sample=False,
             latent_train=False,
-            train_encoder_on_rew_class=False,
+            train_encoder_on_rew_class=True,
             freeze_decoder=False,
             train_qf_head=False,
         ),
@@ -285,7 +285,7 @@ if __name__ == "__main__":
             # eval_path_length=path_length,
             # num_epochs=100,
             # num_eval_steps_per_epoch=1,
-            # num_trains_per_train_loop=5,
+            # num_trains_per_train_loop=1,
             # num_expl_steps_per_train_loop=1,
             # min_num_steps_before_training=1000,
             # num_train_loops_per_epoch=1,
