@@ -8,7 +8,7 @@ from .env import AssistiveEnv
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.1, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
+	def __init__(self, robot_type='jaco',success_dist=.1, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(7,), dtype=np.float32)
 		self.num_targets = 4*2
@@ -17,6 +17,7 @@ class BottleEnv(AssistiveEnv):
 		self.stochastic = stochastic
 		self.goal_feat = ['target1_reached','target1_pos','tool_pos'] # Just an FYI
 		self.feature_sizes = {'goal': 3}
+		self.session_goal = session_goal
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -111,7 +112,8 @@ class BottleEnv(AssistiveEnv):
 			# p.setCollisionFilterPair(bottle, self.shelf, -1, -1, 0, physicsClientId=self.id)
 
 		"""set up target and initial robot position"""
-		self.set_target_index() # instance override in demos
+		if not self.session_goal:
+			self.set_target_index() # instance override in demos
 		self.init_robot_arm()
 		self.generate_target()
 

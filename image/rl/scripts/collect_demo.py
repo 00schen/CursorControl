@@ -71,7 +71,7 @@ if __name__ == "__main__":
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='OneSwitch',
+			env_name='Bottle',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
 			oracle='model',
@@ -81,6 +81,7 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
+			factories = [],
 			adapts = ['oracle'],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
@@ -93,7 +94,7 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.4,
+		p=.9,
 		num_episodes=5000,
 		path_length=path_length,
 		save_name_suffix="noisy"

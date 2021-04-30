@@ -2,12 +2,13 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import ConcatMlpPolicy
 from rlkit.torch.networks import Clamp
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
+from rl.misc.session_rl_algorithm import BatchRLAlgorithm as TorchSessionRLAlgorithm
 
 from rl.policies import EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
-from rl.trainers import EncDecCQLTrainer1
+from rl.trainers import SessionEncDecCQLTrainer, EncDecCQLTrainer1
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
 
@@ -46,7 +47,7 @@ def experiment(variant):
 						)
 	# logvar = ptu.zeros(1, requires_grad=True)
 	qf = th.load(file_name)['trainer/qf']
-	target_qf = th.load(file_name)['trainer/qf']
+	target_qf = th.load(file_name)['trainer/target_qf']
 	recon_decoder = ConcatMlpPolicy(input_size=3,
 						output_size=encoder.input_size,
 						hidden_sizes=[M, M],
@@ -87,30 +88,57 @@ def experiment(variant):
 		expl_policy,
 		save_env_in_snapshot=False,
 	)
-	trainer = EncDecCQLTrainer1(
-		rf=rf,
-		encoder=encoder,
-		recon_decoder=recon_decoder,
-		pred_logvar=logvar,
-		qf=qf,
-		target_qf=target_qf,
-		optimizer=optimizer,
-		**variant['trainer_kwargs']
-		)
 	replay_buffer = ModdedReplayBuffer(
 		variant['replay_buffer_size'],
 		env,
 		sample_base=0,
 	)
-	algorithm = TorchBatchRLAlgorithm(
-		trainer=trainer,
-		exploration_env=env,
-		evaluation_env=eval_env,
-		exploration_data_collector=expl_path_collector,
-		evaluation_data_collector=eval_path_collector,
-		replay_buffer=replay_buffer,
-		**variant['algorithm_args']
-	)
+	if 'session' in variant['trainer_kwargs']['use_supervised']:
+		trainer = SessionEncDecCQLTrainer(
+			rf=rf,
+			encoder=encoder,
+			recon_decoder=recon_decoder,
+			pred_logvar=logvar,
+			qf=qf,
+			target_qf=target_qf,
+			optimizer=optimizer,
+			**variant['trainer_kwargs']
+			)
+		session_buffer = ModdedReplayBuffer(
+			variant['replay_buffer_size'],
+			env,
+			sample_base=0,
+		)
+		algorithm = TorchSessionRLAlgorithm(
+			trainer=trainer,
+			exploration_env=env,
+			evaluation_env=eval_env,
+			exploration_data_collector=expl_path_collector,
+			evaluation_data_collector=eval_path_collector,
+			replay_buffer=replay_buffer,
+			session_buffer=session_buffer,
+			**variant['algorithm_args']
+		)
+	else:
+		trainer = EncDecCQLTrainer1(
+			rf=rf,
+			encoder=encoder,
+			recon_decoder=recon_decoder,
+			pred_logvar=logvar,
+			qf=qf,
+			target_qf=target_qf,
+			optimizer=optimizer,
+			**variant['trainer_kwargs']
+			)
+		algorithm = TorchBatchRLAlgorithm(
+			trainer=trainer,
+			exploration_env=env,
+			evaluation_env=eval_env,
+			exploration_data_collector=expl_path_collector,
+			evaluation_data_collector=eval_path_collector,
+			replay_buffer=replay_buffer,
+			**variant['algorithm_args']
+		)
 	algorithm.to(ptu.device)
 	from rlkit.core import logger
 
@@ -159,8 +187,8 @@ if __name__ == "__main__":
 			num_expl_steps_per_train_loop=10*path_length,
 			num_train_loops_per_epoch=10,
 			collect_new_paths=True,
-			num_trains_per_train_loop=30,
-			min_num_steps_before_training=10
+			num_trains_per_train_loop=10,
+			min_num_steps_before_training=int(10)
 		),
 
 		env_config=dict(
@@ -186,25 +214,43 @@ if __name__ == "__main__":
 			# eval_gaze_path='switch_gaze_data_eval.h5'
 		)
 	)
+	variants = []
+
+	# search_space = {
+	# 	'seedid': [2000,2001],
+
+	# 	'from_pretrain': [True],
+	# 	'layer_norm': [True],
+	# 	'expl_kwargs.logit_scale': [10],
+	# 	'trainer_kwargs.soft_target_tau': [1e-3],
+	# 	'logvar': [-10],
+
+	# 	'freeze_decoder': [False,True],
+	# 	'freeze_rf': [True],
+	# 	'trainer_kwargs.use_supervised': ['session_bellman','target_bellman','bellman']
+	# }
+	# sweeper = hyp.DeterministicHyperparameterSweeper(
+	# 	search_space, default_parameters=variant,
+	# )
+	# for variant in sweeper.iterate_hyperparameters():
+	# 	variants.append(variant)
+
 	search_space = {
 		'seedid': [2000,2001],
 
 		'from_pretrain': [True],
 		'layer_norm': [True],
 		'expl_kwargs.logit_scale': [10],
-		'algorithm_args.num_train_loops_per_epoch': [10,100],
-		'trainer_kwargs.soft_target_tau': [1e-3,1e-4],
+		'trainer_kwargs.soft_target_tau': [1e-3],
 		'logvar': [-10],
 
 		'freeze_decoder': [False,],
 		'freeze_rf': [True],
-		'trainer_kwargs.use_supervised': ['target']
+		'trainer_kwargs.use_supervised': ['target_session',]
 	}
-
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,
 	)
-	variants = []
 	for variant in sweeper.iterate_hyperparameters():
 		variants.append(variant)
 

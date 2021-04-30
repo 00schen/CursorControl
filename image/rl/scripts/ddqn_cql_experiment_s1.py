@@ -36,24 +36,23 @@ def experiment(variant):
 	lower_q = -500
 
 	if not variant['from_pretrain']:
-		rf = ConcatMlpPolicy(input_size=10*2,
+		rf = ConcatMlpPolicy(input_size=obs_dim*2,
 							output_size=1,
 							hidden_sizes=[M, M],
 							layer_norm=variant['layer_norm'],
 							hidden_activation=F.leaky_relu
 							)
-		# gt_noise = ptu.zeros(1, requires_grad=True)
-		gaze_noise = ptu.zeros(1, requires_grad=True)
-		qf = ConcatMlpPolicy(input_size=10,
+		# logvar = ptu.zeros(1, requires_grad=True)
+		qf = ConcatMlpPolicy(input_size=obs_dim,
 							output_size=action_dim,
-							hidden_sizes=[M, M, M],
+							hidden_sizes=[M, M, M, M],
 							layer_norm=variant['layer_norm'],
 							output_activation=Clamp(max=upper_q, min=lower_q),
 							hidden_activation=F.leaky_relu
 							)
-		target_qf = ConcatMlpPolicy(input_size=10,
+		target_qf = ConcatMlpPolicy(input_size=obs_dim,
 							output_size=action_dim,
-							hidden_sizes=[M, M, M],
+							hidden_sizes=[M, M, M, M],
 							layer_norm=variant['layer_norm'],
 							output_activation=Clamp(max=upper_q, min=lower_q),
 							hidden_activation=F.leaky_relu
@@ -66,12 +65,12 @@ def experiment(variant):
 							layer_norm=variant['layer_norm'],
 							hidden_activation=F.leaky_relu
 							)
-		logvar = ptu.zeros(1, requires_grad=True)
+		# logvar = ptu.zeros(1, requires_grad=True)
 		qf = th.load(file_name)['trainer/qf']
-		target_qf = th.load(file_name)['trainer/qf']
-	
+		target_qf = th.load(file_name)['trainer/target_qf']
+	logvar = th.tensor(variant['logvar'])
 	optimizer = optim.Adam(
-		list(rf.parameters())+list(qf.parameters())+[logvar],
+		list(rf.parameters())+list(qf.parameters()),
 		lr=variant['qf_lr'],
 	)
 
@@ -107,7 +106,7 @@ def experiment(variant):
 		env,
 		# target_name='target1_reached',
 		# env_info_sizes={'target1_reached': 1},
-		sample_base=int(5000*200),
+		sample_base=int(5000*150),
 	)
 	algorithm = TorchBatchRLAlgorithm(
 		trainer=trainer,
@@ -144,7 +143,7 @@ if __name__ == "__main__":
 
 	path_length = 200
 	variant = dict(
-		pretrain_path=f'{args.env_name}_params.pkl',
+		pretrain_path=f'{args.env_name}_params1.pkl',
 
 		layer_size=256,
 		expl_kwargs=dict(
@@ -167,13 +166,13 @@ if __name__ == "__main__":
 		algorithm_args=dict(
 			batch_size=256,
 			max_path_length=path_length,
-			num_epochs=int(1e6),
+			num_epochs=500,
 			num_eval_steps_per_epoch=5*path_length,
-			num_expl_steps_per_train_loop=path_length,
+			num_expl_steps_per_train_loop=5*path_length,
 			num_train_loops_per_epoch=100,
 			collect_new_paths=True,
 			num_trains_per_train_loop=100,
-			min_num_steps_before_training=int(1e3)
+			min_num_steps_before_training=int(2e3)
 		),
 
 		demo_paths=[
@@ -188,6 +187,7 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
+			factories=[],
 			adapts=['goal','reward'],
 			gaze_dim=128,
 			state_type=0,
@@ -197,18 +197,19 @@ if __name__ == "__main__":
 		)
 	)
 	search_space = {
-		'seedid': [2000,2001],
+		'seedid': [2000],
 
-		'from_pretrain': [True],
-		'layer_norm': [False,],
-		'expl_kwargs.logit_scale': [-1,10],
-		'trainer_kwargs.soft_target_tau': [1e-2],
+		'from_pretrain': [False],
+		'layer_norm': [True,],
+		'expl_kwargs.logit_scale': [10],
+		'trainer_kwargs.soft_target_tau': [1e-2,1e-3],
+		'logvar': [-2,-10],
 
 		'demo_path_proportions':[[int(5e3)], ],
-		'trainer_kwargs.beta': [.001],
+		# 'trainer_kwargs.beta': [.001],
 		'buffer_type': [ModdedReplayBuffer],
 		# 'buffer_type': [HERReplayBuffer],
-		'replay_buffer_size': [int(2e6)],
+		'replay_buffer_size': [int(1e5*path_length)],
 	}
 
 	sweeper = hyp.DeterministicHyperparameterSweeper(

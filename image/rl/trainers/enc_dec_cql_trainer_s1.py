@@ -16,7 +16,7 @@ class EncDecCQLTrainer(DQNTrainer):
 			temp=1.0,
 			min_q_weight=1.0,
 			add_ood_term=-1,
-			beta = 1,
+			# beta = 1,
 			use_noise = True,
 			**kwargs):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
@@ -26,7 +26,7 @@ class EncDecCQLTrainer(DQNTrainer):
 		self.temp = temp
 		self.min_q_weight = min_q_weight
 		self.add_ood_term = add_ood_term
-		self.beta = beta
+		# self.beta = beta
 		self.use_noise = use_noise
 
 	def train_from_torch(self, batch):
@@ -45,8 +45,8 @@ class EncDecCQLTrainer(DQNTrainer):
 		"""
 		if self.use_noise:
 			noisy_goal = gt_goal+th.normal(ptu.zeros(gt_goal.shape),1)*th.exp(self.gt_logvar/2)
-			gaze_kl_loss = -0.5 * (1 + self.gt_logvar - th.square(gt_goal) - self.gt_logvar.exp()).sum(dim=1).mean()
-			loss += self.beta*(gaze_kl_loss)
+			# gaze_kl_loss = -0.5 * (1 + self.gt_logvar - th.square(gt_goal) - self.gt_logvar.exp()).sum(dim=1).mean()
+			# loss += self.beta*(gaze_kl_loss)
 		else:
 			noisy_goal = gt_goal
 		

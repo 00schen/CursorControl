@@ -10,7 +10,7 @@ LOW_LIMIT = -1
 HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
-	def __init__(self,message_indices,success_dist=.05,frame_skip=5,robot_type='jaco',capture_frames=False,stochastic=True,debug=False):
+	def __init__(self,message_indices,success_dist=.05,session_goal=False,frame_skip=5,robot_type='jaco',capture_frames=False,stochastic=True,debug=False):
 		super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=18)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(19,), dtype=np.float32)
 		self.success_dist = success_dist
@@ -20,6 +20,7 @@ class LightSwitchEnv(AssistiveEnv):
 		self.capture_frames = capture_frames
 		self.debug = debug
 		self.stochastic = stochastic
+		self.session_goal = session_goal
 
 		self.feature_sizes = {'goal': 3}
 
@@ -183,7 +184,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.human_upper_limits = np.array([])
 
 		"""set up target and initial robot position (objects set up with target)"""
-		self.set_target_index() # instance override in demos
+		if not self.session_goal:
+			self.set_target_index() # instance override in demos
 		self.generate_target()
 		self.init_robot_arm()
 

@@ -171,17 +171,20 @@ def action_factory(base):
 def session_factory(base):
 	class Session(base):
 		def __init__(self, config):
-			config['session_goal'] = True
+			config['env_kwargs']['session_goal'] = True
 			super().__init__(config)
 			self.goal_reached = False
 		def new_goal(self):
-			self.base_env.new_goal()
+			self.base_env.set_target_index()
 			self.goal_reached = False
 		def step(self,action):
 			o,r,d,info = super().step(action)
 			if info['task_success']:
 				self.goal_reached = True
 			return o,r,d,info
+		def reset(self):
+			self.base_env.set_target_index()
+			return super().reset()
 	return Session
 		
 

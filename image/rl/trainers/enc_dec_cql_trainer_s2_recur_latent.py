@@ -10,6 +10,7 @@ from .dqn_trainer import DQNTrainer
 class EncDecCQLTrainer(DQNTrainer):
 	def __init__(self,
 			rf,
+			gt_encoder,
 			encoder,
 			recon_decoder,
 			pred_logvar,
@@ -25,6 +26,7 @@ class EncDecCQLTrainer(DQNTrainer):
 		super().__init__(qf,target_qf,optimizer,**kwargs)
 		# self.qf_optimizer also optimizes encoder
 		self.rf = rf
+		self.gt_encoder = gt_encoder
 		self.encoder = encoder
 		self.recon_decoder = recon_decoder
 		self.pred_logvar = pred_logvar
@@ -54,18 +56,19 @@ class EncDecCQLTrainer(DQNTrainer):
 		"""
 		pred_goal,_hx = self.encoder(obs,inputs)
 		if self.use_supervised == 'target':
-			supervised_loss = (F.mse_loss(pred_goal,gt_goal,reduction='none')*masks).sum()/masks_sum
+			goal_latent = self.gt_encoder(gt_goal)[...,:3]
+			supervised_loss = (F.mse_loss(pred_goal,goal_latent,reduction='none')*masks).sum()/masks_sum
 			loss += supervised_loss
 
 		if self.use_noise:
 			noisy_goal = pred_goal+th.normal(ptu.zeros(pred_goal.shape),1)*th.exp(self.pred_logvar/2)
 			# gaze_kl_loss = 0.5 * (1 + (pred_logvar-prior_logvar) - th.square(pred_goal-prior_pos) - (pred_logvar-prior_logvar).exp()).sum(dim=2).mean()
 		else:
-			noisy_goal = pred_goal
+			noisy_goal = gt_goal
 		# loss += self.beta*(gaze_kl_loss)
 		
-		curr_obs_features = [obs,noisy_goal]
-		next_obs_features = [next_obs,noisy_goal]
+		curr_obs_features = [obs,noisy_pred_goal]
+		next_obs_features = [next_obs,noisy_pred_goal]
 
 		"""
 		Rf loss
