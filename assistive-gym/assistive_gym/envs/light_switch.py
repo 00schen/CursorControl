@@ -220,9 +220,8 @@ class LightSwitchEnv(AssistiveEnv):
 		self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001]*3, pos_offset=[0, 0, 0.02], orient_offset=p.getQuaternionFromEuler([0, -np.pi/2.0, 0], physicsClientId=self.id), maximal=False)
 
 	def get_random_target(self):
-		targets = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([.3,.3,-.1])]\
-				+ self.bottle_poses
-		return targets[np.random.randint(6)]
+		targets = self.target_pos
+		return targets[np.random.randint(self.num_targets)]
 
 	def set_target_index(self):
 		self.target_index = self.np_random.choice(self.num_targets)

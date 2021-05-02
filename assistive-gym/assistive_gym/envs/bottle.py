@@ -150,7 +150,7 @@ class BottleEnv(AssistiveEnv):
 	def get_random_target(self):
 		targets = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([.3,.3,-.1])]\
 				+ self.bottle_poses
-		return targets[np.random.randint(6)]
+		return targets[np.random.randint(self.num_targets)]
 
 	def set_target_index(self):
 		self.target_index = self.np_random.choice(self.num_targets)
