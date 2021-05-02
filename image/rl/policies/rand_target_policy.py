@@ -8,14 +8,14 @@ from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 class RandTargetPolicy(EncDecPolicy):
 	def __init__(self, *args, env, eps=.1, **kwargs):
 		super().__init__(*args, **kwargs)
-		self.env
+		self.env = env
 		self.eps = eps
 
 	def get_action(self, obs):
 		features = [obs[k] for k in self.features_keys]
 		with th.no_grad():
 			raw_obs = obs['raw_obs']
-			if np.random.random() > self.eps:
+			if np.random.random() < self.eps:
 				if self.encoder != None:
 					# features.append(np.zeros(self.encoder.input_size-sum([len(f) for f in features])))
 					pred_features,_ = self.encoder.get_action(*features)

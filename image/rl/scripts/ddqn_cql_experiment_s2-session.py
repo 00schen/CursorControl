@@ -18,19 +18,21 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from torch.nn import functional as F
 from torch import optim
+from copy import deepcopy
 
 
 def experiment(variant):
 	from rlkit.core import logger
 	import torch as th
 
+	expl_config = deepcopy(variant['env_config'])
 	if 'session' in variant['trainer_kwargs']['use_supervised']:
-		variant['env_config']['factories'] += ['session']
-	env = default_overhead(variant['env_config'])
+		expl_config['factories'] += ['session']
+	env = default_overhead(expl_config)
 	env.seed(variant['seedid'])
-	eval_config = variant['env_config'].copy()
+	eval_config = deepcopy(variant['env_config'])
 	eval_config['gaze_path'] = eval_config['eval_gaze_path']
-	eval_env = default_overhead(variant['env_config'])
+	eval_env = default_overhead(eval_config)
 	eval_env.seed(variant['seedid']+1)
 
 	obs_dim = env.observation_space.low.size+sum(env.feature_sizes.values())
