@@ -9,21 +9,42 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def __init__(
         self,
         *args,
+        pure_expl_data_collector,
+        pure_expl_num_steps,
         session_buffer: ReplayBuffer,
         **kwargs,
     ):
         super().__init__(
             *args,**kwargs
         )
+        self.pure_expl_data_collector = pure_expl_data_collector
+        self.pure_expl_num_steps = pure_expl_num_steps
         self.session_buffer = session_buffer
 
     def _train(self):
+        # For some reason, pybullet crashes for me when pre-train path collect isn't used.
+        # So a token sample is taken
+        self.expl_env.new_goal()
         self.expl_data_collector.collect_new_paths(
             self.max_path_length,
             10,
             discard_incomplete_paths=False,
         )
         self.expl_data_collector.end_epoch(-1)
+
+        # collect pure exploration
+        for _ in range(self.pure_expl_num_steps//(10*self.max_path_length)):
+            self.expl_env.new_goal()
+            pure_expl_paths = self.pure_expl_data_collector.collect_new_paths(
+                self.max_path_length,
+                10*self.max_path_length,
+                discard_incomplete_paths=False,
+            )
+            self.expl_data_collector.end_epoch(-1)
+            self.replay_buffer.add_paths(pure_expl_paths)
+            if self.expl_env.goal_reached:
+                self.session_buffer.add_paths(pure_expl_paths)
+        gt.stamp('pretrain exploring', unique=False)
 
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),

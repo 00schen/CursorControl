@@ -183,7 +183,6 @@ def session_factory(base):
 				self.goal_reached = True
 			return o,r,d,info
 		def reset(self):
-			self.base_env.set_target_index()
 			return super().reset()
 	return Session
 		

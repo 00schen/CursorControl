@@ -4,7 +4,7 @@ from rlkit.torch.networks import Clamp
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rl.misc.session_rl_algorithm import BatchRLAlgorithm as TorchSessionRLAlgorithm
 
-from rl.policies import EncDecPolicy
+from rl.policies import EncDecPolicy, RandTargetPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -24,6 +24,8 @@ def experiment(variant):
 	from rlkit.core import logger
 	import torch as th
 
+	if 'session' in variant['trainer_kwargs']['use_supervised']:
+		variant['env_config']['factories'] += ['session']
 	env = default_overhead(variant['env_config'])
 	env.seed(variant['seedid'])
 	eval_config = variant['env_config'].copy()
@@ -77,15 +79,29 @@ def experiment(variant):
 		eval_policy,
 		save_env_in_snapshot=False
 	)
-	expl_policy = EncDecPolicy(
-		qf,
-		list(env.feature_sizes.keys()),
+	expl_policy = RandTargetPolicy(
+		qf=qf, 
+		features_keys=list(env.feature_sizes.keys()),
+		env=env,
+		encoder=encoder,
+		**variant['expl_kwargs']
+	)
+	pure_expl_path_collector = FullPathCollector(
+		env,
+		expl_policy,
+		save_env_in_snapshot=False,
+	)
+	pure_expl_policy = RandTargetPolicy(
+		qf=qf, 
+		features_keys=list(env.feature_sizes.keys()),
+		env=env,
+		eps=1,
 		encoder=encoder,
 		logit_scale=variant['expl_kwargs']['logit_scale']
 	)
 	expl_path_collector = FullPathCollector(
 		env,
-		expl_policy,
+		pure_expl_policy,
 		save_env_in_snapshot=False,
 	)
 	replay_buffer = ModdedReplayBuffer(
@@ -116,6 +132,7 @@ def experiment(variant):
 			exploration_data_collector=expl_path_collector,
 			evaluation_data_collector=eval_path_collector,
 			replay_buffer=replay_buffer,
+			pure_expl_data_collector=pure_expl_path_collector,
 			session_buffer=session_buffer,
 			**variant['algorithm_args']
 		)
@@ -199,7 +216,7 @@ if __name__ == "__main__":
 			action_type='disc_traj',
 			smooth_alpha=.8,
 
-			factories=['session'],
+			factories=[],
 			adapts=['goal','static_gaze','reward'],
 			gaze_dim=128,
 			state_type=0,
@@ -241,12 +258,14 @@ if __name__ == "__main__":
 		'from_pretrain': [True],
 		'layer_norm': [True],
 		'expl_kwargs.logit_scale': [10],
+		'expl_kwargs.eps': [.1,.3],
 		'trainer_kwargs.soft_target_tau': [1e-3],
 		'logvar': [-10],
 
 		'freeze_decoder': [False,],
 		'freeze_rf': [True],
-		'trainer_kwargs.use_supervised': ['target_session',]
+		'trainer_kwargs.use_supervised': ['target_session',],
+		'algorithm_args.pure_expl_num_steps': [100*path_length,1000*path_length,10000*path_length]
 	}
 	sweeper = hyp.DeterministicHyperparameterSweeper(
 		search_space, default_parameters=variant,
