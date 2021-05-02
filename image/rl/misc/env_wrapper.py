@@ -296,7 +296,7 @@ class goal:
 	def _step(self,obs,r,done,info):
 		goal_feat = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
 		# goal_feat = np.concatenate((goal_feat,np.zeros(self.high_dim_size-goal_feat.size)))
-		hindsight_feat = np.concatenate([np.ravel(state_component) for state_component in self.hindsight_feat.keys()])
+		hindsight_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
 		# hindsight_feat = np.concatenate((hindsight_feat,np.zeros(self.high_dim_size-hindsight_feat.size)))
 		obs['goal'] = goal_feat
 		obs['hindsight_goal'] = hindsight_feat
@@ -318,7 +318,6 @@ class reward:
 			self.reward_type = 'part_sparse'
 
 	def _step(self, obs, r, done, info):
-		r = 0
 		if self.reward_type == 'custom':
 			r = -1 
 			r += np.exp(-norm(info['tool_pos'] - info['target1_pos']))/2
@@ -328,10 +327,10 @@ class reward:
 			if info['task_success']:
 				r = 0
 		elif self.reward_type == 'custom_switch':
-			r = -1 
-			r += np.exp(-20*norm((info['tool_pos'] - info['switch_pos'].ravel()).tolist()+[info['lever_angle']-self.master_env.base_env.low_limit]))
-			if info['task_success']:
-				r = 0
+			r = 0
+			if not info['task_success']:
+				target_pos = np.array(info['switch_pos'])[info['target_index']]
+				r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos)) - 1
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':
@@ -342,7 +341,7 @@ class reward:
 		elif self.reward_type == 'kitchen':
 			r = -1 + sum(info['item_placed']+info['item_reached']+[info['microwave_closed']])/len(info['item_placed']+info['item_reached']+[1])
 		else:
-			error
+			raise Exception
 
 		r = np.clip(r, *self.range)
 

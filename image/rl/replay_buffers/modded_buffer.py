@@ -17,7 +17,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 			# env_info_sizes={'noop':1,},
 			sample_base=5000*200,
 	):
-		env_info_sizes.update({'episode_success':1})
+		# env_info_sizes.update({'episode_success':1})
 		super().__init__(
 			max_replay_buffer_size=max_replay_buffer_size,
 			env=env,

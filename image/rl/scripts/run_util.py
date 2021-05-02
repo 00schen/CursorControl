@@ -10,7 +10,7 @@ def run_exp(experiment,variants,args):
 		import ray
 		from ray.util import ActorPool
 		from itertools import cycle,count
-		ray.init(temp_dir='/tmp/ray_exp', num_gpus=args.gpus)
+		ray.init(num_gpus=args.gpus)
 
 		@ray.remote
 		class Iterators:
@@ -53,7 +53,7 @@ def run_exp(experiment,variants,args):
 	else:
 		variant = variants[0]
 		ptu.set_gpu_mode(False)
-		args.process_args(variants)
+		args.process_args(variant)
 		save_path = os.path.join(args.main_dir,'logs')
 		reset_execution_environment()
 		setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=0,)

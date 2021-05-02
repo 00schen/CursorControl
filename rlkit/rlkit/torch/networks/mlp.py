@@ -543,7 +543,8 @@ class VAE(PyTorchModule):
             output_activation=F.relu,
     ):
         super().__init__()
-        self.encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * 2, input_size=input_size)
+        self.encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * 2,
+                           input_size=input_size)
         self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=input_size, input_size=latent_size,
                            output_activation=output_activation)
         self.latent_size = latent_size
@@ -562,7 +563,7 @@ class VAE(PyTorchModule):
         return torch.mean(-0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar)))
 
     def encode(self, x):
-        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=1)
+        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=-1)
         return mean, logvar
 
     def reparameterize(self, mean, logvar):
@@ -572,8 +573,8 @@ class VAE(PyTorchModule):
     def decode(self, z):
         return self.decoder(z)
 
-    def sample(self, x, eps=None, return_kl=True):
-        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=1)
+    def sample(self, x, eps=None, return_kl=False):
+        mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=-1)
         sample = mean
         if eps is not None:
             sample = sample + torch.exp(logvar * 0.5) * eps
