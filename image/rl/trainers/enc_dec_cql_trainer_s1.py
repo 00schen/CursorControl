@@ -53,7 +53,12 @@ class EncDecCQLTrainer(DQNTrainer):
 
         if not self.train_encoder_on_rf:
             next_latent = next_latent.detach()
-        loss += self.beta * (curr_kl_loss + next_kl_loss) / 2
+            kl_loss = curr_kl_loss
+
+        else:
+            kl_loss = (curr_kl_loss + next_kl_loss) / 2
+
+        loss += self.beta * kl_loss
 
         curr_obs_features = [obs, curr_latent]
         next_obs_features = [next_obs, next_latent]
@@ -85,7 +90,6 @@ class EncDecCQLTrainer(DQNTrainer):
         curr_qf = self.qf(*curr_obs_features)
         y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
         loss += self.qf_criterion(y_pred, y_target)
-
         """CQL term"""
         min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1, ).mean() * self.temp
         min_qf_loss = min_qf_loss - y_pred.mean()

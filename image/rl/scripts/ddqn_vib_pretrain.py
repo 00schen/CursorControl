@@ -102,6 +102,7 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
+        k=variant['her_k']
     )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
@@ -141,7 +142,7 @@ if __name__ == "__main__":
         pretrain_path=f'params.pkl',
         latent_size=3,
         layer_size=128,
-        # her_k=4,
+        her_k=4,
         expl_kwargs=dict(
         ),
         trainer_kwargs=dict(
@@ -152,11 +153,11 @@ if __name__ == "__main__":
             add_ood_term=-1,
             temp=1,
             min_q_weight=0,
-            sample=True,
-            train_encoder_on_rf=True
+            sample=False,
+            train_encoder_on_rf=False
         ),
         algorithm_args=dict(
-            batch_size=128,
+            batch_size=256,
             max_path_length=path_length,
             num_epochs=200,
             num_eval_steps_per_epoch=1000,
@@ -183,7 +184,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='custom_switch',
+            reward_type='sparse',
         )
     )
     search_space = {
@@ -195,8 +196,8 @@ if __name__ == "__main__":
         'trainer_kwargs.soft_target_tau': [1e-2],
         # 'demo_path_proportions': [[int(5e3)], ],
         'trainer_kwargs.beta': [.1],
-        'buffer_type': [ModdedReplayBuffer],
-        'replay_buffer_size': [100000],
+        'buffer_type': [HERReplayBuffer],
+        'replay_buffer_size': [200000],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
