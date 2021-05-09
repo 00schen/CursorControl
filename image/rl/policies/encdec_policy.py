@@ -19,10 +19,12 @@ class EncDecPolicy(PyTorchModule):
 		with th.no_grad():
 			raw_obs = obs['raw_obs']
 			if self.encoder != None:
-				# features.append(np.zeros(self.encoder.input_size-sum([len(f) for f in features])))
-				pred_features = self.encoder.sample(th.Tensor(np.concatenate(features)).to(ptu.device))
+				pred_features = self.encoder.sample(th.Tensor(np.concatenate(features)).to(ptu.device)).detach()
+				obs['latents'] = pred_features.cpu().numpy()
 			else:
 				pred_features = np.concatenate(features)
+				obs['latents'] = pred_features
+
 			q_values, ainfo = self.qf.get_action(raw_obs,pred_features[:3])
 			q_values = ptu.tensor(q_values)
 			if np.random.rand() > self.eps:
@@ -42,4 +44,3 @@ class EncDecPolicy(PyTorchModule):
 
 	def reset(self):
 		pass
-	

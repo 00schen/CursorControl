@@ -11,9 +11,10 @@ from .dqn_trainer import DQNTrainer
 class EncDecCQLTrainer(DQNTrainer):
     def __init__(self,
                  rf,
-                 qf, target_qf, encoder,
+                 qf, target_qf,
                  optimizer,
                  latent_size,
+                 encoder=None,
                  temp=1.0,
                  min_q_weight=1.0,
                  add_ood_term=-1,
@@ -48,15 +49,22 @@ class EncDecCQLTrainer(DQNTrainer):
         Supervised loss
         """
         eps = th.normal(ptu.zeros((obs.size(0), self.latent_size)), 1) if self.sample else None
-        curr_latent, curr_kl_loss = self.encoder.sample(curr_goal, eps=eps, return_kl=True)
-        next_latent, next_kl_loss = self.encoder.sample(next_goal, eps=eps, return_kl=True)
 
-        if not self.train_encoder_on_rf:
-            next_latent = next_latent.detach()
-            kl_loss = curr_kl_loss
+        if self.encoder is not None:
+            curr_latent, curr_kl_loss = self.encoder.sample(curr_goal, eps=eps, return_kl=True)
+            next_latent, next_kl_loss = self.encoder.sample(next_goal, eps=eps, return_kl=True)
+
+            # only enforce KL of encoder on next_goal if used to train RF
+            if not self.train_encoder_on_rf:
+                next_latent = next_latent.detach()
+                kl_loss = curr_kl_loss
+
+            else:
+                kl_loss = (curr_kl_loss + next_kl_loss) / 2
 
         else:
-            kl_loss = (curr_kl_loss + next_kl_loss) / 2
+            curr_latent, next_latent = curr_goal, next_goal
+            kl_loss = 0
 
         loss += self.beta * kl_loss
 
@@ -131,14 +139,17 @@ class EncDecCQLTrainer(DQNTrainer):
             self.rf,
             self.qf,
             self.target_qf,
-            self.encoder
         ]
+        if self.encoder is not None:
+            nets.append(self.encoder)
         return nets
 
     def get_snapshot(self):
-        return dict(
+        snapshot = dict(
             rf=self.rf,
             qf=self.qf,
             target_qf=self.target_qf,
-            encoder=self.encoder
         )
+        if self.encoder is not None:
+            snapshot['encoder'] = self.encoder
+        return snapshot

@@ -125,7 +125,7 @@ class LightSwitchEnv(AssistiveEnv):
 		axis,_ = p.multiplyTransforms(np.zeros(3),switch_orient, [1,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
-		k = -.2
+		k = .2
 		w = k*np.sign(c_F)*np.sqrt(abs(c_F))*norm(radius)
 
 		for _ in range(self.frame_skip):
@@ -223,8 +223,11 @@ class LightSwitchEnv(AssistiveEnv):
 		targets = self.target_pos
 		return targets[np.random.randint(self.num_targets)]
 
-	def set_target_index(self):
-		self.target_index = self.np_random.choice(self.num_targets)
+	def set_target_index(self, index=None):
+		if index is None:
+			self.target_index = self.np_random.choice(self.num_targets)
+		else:
+			self.target_index = index
 		self.unique_index = self.target_index
 
 	def generate_target(self): 

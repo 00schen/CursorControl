@@ -8,5 +8,5 @@ from .recur_bc_trainer import RecurBCTrainer
 from .enc_dec_cql_trainer_s1 import EncDecCQLTrainer
 from .enc_dec_cql_trainer_s2 import EncDecCQLTrainer as EncDecCQLTrainer1
 from .enc_dec_cql_trainer_s2_recur import EncDecCQLTrainer as RecurEncDecCQLTrainer
-from .enc_dec_cql_trainer_s2_session import EncDecCQLTrainer as SessionEncDecCQLTrainer
+from .enc_dec_cql_trainer_s2_latent import EncDecCQLTrainer as LatentEncDecCQLTrainer
 from .enc_dec_cql_trainer_s2_recur_latent import EncDecCQLTrainer as LatentRecurEncDecCQLTrainer

@@ -174,8 +174,8 @@ def session_factory(base):
 			config['env_kwargs']['session_goal'] = True
 			super().__init__(config)
 			self.goal_reached = False
-		def new_goal(self):
-			self.base_env.set_target_index()
+		def new_goal(self, index=None):
+			self.base_env.set_target_index(index)
 			self.goal_reached = False
 		def step(self,action):
 			o,r,d,info = super().step(action)
@@ -258,6 +258,7 @@ class static_gaze:
 		self.master_env = master_env
 		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',config['gaze_path']),'r') as gaze_data:
 			self.gaze_dataset = {k:v[()] for k,v in gaze_data.items()}
+		self.per_step = True
 
 	def sample_gaze(self,index):
 		unique_target_index = index
@@ -265,7 +266,8 @@ class static_gaze:
 		return self.master_env.rng.choice(data)
 
 	def _step(self,obs,r,done,info):
-		self.static_gaze = self.sample_gaze(info['unique_index'])
+		if self.per_step:
+			self.static_gaze = self.sample_gaze(info['unique_index'])
 		obs['gaze_features'] = self.static_gaze
 		return obs,r,done,info
 
