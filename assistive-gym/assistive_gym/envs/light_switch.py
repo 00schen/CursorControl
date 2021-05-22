@@ -186,6 +186,7 @@ class LightSwitchEnv(AssistiveEnv):
 		"""set up target and initial robot position (objects set up with target)"""
 		if not self.session_goal:
 			self.set_target_index() # instance override in demos
+			self.reset_noise()
 		self.generate_target()
 		self.init_robot_arm()
 
@@ -230,6 +231,9 @@ class LightSwitchEnv(AssistiveEnv):
 			self.target_index = index
 		self.unique_index = self.target_index
 
+	def reset_noise(self):
+		self.switch_pos_noise = [self.np_random.uniform(-.1, .1), 0, 0]
+
 	def generate_target(self): 
 		# Place a switch on a wall
 		wall_index = 0
@@ -255,7 +259,7 @@ class LightSwitchEnv(AssistiveEnv):
 		switch_spacing = .4
 		switch_center = np.array([-switch_spacing*(len(self.target_string)//2),.1,0])
 		if self.stochastic:
-			switch_center = switch_center + [self.np_random.uniform(-.1, .1), 0, 0]
+			switch_center = switch_center + self.switch_pos_noise
 		switch_scale = .075
 		self.switches = []
 		for increment,on_off in zip(np.linspace(np.zeros(3),[switch_spacing*(len(self.target_string)-1),0,0],num=len(self.target_string)),self.initial_string):

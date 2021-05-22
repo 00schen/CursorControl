@@ -6,19 +6,22 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 
 class EncDecPolicy(PyTorchModule):
-	def __init__(self,  qf, features_keys, encoder=None, logit_scale=-1, eps=0):
+	def __init__(self,  qf, features_keys, encoder=None, logit_scale=-1, eps=0, incl_state=True):
 		super().__init__()
 		self.encoder = encoder
 		self.qf = qf
 		self.features_keys = features_keys
 		self.logit_scale = logit_scale
 		self.eps = eps
+		self.incl_state = incl_state
 
 	def get_action(self, obs):
 		features = [obs[k] for k in self.features_keys]
 		with th.no_grad():
 			raw_obs = obs['raw_obs']
 			if self.encoder != None:
+				if self.incl_state:
+					features.append(raw_obs)
 				pred_features = self.encoder.sample(th.Tensor(np.concatenate(features)).to(ptu.device)).detach()
 				obs['latents'] = pred_features.cpu().numpy()
 			else:

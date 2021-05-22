@@ -36,7 +36,7 @@ def experiment(variant):
     file_name = os.path.join('image/util_models', variant['pretrain_path'])
     loaded = th.load(file_name)
     rf = loaded['trainer/rf']
-    encoder = VAE(input_size=sum(env.feature_sizes.values()),
+    encoder = VAE(input_size=sum(env.feature_sizes.values()) + env.observation_space.low.size,
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[M],
                   decoder_hidden_sizes=[M]
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_offset.pkl',
         latent_size=3,
         layer_size=64,
         expl_kwargs=dict(
@@ -165,7 +165,7 @@ if __name__ == "__main__":
             qf_lr=5e-4,
             discount=0.99,
             add_ood_term=-1,
-            temp=1,
+            temp=10,
             min_q_weight=0,
             sample=False,
             beta=0,
@@ -179,10 +179,10 @@ if __name__ == "__main__":
             num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
-            num_trains_per_train_loop=1,
+            num_trains_per_train_loop=0,
             # min_num_steps_before_training=1000
-            trajs_per_index=1,
-            calibration_indices=[0, 1]
+            trajs_per_index=3,
+            calibration_indices=[0, 2]
         ),
 
         env_config=dict(
@@ -207,12 +207,12 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
-        'seedid': [2000],
+        'seedid': [2000, 2001],
         'layer_norm': [True],
         'trainer_kwargs.soft_target_tau': [1e-2],
         'freeze_decoder': [True],
         'freeze_rf': [True],
-        'trainer_kwargs.use_supervised': ['calibrate_neg'],
+        'trainer_kwargs.use_supervised': ['calibrate_kl'],
     }
     sweeper = hyp.DeterministicHyperparameterSweeper(
         search_space, default_parameters=variant,

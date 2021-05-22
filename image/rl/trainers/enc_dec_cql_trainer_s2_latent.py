@@ -44,8 +44,11 @@ class EncDecCQLTrainer(DQNTrainer):
 
     def train_from_torch(self, batch):
         episode_success = batch['episode_success']
-        inputs = batch['curr_gaze_features']
+        obs = batch['observations']
+        inputs = th.cat((batch['curr_gaze_features'], obs), dim=1)
         latents = batch['curr_latents']
+        goals = batch['curr_goal']
+        actions = batch['actions']
 
         loss = ptu.zeros(1)
 
@@ -58,7 +61,18 @@ class EncDecCQLTrainer(DQNTrainer):
             surrogate_probs = th.exp(-(th.norm(pred_latent - latents, dim=-1) ** 2))
             supervised_loss = th.nn.BCELoss(weight=weight)(surrogate_probs, success_indices)
         else:
-            supervised_loss = th.nn.MSELoss()(pred_latent[success_indices], latents[success_indices])
+            if 'kl' in self.use_supervised:
+                if self.prev_encoder is not None:
+                    target_latent = self.prev_encoder.sample(goals, eps=None)
+                else:
+                    target_latent = goals
+                breakpoint()
+                target_q_dist = th.log_softmax(self.qf(obs, target_latent) * self.temp, dim=1).detach()
+                pred_q_dist = th.log_softmax(self.qf(obs, pred_latent) * self.temp,
+                                             dim=1)
+                supervised_loss = th.nn.KLDivLoss(log_target=True)(pred_q_dist, target_q_dist)
+            else:
+                supervised_loss = th.nn.MSELoss()(pred_latent[success_indices], latents[success_indices])
 
         loss += supervised_loss + self.beta * kl_loss
         """

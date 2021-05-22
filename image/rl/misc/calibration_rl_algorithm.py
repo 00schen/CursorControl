@@ -55,7 +55,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.expl_data_collector.end_epoch(-1)
 
         self.expl_env.per_step = True
-        # collect pure exploration
+        self.eval_env.per_step = True
+
+        # calibrate
         for index in self.calibration_indices:
             self.expl_env.new_goal(index)
             for _ in range(self.trajs_per_index):
@@ -69,8 +71,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
 
-        self.eval_env.per_step = False
-        self.expl_env.per_step = False
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),
                 save_itrs=True,
@@ -86,16 +86,31 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             for _ in range(self.num_train_loops_per_epoch):
                 if self.collect_new_paths:
                     self.expl_env.new_goal()
-                    new_expl_paths = self.expl_data_collector.collect_new_paths(
-                        self.max_path_length,
-                        self.num_expl_steps_per_train_loop,
-                        discard_incomplete_paths=False,
-                    )
-                    gt.stamp('exploration sampling', unique=False)
+                    success = False
+                    failed_paths = []
+                    successful_paths = []
+                    while not success:
+                        new_expl_paths = self.expl_data_collector.collect_new_paths(
+                            self.max_path_length,
+                            self.num_expl_steps_per_train_loop,
+                            discard_incomplete_paths=False,
+                        )
+                        gt.stamp('exploration sampling', unique=False)
+                        for path in new_expl_paths:
+                            if path['env_infos'][-1]['task_success']:
+                                successful_paths.append(path)
+                                success = True
+                            else:
+                                failed_paths.append(path)
+                        if len(failed_paths) >= 10:
+                            break
 
-                    self.replay_buffer.add_paths(new_expl_paths)
-                    gt.stamp('data storing', unique=False)
+                    # no actual relabeling right now, since goals for all paths should be same
+                    if len(successful_paths):
+                        self.replay_buffer.add_paths(successful_paths + failed_paths)
+                        gt.stamp('data storing', unique=False)
 
-                self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
+                if self.replay_buffer.num_steps_can_sample():
+                    self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
 
             self._end_epoch(epoch)

@@ -46,11 +46,11 @@ def experiment(variant):
                                     hidden_sizes=[M, M, M, M],
                                     layer_norm=variant['layer_norm'],
                                     )
-        # encoder = VAE(input_size=sum(env.feature_sizes.values()),
-        #               latent_size=variant['latent_size'],
-        #               encoder_hidden_sizes=[64],
-        #               decoder_hidden_sizes=[64]
-        #               ).to(ptu.device)
+        encoder = VAE(input_size=sum(env.feature_sizes.values()),
+                      latent_size=variant['latent_size'],
+                      encoder_hidden_sizes=[64],
+                      decoder_hidden_sizes=[64]
+                      ).to(ptu.device)
     else:
         file_name = os.path.join('image/util_models', variant['pretrain_path'])
         loaded = th.load(file_name)
@@ -61,17 +61,18 @@ def experiment(variant):
                              )
         qf = loaded['trainer/qf']
         target_qf = loaded['trainer/target_qf']
-        # encoder = loaded['trainer/encoder']
+        encoder = loaded['trainer/encoder']
     optimizer = optim.Adam(
-        list(rf.parameters()) + list(qf.parameters()),
-        # list(rf.parameters()) + list(qf.parameters()) + list(encoder.parameters()),
+        # list(rf.parameters()) + list(qf.parameters()),
+        list(rf.parameters()) + list(qf.parameters()) + list(encoder.parameters()),
         lr=variant['qf_lr'],
     )
 
     eval_policy = EncDecPolicy(
         qf,
         list(env.feature_sizes.keys()),
-        # encoder=encoder
+        encoder=encoder,
+        incl_state=False
     )
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -81,9 +82,10 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         qf,
         list(env.feature_sizes.keys()),
-        # encoder=encoder,
+        encoder=encoder,
         logit_scale=variant['expl_kwargs']['logit_scale'],
-        eps=variant['expl_kwargs']['eps']
+        eps=variant['expl_kwargs']['eps'],
+        incl_state=False
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -94,7 +96,7 @@ def experiment(variant):
         rf=rf,
         qf=qf,
         target_qf=target_qf,
-        # encoder=encoder,
+        encoder=encoder,
         optimizer=optimizer,
         latent_size=variant['latent_size'],
         **variant['trainer_kwargs']
@@ -130,7 +132,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='a-test')
+    parser.add_argument('--exp_name', default='pretrain')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -140,7 +142,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_offset.pkl',
         latent_size=3,
         layer_size=128,
         # her_k=4,
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [False],
+        'from_pretrain': [True],
         'layer_norm': [True],
         'expl_kwargs.logit_scale': [10],
         'expl_kwargs.eps': [0.1],

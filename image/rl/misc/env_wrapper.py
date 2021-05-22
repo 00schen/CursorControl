@@ -176,6 +176,7 @@ def session_factory(base):
 			self.goal_reached = False
 		def new_goal(self, index=None):
 			self.base_env.set_target_index(index)
+			self.base_env.reset_noise()
 			self.goal_reached = False
 		def step(self,action):
 			o,r,d,info = super().step(action)
@@ -296,15 +297,17 @@ class goal:
 		master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
 
 	def _step(self,obs,r,done,info):
-		goal_feat = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
+		if self.goal is None:
+			self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
 		# goal_feat = np.concatenate((goal_feat,np.zeros(self.high_dim_size-goal_feat.size)))
 		hindsight_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
 		# hindsight_feat = np.concatenate((hindsight_feat,np.zeros(self.high_dim_size-hindsight_feat.size)))
-		obs['goal'] = goal_feat
+		obs['goal'] = self.goal.copy()
 		obs['hindsight_goal'] = hindsight_feat
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
+		self.goal = None
 		obs['goal'] = np.zeros(self.goal_size)
 		obs['hindsight_goal'] = np.zeros(self.goal_size)
 		return obs
@@ -332,7 +335,7 @@ class reward:
 			r = 0
 			if not info['task_success']:
 				target_pos = np.array(info['switch_pos'])[info['target_index']]
-				r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos)) - 1
+				r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos) - np.log(2)) - 1
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':
