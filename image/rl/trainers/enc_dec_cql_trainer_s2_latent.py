@@ -61,20 +61,26 @@ class EncDecCQLTrainer(DQNTrainer):
             surrogate_probs = th.exp(-(th.norm(pred_latent - latents, dim=-1) ** 2))
             supervised_loss = th.nn.BCELoss(weight=weight)(surrogate_probs, success_indices)
         else:
+            if self.prev_encoder is not None:
+                target_latent = self.prev_encoder.sample(goals, eps=None)
+            else:
+                target_latent = goals
             if 'kl' in self.use_supervised:
-                if self.prev_encoder is not None:
-                    target_latent = self.prev_encoder.sample(goals, eps=None)
-                else:
-                    target_latent = goals
-                breakpoint()
                 target_q_dist = th.log_softmax(self.qf(obs, target_latent) * self.temp, dim=1).detach()
                 pred_q_dist = th.log_softmax(self.qf(obs, pred_latent) * self.temp,
                                              dim=1)
                 supervised_loss = th.nn.KLDivLoss(log_target=True)(pred_q_dist, target_q_dist)
+            elif 'AWR' in self.use_supervised:
+                pred_mean, pred_logvar = self.encoder.encode(inputs)
+                kl_loss = self.encoder.kl_loss(pred_mean, pred_logvar)
+                supervised_loss = th.nn.GaussianNLLLoss(reduction='none')(pred_mean, latents, th.exp(pred_logvar))
+                weights = th.where(success_indices, 1., 0.)
+                supervised_loss = th.mean(supervised_loss * weights)
             else:
                 supervised_loss = th.nn.MSELoss()(pred_latent[success_indices], latents[success_indices])
 
         loss += supervised_loss + self.beta * kl_loss
+
         """
         Update Q networks
         """
@@ -96,6 +102,9 @@ class EncDecCQLTrainer(DQNTrainer):
         if self._need_to_update_eval_statistics:
             self._need_to_update_eval_statistics = False
             self.eval_statistics['Loss'] = np.mean(ptu.get_numpy(loss))
+            self.eval_statistics['SL Loss'] = np.mean(ptu.get_numpy(supervised_loss))
+            self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
+
 
     @property
     def networks(self):

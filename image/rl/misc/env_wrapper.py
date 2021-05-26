@@ -268,12 +268,12 @@ class static_gaze:
 
 	def _step(self,obs,r,done,info):
 		if self.per_step:
-			self.static_gaze = self.sample_gaze(info['unique_index'])
+			self.static_gaze = self.sample_gaze(self.master_env.base_env.target_indices.index(info['unique_index']))
 		obs['gaze_features'] = self.static_gaze
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
-		index = self.master_env.base_env.unique_index
+		index = self.master_env.base_env.target_indices.index(self.master_env.base_env.unique_index)
 		obs['gaze_features'] = self.static_gaze = self.sample_gaze(index)
 		return obs
 
@@ -321,6 +321,8 @@ class reward:
 		self.reward_type = config['reward_type']
 		if self.master_env.env_name == 'Bottle' and self.reward_type == 'sparse':
 			self.reward_type = 'part_sparse'
+		self.reward_temp = config['reward_temp']
+		self.reward_offset = config['reward_offset']
 
 	def _step(self, obs, r, done, info):
 		if self.reward_type == 'custom':
@@ -334,8 +336,10 @@ class reward:
 		elif self.reward_type == 'custom_switch':
 			r = 0
 			if not info['task_success']:
-				target_pos = np.array(info['switch_pos'])[info['target_index']]
-				r = np.exp(-np.linalg.norm(info['tool_pos'] - target_pos) - np.log(2)) - 1
+				target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))
+				dist = min([np.linalg.norm(info['tool_pos'] - info['switch_pos'][index]) for index in target_indices])
+				r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset))
+				r -= np.sum(info['target_string'] != info['current_string'])
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':

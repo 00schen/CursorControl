@@ -15,6 +15,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         trajs_per_index,
         calibration_buffer: ReplayBuffer,
         pretrain_steps=100,
+        max_failures=10,
         **kwargs,
     ):
         super().__init__(
@@ -22,11 +23,12 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         )
         self.calibration_data_collector = calibration_data_collector
         if calibration_indices is None:
-            calibration_indices = np.arange(self.expl_env.base_env.num_targets)
+            calibration_indices = self.expl_env.base_env.target_indices
         self.calibration_indices = calibration_indices
         self.trajs_per_index = trajs_per_index
         self.calibration_buffer = calibration_buffer
         self.pretrain_steps = pretrain_steps
+        self.max_failures = max_failures
 
     def _sample_and_train(self, steps, buffer):
         self.training_mode(True)
@@ -58,9 +60,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.eval_env.per_step = True
 
         # calibrate
-        for index in self.calibration_indices:
-            self.expl_env.new_goal(index)
-            for _ in range(self.trajs_per_index):
+        # self.expl_env.base_env.calibrate_mode(True)
+        for _ in range(self.trajs_per_index):
+            for index in self.calibration_indices:
+                self.expl_env.new_goal(index)
                 calibration_paths = self.calibration_data_collector.collect_new_paths(
                     self.max_path_length,
                     1,
@@ -70,6 +73,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 self.calibration_buffer.add_paths(calibration_paths)
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
+
+        # self.expl_env.base_env.calibrate_mode(False)
+        # self.eval_env.base_env.calibrate_mode(False)
 
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),
@@ -89,6 +95,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     success = False
                     failed_paths = []
                     successful_paths = []
+
+                    # switch positions do not change
                     while not success:
                         new_expl_paths = self.expl_data_collector.collect_new_paths(
                             self.max_path_length,
@@ -102,10 +110,11 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                 success = True
                             else:
                                 failed_paths.append(path)
-                        if len(failed_paths) >= 10:
+                        if len(failed_paths) >= self.max_failures:
                             break
 
                     # no actual relabeling right now, since goals for all paths should be same
+                    # only add to paths to buffer if successful
                     if len(successful_paths):
                         self.replay_buffer.add_paths(successful_paths + failed_paths)
                         gt.stamp('data storing', unique=False)

@@ -1,7 +1,7 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import ConcatMlpPolicy, VAE
-from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
+from rl.misc.calibration_rl_algorithm_awr import BatchRLAlgorithm as TorchCalibrationRLAlgorithmAWR
 
 from rl.policies import EncDecPolicy, CalibrationPolicy
 from rl.path_collectors import FullPathCollector
@@ -66,6 +66,8 @@ def experiment(variant):
         qf,
         list(env.feature_sizes.keys()),
         encoder=encoder,
+        sample=True,
+        latent_size=variant['latent_size'],
     )
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -76,6 +78,8 @@ def experiment(variant):
         qf=qf,
         features_keys=list(env.feature_sizes.keys()),
         encoder=encoder,
+        sample=True,
+        latent_size=variant['latent_size'],
         **variant['expl_kwargs']
     )
     calibration_policy = CalibrationPolicy(
@@ -120,7 +124,11 @@ def experiment(variant):
         sample_base=0,
         latent_size=variant['latent_size']
     )
-    algorithm = TorchCalibrationRLAlgorithm(
+
+    alg_class = TorchCalibrationRLAlgorithmAWR if 'AWR' in variant['trainer_kwargs']['use_supervised'] else \
+        TorchCalibrationRLAlgorithm
+    alg_class = TorchCalibrationRLAlgorithm
+    algorithm = alg_class(
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
@@ -151,7 +159,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_offset.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5.pkl',
         latent_size=3,
         layer_size=64,
         expl_kwargs=dict(
@@ -167,8 +175,8 @@ if __name__ == "__main__":
             add_ood_term=-1,
             temp=10,
             min_q_weight=0,
-            sample=False,
-            beta=0,
+            sample=True,
+            beta=0.01,
             pos_weight=1
         ),
         algorithm_args=dict(
@@ -179,16 +187,18 @@ if __name__ == "__main__":
             num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
-            num_trains_per_train_loop=0,
+            num_trains_per_train_loop=1,
             # min_num_steps_before_training=1000
-            trajs_per_index=3,
-            calibration_indices=[0, 2]
+            trajs_per_index=5,
+            calibration_indices=None,
+            pretrain_steps=500,
+            max_failures=10
         ),
 
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
 
             action_type='disc_traj',
             smooth_alpha=.8,
@@ -198,7 +208,9 @@ if __name__ == "__main__":
             gaze_dim=128,
             state_type=0,
             reward_max=0,
-            reward_min=-1,
+            reward_min=-5,
+            reward_temp=2,
+            reward_offset=-0.1,
             reward_type='sparse',
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
@@ -207,7 +219,7 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
-        'seedid': [2000, 2001],
+        'seedid': [2000, 2001, 2002],
         'layer_norm': [True],
         'trainer_kwargs.soft_target_tau': [1e-2],
         'freeze_decoder': [True],

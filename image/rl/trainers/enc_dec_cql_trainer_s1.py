@@ -45,9 +45,6 @@ class EncDecCQLTrainer(DQNTrainer):
 
         loss = 0
 
-        """
-        Supervised loss
-        """
         eps = th.normal(ptu.zeros((obs.size(0), self.latent_size)), 1) if self.sample else None
 
         if self.encoder is not None:
@@ -97,7 +94,9 @@ class EncDecCQLTrainer(DQNTrainer):
         # actions is a one-hot vector
         curr_qf = self.qf(*curr_obs_features)
         y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
-        loss += self.qf_criterion(y_pred, y_target)
+        qf_loss = self.qf_criterion(y_pred, y_target)
+        loss += qf_loss
+
         """CQL term"""
         min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1, ).mean() * self.temp
         min_qf_loss = min_qf_loss - y_pred.mean()
@@ -125,8 +124,9 @@ class EncDecCQLTrainer(DQNTrainer):
         """
         if self._need_to_update_eval_statistics:
             self._need_to_update_eval_statistics = False
-            self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(loss))
-            self.eval_statistics['QF OOD Loss'] = np.mean(ptu.get_numpy(min_qf_loss))
+            self.eval_statistics['Loss'] = np.mean(ptu.get_numpy(loss))
+            self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(qf_loss))
+            self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
             self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
             self.eval_statistics.update(create_stats_ordered_dict(
                 'Q Predictions',

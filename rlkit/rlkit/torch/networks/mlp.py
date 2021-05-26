@@ -560,7 +560,7 @@ class VAE(PyTorchModule):
         return reconstruct_loss, self.kl_loss(mean, logvar)
 
     def kl_loss(self, mean, logvar):
-        return torch.mean(-0.5 * (1 + logvar - torch.square(mean) - torch.exp(logvar)))
+        return torch.mean(-0.5 * torch.sum(1 + logvar - torch.square(mean) - torch.exp(logvar), dim=-1))
 
     def encode(self, x):
         mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=-1)

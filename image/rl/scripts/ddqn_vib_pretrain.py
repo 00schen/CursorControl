@@ -2,10 +2,9 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import ConcatMlpPolicy, VAE
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import EncDecPolicy
+from rl.policies import EncDecPolicy, KeyboardPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecCQLTrainer
 from rl.replay_buffers import HERReplayBuffer, ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
@@ -72,7 +71,8 @@ def experiment(variant):
         qf,
         list(env.feature_sizes.keys()),
         encoder=encoder,
-        incl_state=False
+        incl_state=False,
+        sample=False,
     )
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -85,7 +85,8 @@ def experiment(variant):
         encoder=encoder,
         logit_scale=variant['expl_kwargs']['logit_scale'],
         eps=variant['expl_kwargs']['eps'],
-        incl_state=False
+        incl_state=False,
+        sample=False,
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -142,7 +143,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_offset.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5.pkl',
         latent_size=3,
         layer_size=128,
         # her_k=4,
@@ -162,14 +163,25 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=100,
+            num_epochs=200,
             num_eval_steps_per_epoch=1000,
             num_expl_steps_per_train_loop=500,
             num_train_loops_per_epoch=10,
             collect_new_paths=True,
             num_trains_per_train_loop=100,
-            min_num_steps_before_training=1000
+            min_num_steps_before_training=10000
         ),
+        # algorithm_args=dict(
+        #     batch_size=256,
+        #     max_path_length=path_length,
+        #     num_epochs=10,
+        #     num_eval_steps_per_epoch=5000,
+        #     num_expl_steps_per_train_loop=0,
+        #     num_train_loops_per_epoch=1,
+        #     collect_new_paths=False,
+        #     num_trains_per_train_loop=0,
+        #     min_num_steps_before_training=1
+        # ),
 
         # demo_paths=[
         #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_debug.npy"),
@@ -178,7 +190,7 @@ if __name__ == "__main__":
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3),
             action_type='disc_traj',
             smooth_alpha=.8,
             factories=[],
@@ -186,19 +198,21 @@ if __name__ == "__main__":
             gaze_dim=128,
             state_type=0,
             reward_max=0,
-            reward_min=-1,
+            reward_min=-3,
             reward_type='custom_switch',
+            reward_temp=2,
+            reward_offset=-0.1
         )
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
+        'from_pretrain': [False],
         'layer_norm': [True],
         'expl_kwargs.logit_scale': [10],
         'expl_kwargs.eps': [0.1],
         'trainer_kwargs.soft_target_tau': [1e-2],
         # 'demo_path_proportions': [[int(5e3)], ],
-        'trainer_kwargs.beta': [.1],
+        'trainer_kwargs.beta': [.01],
         'buffer_type': [ModdedReplayBuffer],
         'replay_buffer_size': [200000],
     }

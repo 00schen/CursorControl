@@ -8,3 +8,4 @@ from .encdec_policy import EncDecPolicy
 from .recur_encdec_policy import RecurEncDecPolicy
 from .rand_target_policy import RandTargetPolicy
 from .calibration_policy import CalibrationPolicy
+from .keyboard_policy import KeyboardPolicy
