@@ -6,11 +6,11 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 
-class EncDecDQNTrainer(TorchTrainer):
+class EncDecSACTrainer(TorchTrainer):
     def __init__(self,
                  vae,
                  prev_vae,
-                 qf, target_qf,
+                 policy,
                  optimizer,
                  latent_size,
                  temp=1.0,
@@ -18,10 +18,8 @@ class EncDecDQNTrainer(TorchTrainer):
                  sample=True,
                  use_supervised='none',
                  ):
-
         super().__init__()
-        self.qf = qf
-        self.target_qf = target_qf
+        self.policy = policy
         self.optimizer = optimizer
         self.vae = vae
         self.prev_vae = prev_vae
@@ -47,6 +45,7 @@ class EncDecDQNTrainer(TorchTrainer):
         inputs = th.cat((batch['curr_gaze_features'], obs), dim=1)
         latents = batch['curr_latents']
         goals = batch['curr_goal']
+        actions = batch['actions']
 
         loss = ptu.zeros(1)
 
@@ -61,18 +60,10 @@ class EncDecDQNTrainer(TorchTrainer):
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
-        if 'kl' in self.use_supervised:
-            target_q_dist = th.log_softmax(self.qf(obs, target_latent) * self.temp, dim=1).detach()
-            pred_q_dist = th.log_softmax(self.qf(obs, pred_latent) * self.temp, dim=1)
-            supervised_loss = th.nn.KLDivLoss(log_target=True)(pred_q_dist, target_q_dist)
-        elif 'AWR' in self.use_supervised:
-            pred_mean, pred_logvar = self.vae.encode(inputs)
-            kl_loss = self.vae.kl_loss(pred_mean, pred_logvar)
-            supervised_loss = th.nn.GaussianNLLLoss(reduction='none')(pred_mean, latents, th.exp(pred_logvar))
-            weights = th.where(success_indices, 1., 0.)
-            supervised_loss = th.mean(supervised_loss * weights)
-        else:
-            supervised_loss = th.nn.MSELoss()(pred_latent[success_indices], latents[success_indices])
+        # self.use_supervised unused for now
+        target_mean = self.policy(obs, target_latent).mean.detach()
+        pred_mean = self.policy(obs, pred_latent).mean
+        supervised_loss = th.nn.MSELoss()(pred_mean, target_mean)
 
         loss += supervised_loss + self.beta * kl_loss
 
@@ -82,6 +73,7 @@ class EncDecDQNTrainer(TorchTrainer):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
 
         """
         Save some statistics for eval using just one batch.
@@ -97,14 +89,12 @@ class EncDecDQNTrainer(TorchTrainer):
     def networks(self):
         nets = [
             self.vae,
-            self.qf,
-            self.target_qf,
+            self.policy
         ]
         return nets
 
     def get_snapshot(self):
         return dict(
             vae=self.vae,
-            qf=self.qf,
-            target_qf=self.target_qf,
+            policy=self.policy
         )

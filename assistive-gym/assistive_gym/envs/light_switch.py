@@ -234,7 +234,7 @@ class LightSwitchEnv(AssistiveEnv):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1])
         if self.stochastic:
-            self.init_pos = self.init_pos + self.np_random.uniform(-0.05, 0.05, size=3)
+            self.init_pos = self.init_pos + self.np_random.uniform(-0.02, 0.02, size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()

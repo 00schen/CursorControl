@@ -1,6 +1,4 @@
 import torch as th
-from torch import nn
-import torch.nn.functional as F
 import numpy as np
 
 from rlkit.core.eval_util import create_stats_ordered_dict
@@ -8,30 +6,26 @@ import rlkit.torch.pytorch_util as ptu
 from .dqn_trainer import DQNTrainer
 
 
-class EncDecCQLTrainer(DQNTrainer):
+class EncDecDDQNTrainer(DQNTrainer):
     def __init__(self,
-                 rf,
                  qf, target_qf,
                  optimizer,
                  latent_size,
-                 encoder=None,
+                 vae=None,
                  temp=1.0,
                  min_q_weight=1.0,
                  add_ood_term=-1,
                  beta=1,
                  sample=True,
-                 train_encoder_on_rf=False,
                  **kwargs):
         super().__init__(qf, target_qf, optimizer, **kwargs)
-        self.encoder = encoder
-        self.rf = rf
+        self.vae = vae
         self.temp = temp
         self.min_q_weight = min_q_weight
         self.add_ood_term = add_ood_term
         self.beta = beta
         self.sample = sample
         self.latent_size = latent_size
-        self.train_encoder_on_rf = train_encoder_on_rf
 
     def train_from_torch(self, batch):
         terminals = batch['terminals']
@@ -47,17 +41,10 @@ class EncDecCQLTrainer(DQNTrainer):
 
         eps = th.normal(ptu.zeros((obs.size(0), self.latent_size)), 1) if self.sample else None
 
-        if self.encoder is not None:
-            curr_latent, curr_kl_loss = self.encoder.sample(curr_goal, eps=eps, return_kl=True)
-            next_latent, next_kl_loss = self.encoder.sample(next_goal, eps=eps, return_kl=True)
-
-            # only enforce KL of encoder on next_goal if used to train RF
-            if not self.train_encoder_on_rf:
-                next_latent = next_latent.detach()
-                kl_loss = curr_kl_loss
-
-            else:
-                kl_loss = (curr_kl_loss + next_kl_loss) / 2
+        if self.vae is not None:
+            curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
+            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
+            next_latent = next_latent.detach()
 
         else:
             curr_latent, next_latent = curr_goal, next_goal
@@ -67,17 +54,6 @@ class EncDecCQLTrainer(DQNTrainer):
 
         curr_obs_features = [obs, curr_latent]
         next_obs_features = [next_obs, next_latent]
-
-        """
-        Rf loss
-        """
-        num_pos = th.sum(terminals)
-        num_neg = terminals.size(0) - num_pos
-        pos_weight = None if num_pos == 0 else num_neg / num_pos
-        pred_success = self.rf(*next_obs_features)
-        rf_loss = th.nn.BCEWithLogitsLoss(pos_weight=pos_weight)(pred_success, terminals)
-        loss += rf_loss
-        accuracy = th.eq(terminals, F.sigmoid(pred_success.detach()) > .5).float().mean()
 
         """
         Q loss
@@ -96,13 +72,6 @@ class EncDecCQLTrainer(DQNTrainer):
         y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
         qf_loss = self.qf_criterion(y_pred, y_target)
         loss += qf_loss
-
-        """CQL term"""
-        min_qf_loss = th.logsumexp(curr_qf / self.temp, dim=1, ).mean() * self.temp
-        min_qf_loss = min_qf_loss - y_pred.mean()
-
-        if self.add_ood_term < 0 or self._n_train_steps_total < self.add_ood_term:
-            loss += min_qf_loss * self.min_q_weight
 
         """
         Update Q networks
@@ -127,29 +96,30 @@ class EncDecCQLTrainer(DQNTrainer):
             self.eval_statistics['Loss'] = np.mean(ptu.get_numpy(loss))
             self.eval_statistics['QF Loss'] = np.mean(ptu.get_numpy(qf_loss))
             self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
-            self.eval_statistics['RF Accuracy'] = np.mean(ptu.get_numpy(accuracy))
             self.eval_statistics.update(create_stats_ordered_dict(
                 'Q Predictions',
                 ptu.get_numpy(y_pred),
+            ))
+            self.eval_statistics.update(create_stats_ordered_dict(
+                'Q Targets',
+                ptu.get_numpy(y_target),
             ))
 
     @property
     def networks(self):
         nets = [
-            self.rf,
             self.qf,
             self.target_qf,
         ]
-        if self.encoder is not None:
-            nets.append(self.encoder)
+        if self.vae is not None:
+            nets.append(self.vae)
         return nets
 
     def get_snapshot(self):
         snapshot = dict(
-            rf=self.rf,
             qf=self.qf,
             target_qf=self.target_qf,
         )
-        if self.encoder is not None:
-            snapshot['encoder'] = self.encoder
+        if self.vae is not None:
+            snapshot['vae'] = self.vae
         return snapshot

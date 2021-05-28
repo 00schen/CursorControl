@@ -53,5 +53,6 @@ __all__ = [
     'QrGazeMlp',
     'VQGazePolicy',
     'VAEGazePolicy',
+    'VAE'
 ]
 

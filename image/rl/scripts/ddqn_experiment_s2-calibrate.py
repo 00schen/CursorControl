@@ -1,5 +1,5 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import ConcatMlpPolicy, VAE
+from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 from rl.misc.calibration_rl_algorithm_awr import BatchRLAlgorithm as TorchCalibrationRLAlgorithmAWR
 
@@ -35,39 +35,36 @@ def experiment(variant):
 
     file_name = os.path.join('image/util_models', variant['pretrain_path'])
     loaded = th.load(file_name)
-    rf = loaded['trainer/rf']
-    encoder = VAE(input_size=sum(env.feature_sizes.values()) + env.observation_space.low.size,
-                  latent_size=variant['latent_size'],
-                  encoder_hidden_sizes=[M],
-                  decoder_hidden_sizes=[M]
-                  ).to(ptu.device)
+    vae = VAE(input_size=sum(env.feature_sizes.values()) + env.observation_space.low.size,
+              latent_size=variant['latent_size'],
+              encoder_hidden_sizes=[M],
+              decoder_hidden_sizes=[M]
+              ).to(ptu.device)
     qf = loaded['trainer/qf']
     target_qf = loaded['trainer/target_qf']
-    if 'trainer/encoder' in loaded.keys():
-        prev_encoder = loaded['trainer/encoder'].to(ptu.device)
+    if 'trainer/vae' in loaded.keys():
+        prev_vae = loaded['trainer/vae'].to(ptu.device)
     else:
-        prev_encoder = None
-    recon_decoder = ConcatMlpPolicy(input_size=variant['latent_size'],
-                                    output_size=sum(env.feature_sizes.values()),
-                                    hidden_sizes=[M],
-                                    )
+        prev_vae = None
 
-    optim_params = list(encoder.parameters())
+    optim_params = list(vae.encoder.parameters())
     if not variant['freeze_decoder']:
         optim_params += list(qf.parameters())
-    if not variant['freeze_rf']:
-        optim_params += list(rf.parameters())
+
     optimizer = optim.Adam(
         optim_params,
-        lr=variant['qf_lr'],
+        lr=variant['lr'],
     )
 
     eval_policy = EncDecPolicy(
         qf,
         list(env.feature_sizes.keys()),
-        encoder=encoder,
+        vae=vae,
         sample=True,
         latent_size=variant['latent_size'],
+        eps=0,
+        logit_scale=-1,
+        incl_state=True
     )
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -77,19 +74,19 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         qf=qf,
         features_keys=list(env.feature_sizes.keys()),
-        encoder=encoder,
+        vae=vae,
         sample=True,
         latent_size=variant['latent_size'],
-        **variant['expl_kwargs']
+        eps=0,
+        logit_scale=-1,
+        incl_state=True
     )
     calibration_policy = CalibrationPolicy(
         qf=qf,
         features_keys=list(env.feature_sizes.keys()),
         env=env,
-        eps=1,
-        encoder=encoder,
-        prev_encoder=prev_encoder,
-        logit_scale=variant['expl_kwargs']['logit_scale']
+        vae=vae,
+        prev_vae=prev_vae,
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -108,10 +105,8 @@ def experiment(variant):
         latent_size=variant['latent_size']
     )
     trainer = LatentEncDecCQLTrainer(
-        rf=rf,
-        encoder=encoder,
-        recon_decoder=recon_decoder,
-        prev_encoder=prev_encoder,
+        vae=vae,
+        prev_vae=prev_vae,
         qf=qf,
         target_qf=target_qf,
         optimizer=optimizer,
@@ -159,57 +154,47 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_3.pkl',
         latent_size=3,
         layer_size=64,
-        expl_kwargs=dict(
-            eps=0,
-            logit_scale=-1
-        ),
+        lr=5e-4,
         replay_buffer_size=int(1e4 * path_length),
         trainer_kwargs=dict(
-            target_update_period=1,
-            qf_criterion=None,
-            qf_lr=5e-4,
-            discount=0.99,
-            add_ood_term=-1,
             temp=10,
-            min_q_weight=0,
             sample=True,
             beta=0.01,
-            pos_weight=1
         ),
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=100,
-            num_eval_steps_per_epoch=500,
+            num_epochs=50,
+            num_eval_steps_per_epoch=200,
             num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             num_trains_per_train_loop=1,
-            # min_num_steps_before_training=1000
-            trajs_per_index=5,
+            trajs_per_index=3,
             calibration_indices=None,
             pretrain_steps=500,
-            max_failures=10
+            max_failures=10,
+            calibrate_split=True
         ),
 
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3, target_indices=[0, 1, 2]),
 
             action_type='disc_traj',
-            smooth_alpha=.8,
+            smooth_alpha=1,
 
             factories=[],
             adapts=['goal', 'static_gaze', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,
-            reward_min=-5,
-            reward_temp=2,
+            reward_min=-1,
+            reward_temp=1,
             reward_offset=-0.1,
             reward_type='sparse',
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
@@ -221,7 +206,6 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000, 2001, 2002],
         'layer_norm': [True],
-        'trainer_kwargs.soft_target_tau': [1e-2],
         'freeze_decoder': [True],
         'freeze_rf': [True],
         'trainer_kwargs.use_supervised': ['calibrate_kl'],
@@ -232,9 +216,8 @@ if __name__ == "__main__":
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
 
+
     def process_args(variant):
-        variant['trainer_kwargs']['learning_rate'] = variant['trainer_kwargs'].pop('qf_lr')
-        variant['qf_lr'] = variant['trainer_kwargs']['learning_rate']
         variant['env_config']['seedid'] = variant['seedid']
         if not args.use_ray:
             variant['render'] = args.no_render

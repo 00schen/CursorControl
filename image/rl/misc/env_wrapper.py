@@ -45,7 +45,10 @@ def default_overhead(config):
 			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs,info), self.adapts, (obs))
 
 		def step(self, action):
-			tran = super().step(action)
+			try:
+				tran = super().step(action)
+			except:
+				breakpoint()
 			tran = self.adapt_step(*tran)
 			return tran
 
@@ -336,10 +339,11 @@ class reward:
 		elif self.reward_type == 'custom_switch':
 			r = 0
 			if not info['task_success']:
-				target_indices = np.nonzero(np.not_equal(info['target_string'], info['current_string']))
-				dist = min([np.linalg.norm(info['tool_pos'] - info['switch_pos'][index]) for index in target_indices])
-				r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset))
-				r -= np.sum(info['target_string'] != info['current_string'])
+				dist = np.linalg.norm(info['tool_pos'] - info['switch_pos'][info['target_index']])
+				r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset)) - 1
+
+				# because of reward clipping to -1, essentially makes reward always -1 when wrong switch is flipped
+				# r -= np.sum(info['target_string'] != info['current_string'])
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':
@@ -353,7 +357,6 @@ class reward:
 			raise Exception
 
 		r = np.clip(r, *self.range)
-
 		return obs, r, done, info
 
 	def _reset(self, obs,info=None):

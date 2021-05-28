@@ -16,6 +16,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         calibration_buffer: ReplayBuffer,
         pretrain_steps=100,
         max_failures=10,
+        calibrate_split=True,
         **kwargs,
     ):
         super().__init__(
@@ -29,18 +30,12 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.calibration_buffer = calibration_buffer
         self.pretrain_steps = pretrain_steps
         self.max_failures = max_failures
+        self.calibrate_split = calibrate_split
 
     def _sample_and_train(self, steps, buffer):
         self.training_mode(True)
         for _ in range(steps):
             train_data = buffer.random_batch(self.batch_size)
-            # train_data = self.replay_buffer.random_batch(
-            #     self.batch_size)
-            # if self.calibration_buffer.num_steps_can_sample():
-            #     sup_data = self.calibration_buffer.random_batch(
-            #         self.batch_size)
-            #     for k in ['observations', 'curr_gaze_features', 'curr_goal']:
-            #         train_data['sup_' + k] = sup_data[k]
             self.trainer.train(train_data)
         gt.stamp('training', unique=False)
         self.training_mode(False)
@@ -60,7 +55,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.eval_env.per_step = True
 
         # calibrate
-        # self.expl_env.base_env.calibrate_mode(True)
+        if self.calibrate_split:
+            self.expl_env.base_env.calibrate_mode(True)
+
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
                 self.expl_env.new_goal(index)
@@ -74,8 +71,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
 
-        # self.expl_env.base_env.calibrate_mode(False)
-        # self.eval_env.base_env.calibrate_mode(False)
+        if self.calibrate_split:
+            self.expl_env.base_env.calibrate_mode(False)
+            self.eval_env.base_env.calibrate_mode(False)
 
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),

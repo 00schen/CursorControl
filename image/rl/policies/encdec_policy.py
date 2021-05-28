@@ -7,13 +7,13 @@ from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 
 
 class EncDecPolicy(PyTorchModule):
-    def __init__(self, qf, features_keys, encoder=None, logit_scale=-1, eps=0, incl_state=True, sample=False,
+    def __init__(self, qf, features_keys, vae=None, logit_scale=-1, eps=0, incl_state=True, sample=False,
                  latent_size=None):
         super().__init__()
-        self.encoder = encoder
+        self.vae = vae
         self.qf = qf
         self.features_keys = features_keys
-        self.logit_scale = logit_scale
+        self.logit_scale = logit_scale  # currently does nothing
         self.eps = eps
         self.incl_state = incl_state
         self.sample = sample
@@ -25,19 +25,19 @@ class EncDecPolicy(PyTorchModule):
         features = [obs[k] for k in self.features_keys]
         with th.no_grad():
             raw_obs = obs['raw_obs']
-            if self.encoder != None:
+            if self.vae != None:
                 if self.incl_state:
                     features.append(raw_obs)
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
 
-                pred_features = self.encoder.sample(encoder_input, eps=eps).detach()
+                pred_features = self.vae.sample(encoder_input, eps=eps).detach()
                 obs['latents'] = pred_features.cpu().numpy()
             else:
                 pred_features = np.concatenate(features)
                 obs['latents'] = pred_features
 
-            q_values, ainfo = self.qf.get_action(raw_obs, pred_features[:3])
+            q_values, ainfo = self.qf.get_action(raw_obs, pred_features)
             q_values = ptu.tensor(q_values)
             if np.random.rand() > self.eps:
                 action = F.one_hot(q_values.argmax().long(), 6).flatten()

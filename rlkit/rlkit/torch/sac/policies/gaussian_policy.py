@@ -128,6 +128,29 @@ class TanhGaussianPolicy(Mlp, TorchStochasticPolicy):
         log_prob = log_prob.sum(dim=1, keepdim=True)
         return log_prob
 
+class ConcatTanhGaussianPolicy(TanhGaussianPolicy):
+    def __init__(
+            self,
+            *args,
+            dim=1,
+            **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.dim = dim
+
+    def forward(self, *inputs):
+        flat_inputs = torch.cat(inputs, dim=self.dim)
+        return super().forward(flat_inputs)
+
+    def get_action(self, *obs_np):
+        actions = self.get_actions(*[obs[None] for obs in obs_np])
+        return actions[0, :], {}
+
+    def get_actions(self, *obs_np):
+        dist = self._get_dist_from_np(*obs_np)
+        actions = dist.sample()
+        return elem_or_tuple_to_numpy(actions)
+
 
 class GaussianPolicy(Mlp, TorchStochasticPolicy):
     def __init__(
