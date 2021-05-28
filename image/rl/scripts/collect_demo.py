@@ -45,15 +45,16 @@ def collect_demonstrations(variant):
 				variant['path_length'],
 				variant['path_length'],
 			)
-			# success_found = False
+			success_found = False
 			for path in collected_paths:
 				# path['observations'] = [obs['raw_obs'] for obs in path['observations']]
 				# path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
-				# if path['env_infos'][-1]['task_success'] == variant['on_policy']:
-				paths.append(path)
-				success_count += path['env_infos'][-1]['task_success']
-			# if success_found:
-			target_index += 1
+				if path['env_infos'][-1]['task_success'] == variant['on_policy']:
+					paths.append(path)
+					success_count += path['env_infos'][-1]['task_success']
+					success_found = True
+			if success_found:
+				target_index += 1
 			print("total paths collected: ", len(paths), "successes: ", success_count)
 	return paths
 

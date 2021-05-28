@@ -5,18 +5,22 @@ import pybullet as p
 from itertools import product
 from numpy.linalg import norm
 from .env import AssistiveEnv
+from copy import deepcopy
+from collections import OrderedDict
 
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
+default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 class BottleEnv(AssistiveEnv):
 	def __init__(self, robot_type='jaco',success_dist=.1, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(7,), dtype=np.float32)
-		self.num_targets = 4*2
+		self.observation_space = spaces.Box(-np.inf,np.inf,(8+12,), dtype=np.float32)
+		self.num_targets = 4*3
+		self.num_second_targets = 3
 		self.success_dist = success_dist
 		self.debug = debug
 		self.stochastic = stochastic
 		self.goal_feat = ['target1_reached','target1_pos','tool_pos'] # Just an FYI
-		self.feature_sizes = {'goal': 3}
+		self.feature_sizes = OrderedDict({'goal': 7})
 		self.session_goal = session_goal
 
 	def step(self, action):
@@ -25,7 +29,7 @@ class BottleEnv(AssistiveEnv):
 		self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 		if norm(self.tool_pos-self.target1_pos) < .05 or self.debug:
 			self.target1_reached = True
-			self.unique_index = self.target_index % 2
+			self.unique_index = self.target_index % self.num_second_targets
 
 		contacts = p.getContactPoints(bodyA=self.robot, bodyB=self.shelf, physicsClientId=self.id)
 		if len(contacts) == 0:
@@ -46,12 +50,12 @@ class BottleEnv(AssistiveEnv):
 
 			'shelf_pos': self.shelf_pos,
 			'tool_pos': self.tool_pos,
-			'bottle_pos': self.bottle_poses[self.target_index//2].copy(),
 			'target1_pos': self.target1_pos,
 			'target_pos': self.target_pos,
 			'target1_reached': self.target1_reached,
-			'unique_index': 4+(self.target_index%2) if self.target1_reached else self.target_index//2,
-			'current_target': self.target_pos if self.target1_reached else self.target1_pos
+			'unique_index': self.unique_index,
+			'current_target': self.target_pos if self.target1_reached else self.target1_pos,
+			'unique_targets': self.bottle_poses,
 		}
 		done = False
 
@@ -60,16 +64,14 @@ class BottleEnv(AssistiveEnv):
 	def _get_obs(self, forces):
 		torso_pos = np.array(p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
 		state = p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)
-		tool_pos = np.array(state[0])
-		tool_orient = np.array(state[1]) # Quaternions
 		robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices, physicsClientId=self.id)
 		robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 		robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
 		# robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([tool_pos, tool_orient]),
-			hindsight_goal = np.concatenate([[self.target1_reached], self.target1_pos, tool_pos,]),
+			raw_obs = np.concatenate([self.tool_pos, self.tool_orient,[self.target1_reached],*self.bottle_poses]),
+			hindsight_goal = np.concatenate([[self.target1_reached], self.target1_pos, self.tool_pos,]),
 			goal = self.goal,
 		)
 		return robot_obs
@@ -90,32 +92,20 @@ class BottleEnv(AssistiveEnv):
 		self.human_upper_limits = np.array([])
 
 		"""set up shelf environment objects"""
-		default_orientation = p.getQuaternionFromEuler([0, 0, 0], physicsClientId=self.id)
-		table_pos = np.array([-.3,-1.1,0])
+		table_pos = np.array([-.2,-1.1,0])
 		self.table = p.loadURDF(os.path.join(self.world_creation.directory, 'table', 'table_tall.urdf'), basePosition=table_pos, baseOrientation=default_orientation, physicsClientId=self.id)
-		shelf_pos = self.shelf_pos = table_pos+np.array([.3,0,.93])
-		self.shelf = p.loadURDF(os.path.join(self.world_creation.directory, 'shelf', 'shelf.urdf'), basePosition=shelf_pos, baseOrientation=default_orientation,\
-			 physicsClientId=self.id, useFixedBase=True)
-		# for i in range(10,20):
-		# 	p.setCollisionFilterPair(self.shelf, self.robot, -1, i, 0, physicsClientId=self.id)
-		register_pos = self.register_pos = table_pos+np.array([-.4,-.1,.73])
-		self.register = p.loadURDF(os.path.join(self.world_creation.directory, 'register', 'register.urdf'), basePosition=register_pos, baseOrientation=default_orientation,\
-			 physicsClientId=self.id, useFixedBase=True)
-		self.bottles = []
-		self.bottle_poses = []
-		for increment in product(np.linspace(-.1,.1,num=2),[0],[-.18,.01]):
-			bottle_pos,bottle_orient = p.multiplyTransforms(shelf_pos, default_orientation, increment, default_orientation, physicsClientId=self.id)
-			bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
-								basePosition=bottle_pos, useFixedBase=True, baseOrientation=bottle_orient, globalScaling=.01, physicsClientId=self.id)
-			self.bottles.append(bottle)
-			self.bottle_poses.append(bottle_pos+np.array([0,0,.05]))
-			# p.setCollisionFilterPair(bottle, self.shelf, -1, -1, 0, physicsClientId=self.id)
+		self.shelf_pos = table_pos+np.array([0,.1,1.1])
+		if self.stochastic:
+			self.shelf_pos += self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
+		self.shelf = p.loadURDF(os.path.join(self.world_creation.directory, 'shelf', 'shelf.urdf'), basePosition=self.shelf_pos, baseOrientation=default_orientation,\
+			 globalScaling=1.2, physicsClientId=self.id, useFixedBase=True)
 
 		"""set up target and initial robot position"""
 		if not self.session_goal:
 			self.set_target_index() # instance override in demos
 		self.init_robot_arm()
 		self.generate_target()
+		self.unique_index = self.target_index//self.num_second_targets
 
 		"""configure pybullet"""
 		# p.setGravity(0, 0, -9.81, physicsClientId=self.id)
@@ -125,7 +115,6 @@ class BottleEnv(AssistiveEnv):
 		# p.resetDebugVisualizerCamera(cameraDistance = .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
 		p.resetDebugVisualizerCamera(cameraDistance= .1, cameraYaw=180, cameraPitch=-30, cameraTargetPosition=[0, -.4, 1.1], physicsClientId=self.id)
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
-
 
 		self.task_success = 0
 		self.goal = np.concatenate([[True],self.target1_pos,self.target_pos])
@@ -148,25 +137,33 @@ class BottleEnv(AssistiveEnv):
 		self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001]*3, pos_offset=[0, 0, 0.02], orient_offset=p.getQuaternionFromEuler([0, -np.pi/2.0, 0], physicsClientId=self.id), maximal=False)
 
 	def get_random_target(self):
-		targets = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([.3,.3,-.1])]\
-				+ self.bottle_poses
-		return targets[np.random.randint(self.num_targets)]
+		return np.concatenate(self.bottle_poses[np.random.choice(4,size=2,replace=False)])
 
 	def set_target_index(self):
 		self.target_index = self.np_random.choice(self.num_targets)
 
 	def generate_target(self): 
-		for bottle in self.bottles:
-			for i in range(7,20):
-				p.setCollisionFilterPair(bottle, self.robot, -1, i, 0, physicsClientId=self.id)
-			for i in range(-1,2):
-				p.setCollisionFilterPair(bottle, self.tool, -1, i, 0, physicsClientId=self.id)
+		bottle_poses = []
+		for increment in product(np.linspace(-.25,.25,num=2),[0],[-.2,.06]):
+			bottle_pos,bottle_orient = p.multiplyTransforms(self.shelf_pos, default_orientation, increment, default_orientation, physicsClientId=self.id)
+			bottle_poses.append(bottle_pos+np.array([0,0,.05]))
+		self.bottle_poses = np.array(bottle_poses)
 
-		target1_pos = self.bottle_poses[self.target_index//2]
+		target1_pos = bottle_poses[self.target_index//self.num_second_targets]
 		self.target1_pos = target1_pos.copy()
 		self.target1_reached = False
-		self.unique_index = self.target_index//2
-		target_pos = self.target_pos = [self.register_pos + np.array([.2,.2,.05]), self.shelf_pos + np.array([.3,.3,-.1])][self.target_index%2] # get top of shelf
+		indices = list(range(4))
+		del indices[self.target_index//self.num_second_targets]
+		target_pos = self.target_pos = bottle_poses[indices[self.target_index%self.num_second_targets]]
+
+		bottle_pos = target1_pos + np.array([0,0,-.05])
+		bottle = self.bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
+								basePosition=bottle_pos, useFixedBase=True, baseOrientation=default_orientation, globalScaling=.01, physicsClientId=self.id)
+		# for i in range(8,20):
+		# 	p.setCollisionFilterPair(bottle, self.robot, -1, i, 0, physicsClientId=self.id)
+		# for i in range(-1,2):
+		# 	p.setCollisionFilterPair(bottle, self.tool, -1, i, 0, physicsClientId=self.id)
+	
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
 		self.target1 = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target1_pos, useMaximalCoordinates=False, physicsClientId=self.id)
@@ -175,17 +172,17 @@ class BottleEnv(AssistiveEnv):
 		self.update_targets()
 
 	def update_targets(self):
-		# p.resetBasePositionAndOrientation(self.tool, self.tool_pos, [0, 0, 0, 1], physicsClientId=self.id)
 		if self.target1_reached:
-			self.bottle_poses[self.target_index//2] = self.tool_pos
 			p.resetBasePositionAndOrientation(self.target1, self.tool_pos, [0, 0, 0, 1], physicsClientId=self.id)
-			p.resetBasePositionAndOrientation(self.bottles[self.target_index//2], self.tool_pos-np.array([0,0,.05]), [0,0,0,1], physicsClientId=self.id)
+			p.resetBasePositionAndOrientation(self.bottle, self.tool_pos-np.array([0,0,.05]), [0,0,0,1], physicsClientId=self.id)
 
 	@property
 	def tool_pos(self):
-		# return np.array(p.getLinkState(self.tool, -1, computeForwardKinematics=True, physicsClientId=self.id)[0])
 		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[0])
-		# return np.array(p.getLinkState(self.robot, 8, computeForwardKinematics=True, physicsClientId=self.id)[0])
+	
+	@property
+	def tool_orient(self):
+		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[1])
 
 class BottleJacoEnv(BottleEnv):
 	def __init__(self,**kwargs):
