@@ -40,7 +40,7 @@ def experiment(variant):
                                     hidden_sizes=[M, M, M, M],
                                     layer_norm=variant['layer_norm'],
                                     )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=env.observation_space.low.size + sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -60,7 +60,7 @@ def experiment(variant):
         qf,
         list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=False,
+        incl_state=True,
         sample=False,
     )
     eval_path_collector = FullPathCollector(
@@ -74,7 +74,7 @@ def experiment(variant):
         vae=vae,
         logit_scale=variant['expl_kwargs']['logit_scale'],
         eps=variant['expl_kwargs']['eps'],
-        incl_state=False,
+        incl_state=True,
         sample=False,
     )
     expl_path_collector = FullPathCollector(
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=200,
+            num_epochs=1000,
             eval_paths=False,
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,

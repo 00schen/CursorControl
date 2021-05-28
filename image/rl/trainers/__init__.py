@@ -8,7 +8,7 @@ from .recur_bc_trainer import RecurBCTrainer
 from .enc_dec_ddqn_trainer_s1 import EncDecDDQNTrainer
 from .enc_dec_cql_trainer_s2 import EncDecCQLTrainer as EncDecCQLTrainer1
 from .enc_dec_cql_trainer_s2_recur import EncDecCQLTrainer as RecurEncDecCQLTrainer
-from .enc_dec_cql_trainer_s2_latent import EncDecDQNTrainer as LatentEncDecCQLTrainer
+from .enc_dec_ddqn_trainer_s2_latent import EncDecDQNTrainer as LatentEncDecCQLTrainer
 from .enc_dec_cql_trainer_s2_recur_latent import EncDecCQLTrainer as LatentRecurEncDecCQLTrainer
 from .enc_dec_sac_trainer_s1 import EncDecSACTrainer
 from .enc_dec_sac_trainer_s2_latent import EncDecSACTrainer as LatentEncDecSACTrainer

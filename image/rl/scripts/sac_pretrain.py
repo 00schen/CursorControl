@@ -56,7 +56,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=env.observation_space.low.size + sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -75,7 +75,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=False,
+        incl_state=True,
         sample=False,
         deterministic=False
     )
@@ -84,7 +84,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=False,
+        incl_state=True,
         sample=False,
         deterministic=True
     )
