@@ -142,7 +142,7 @@ class LightSwitchEnv(AssistiveEnv):
                                        physicsClientId=self.id)
         centripedal = np.cross(axis, radius)
         c_F = np.dot(normal, centripedal) / norm(centripedal)
-        k = .2
+        k = -.2
         w = k * np.sign(c_F) * np.sqrt(abs(c_F)) * norm(radius)
 
         for _ in range(self.frame_skip):

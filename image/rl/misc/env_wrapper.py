@@ -45,10 +45,7 @@ def default_overhead(config):
 			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs,info), self.adapts, (obs))
 
 		def step(self, action):
-			try:
-				tran = super().step(action)
-			except:
-				breakpoint()
+			tran = super().step(action)
 			tran = self.adapt_step(*tran)
 			return tran
 
