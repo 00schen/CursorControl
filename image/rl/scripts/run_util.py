@@ -10,7 +10,8 @@ def run_exp(experiment,variants,args):
 		import ray
 		from ray.util import ActorPool
 		from itertools import cycle,count
-		ray.init(num_gpus=args.gpus)
+		ray.init(_temp_dir='/tmp/ray_exp1', num_gpus=args.gpus)
+		# ray.init(num_gpus=args.gpus)
 
 		@ray.remote
 		class Iterators:
@@ -24,30 +25,15 @@ def run_exp(experiment,variants,args):
 		class Runner:
 			def new_run(self,variant):
 				gt.reset_root()
-				ptu.set_gpu_mode(True)
+				ptu.set_gpu_mode(args.gpus > 0)
 				args.process_args(variant)
 				iterator = ray.get_actor("global_iterator")
 				run_id = ray.get(iterator.next.remote())
 				save_path = os.path.join(args.main_dir,'logs')
 				reset_execution_environment()
-				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,)
+				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,snapshot_mode='gap_and_last',snapshot_gap=10)
 				experiment(variant)
-			def resume_run(self,variant):
-				gt.reset_root()
-				ptu.set_gpu_mode(True)
-				args.process_args(variant)
-				iterator = ray.get_actor("global_iterator")
-				run_id = ray.get(iterator.next.remote())
-				pretrain_path = os.path.join(args.main_dir,'logs',variant['pretrained_exp'])
-				pretrain_path = str(sorted(Path(pretrain_path).iterdir())[run_id])
-				with open(os.path.join(pretrain_path,'variant.json')) as variant_file:
-					variant = json.load(variant_file)
-				variant['pretrain_file_path'] = os.path.join(pretrain_path,'pretrain.pkl')
-				save_path = os.path.join(args.main_dir,'logs')
-				reset_execution_environment()
-				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,snapshot_mode='gap_and_last')
-				experiment(variant)
-		runners = [Runner.remote() for i in range(args.gpus*args.per_gpu)]
+		runners = [Runner.remote() for i in range(args.gpus*args.per_gpu if args.gpus > 0 else args.per_gpu)]
 		runner_pool = ActorPool(runners)
 		list(runner_pool.map(lambda a,v: a.new_run.remote(v), variants))
 	else:

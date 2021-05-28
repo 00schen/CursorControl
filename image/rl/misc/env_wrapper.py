@@ -48,7 +48,8 @@ def default_overhead(config):
 			try:
 				tran = super().step(action)
 			except:
-				breakpoint()
+				# breakpoint()
+				pass
 			tran = self.adapt_step(*tran)
 			return tran
 
@@ -288,7 +289,7 @@ class goal:
 		self.env_name = master_env.env_name
 		self.master_env = master_env
 		self.goal_feat_func = dict(
-			Bottle=lambda info: [info['target_pos']] if info['target1_reached'] else [info['target1_pos']],
+			Bottle=lambda info: [info['target_pos'],info['target1_pos']],
 			OneSwitch=lambda info: [info['switch_pos'][info['target_index']],],
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
@@ -302,10 +303,10 @@ class goal:
 	def _step(self,obs,r,done,info):
 		if self.goal is None:
 			self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
-		# goal_feat = np.concatenate((goal_feat,np.zeros(self.high_dim_size-goal_feat.size)))
+		# goal_feat = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
 		hindsight_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
-		# hindsight_feat = np.concatenate((hindsight_feat,np.zeros(self.high_dim_size-hindsight_feat.size)))
 		obs['goal'] = self.goal.copy()
+		# obs['goal'] = goal_feat
 		obs['hindsight_goal'] = hindsight_feat
 		return obs,r,done,info
 

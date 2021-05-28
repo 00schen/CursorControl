@@ -67,7 +67,7 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 100
+	path_length = 200
 	variant = dict(
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
@@ -98,7 +98,7 @@ if __name__ == "__main__":
 		p=.9,
 		num_episodes=5000,
 		path_length=path_length,
-		save_name_suffix="noisy"
+		save_name_suffix="debug"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 		import ray
 		from ray.util import ActorPool
 		from itertools import cycle,count
-		ray.init(temp_dir='/tmp/ray_exp', num_gpus=0)
+		ray.init(_temp_dir='/tmp/ray_exp1', num_gpus=0)
 
 		@ray.remote
 		class Iterators:
