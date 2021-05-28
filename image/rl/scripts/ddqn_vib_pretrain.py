@@ -148,13 +148,13 @@ if __name__ == "__main__":
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,
             collect_new_paths=True,
-            num_trains_per_train_loop=100,
+            num_trains_per_train_loop=200,
             min_num_steps_before_training=1000
         ),
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],
@@ -177,7 +177,7 @@ if __name__ == "__main__":
         'trainer_kwargs.soft_target_tau': [1e-2],
         'trainer_kwargs.beta': [.01],
         'buffer_type': [ModdedReplayBuffer],
-        'replay_buffer_size': [200000],
+        'replay_buffer_size': [1000000],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

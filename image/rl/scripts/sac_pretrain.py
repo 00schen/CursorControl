@@ -149,7 +149,7 @@ if __name__ == "__main__":
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
-            num_epochs=1000,
+            num_epochs=800,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_trains_per_train_loop=1000,
@@ -173,7 +173,7 @@ if __name__ == "__main__":
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3),
             action_type='trajectory',
             smooth_alpha=1,
             factories=[],
@@ -189,10 +189,10 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
+        'from_pretrain': [False],
         'trainer_kwargs.beta': [.01],
         'buffer_type': [ModdedReplayBuffer],
-        'replay_buffer_size': [200000],
+        'replay_buffer_size': [1000000],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
