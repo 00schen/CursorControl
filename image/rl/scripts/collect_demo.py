@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, UserInputPolicy, ArgmaxPolicy,FollowerPolicy
+from rl.policies import DemonstrationPolicy, UserInputPolicy, FollowerPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 			smooth_alpha=.8,
 
 			factories = [],
-			adapts = ['oracle'],
+			adapts = ['goal','oracle'],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
 			apply_projection=False,

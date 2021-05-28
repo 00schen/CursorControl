@@ -6,8 +6,8 @@ from .base_oracles import UserModelOracle
 
 class BottleOracle(UserModelOracle):
 	def _query(self,obs,info):
-		target = obs['goal'][:3]
-		target1 = obs['goal'][3:]
+		target = obs['goal']
+		target1 = obs['goal']
 		tool_pos = obs['raw_obs'][:3]
 		target1_reached = obs['raw_obs'][7]
 		checkpoint_poses = np.array([-.2,-1.1,0]) + np.array([0,.1,1.1]) + np.array([0,.3, 0])
