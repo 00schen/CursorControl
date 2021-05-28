@@ -148,7 +148,7 @@ if __name__ == "__main__":
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,
             collect_new_paths=True,
-            num_trains_per_train_loop=200,
+            num_trains_per_train_loop=100,
             min_num_steps_before_training=1000
         ),
         env_config=dict(
