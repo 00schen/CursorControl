@@ -53,7 +53,7 @@ def experiment(variant):
         vae = loaded['trainer/vae']
     optimizer = optim.Adam(
         list(list(qf.parameters()) + list(vae.encoder.parameters())),
-        lr=variant['qf_lr'],
+        lr=variant['lr'],
     )
 
     eval_policy = EncDecPolicy(
@@ -125,16 +125,16 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_5switch_dqn.pkl',
         latent_size=3,
         layer_size=128,
+        lr=5e-4,
         # her_k=4,
         expl_kwargs=dict(
         ),
         trainer_kwargs=dict(
             target_update_period=1,
             qf_criterion=None,
-            qf_lr=5e-4,
             discount=0.99,
             add_ood_term=-1,
             temp=1,
@@ -143,7 +143,7 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=1000,
+            num_epochs=300,
             eval_paths=False,
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [False],
+        'from_pretrain': [True],
         'layer_norm': [True],
         'expl_kwargs.logit_scale': [10],
         'expl_kwargs.eps': [0.1],
@@ -189,8 +189,6 @@ if __name__ == "__main__":
 
 
     def process_args(variant):
-        variant['trainer_kwargs']['learning_rate'] = variant['trainer_kwargs'].pop('qf_lr')
-        variant['qf_lr'] = variant['trainer_kwargs']['learning_rate']
         variant['env_config']['seedid'] = variant['seedid']
         if not args.use_ray:
             variant['render'] = args.no_render

@@ -73,10 +73,11 @@ class LibraryWrapper(Env):
 		self.observation_space = self.base_env.observation_space
 		self.action_space = self.base_env.action_space
 		self.feature_sizes = self.base_env.feature_sizes
+		self.terminate_on_failure = config['terminate_on_failure']
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
-		done = info['task_success']
+		done = info['task_success'] or (self.terminate_on_failure and self.base_env.wrong_goal_reached())
 		return obs, r, done, info
 
 	def reset(self):

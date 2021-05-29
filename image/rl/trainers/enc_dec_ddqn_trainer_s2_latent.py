@@ -17,6 +17,7 @@ class EncDecDQNTrainer(TorchTrainer):
                  beta=1,
                  sample=True,
                  use_supervised='none',
+                 grad_norm_clip=0.5
                  ):
 
         super().__init__()
@@ -30,6 +31,7 @@ class EncDecDQNTrainer(TorchTrainer):
         self.sample = sample
         self.latent_size = latent_size
         self.use_supervised = use_supervised
+        self.grad_norm_clip = grad_norm_clip
 
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -45,17 +47,18 @@ class EncDecDQNTrainer(TorchTrainer):
         episode_success = batch['episode_success']
         obs = batch['observations']
         inputs = th.cat((batch['curr_gaze_features'], obs), dim=1)
+        gazes = batch['curr_gaze_features']
         latents = batch['curr_latents']
         goals = batch['curr_goal']
 
         loss = ptu.zeros(1)
 
         eps = th.normal(ptu.zeros((inputs.size(0), self.latent_size)), 1) if self.sample else None
-        pred_latent, kl_loss = self.vae.sample(inputs, eps=eps, return_kl=True)
+        pred_latent, kl_loss = self.vae.sample(th.cat((gazes, obs), dim=1), eps=eps, return_kl=True)
         success_indices = episode_success.flatten() == 1
 
         if self.prev_vae is not None:
-            target_latent = self.prev_vae.sample(goals, eps=None)
+            target_latent = self.prev_vae.sample(th.cat((goals, obs), dim=1), eps=None)
         else:
             target_latent = goals
 
@@ -72,7 +75,8 @@ class EncDecDQNTrainer(TorchTrainer):
             weights = th.where(success_indices, 1., 0.)
             supervised_loss = th.mean(supervised_loss * weights)
         else:
-            supervised_loss = th.nn.MSELoss()(pred_latent[success_indices], latents[success_indices])
+            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, target_latent.detach()),
+                                             dim=-1))
 
         loss += supervised_loss + self.beta * kl_loss
 
@@ -81,6 +85,12 @@ class EncDecDQNTrainer(TorchTrainer):
         """
         self.optimizer.zero_grad()
         loss.backward()
+        total_norm = 0
+        for p in self.vae.encoder.parameters():
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** (1. / 2)
+        th.nn.utils.clip_grad_norm_(self.vae.encoder.parameters(), self.grad_norm_clip)
         self.optimizer.step()
 
         """
@@ -92,6 +102,8 @@ class EncDecDQNTrainer(TorchTrainer):
             self.eval_statistics['SL Loss'] = np.mean(ptu.get_numpy(supervised_loss))
             self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
             self.eval_statistics['Latent Error'] = np.mean(ptu.get_numpy(latent_error))
+            self.eval_statistics['Gradient Norm'] = np.mean(total_norm)
+
 
     @property
     def networks(self):

@@ -185,6 +185,10 @@ class LightSwitchEnv(AssistiveEnv):
         )
         return robot_obs
 
+    # return if a switch other than the target switch was flipped, assumes all switches start not flipped
+    def wrong_goal_reached(self):
+        return np.sum(self.current_string != self.target_string) > 1
+
     def reset(self):
         self.task_success = 0
 

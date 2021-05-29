@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_3switch_sac.pkl',
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(

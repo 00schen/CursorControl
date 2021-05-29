@@ -36,8 +36,8 @@ def experiment(variant):
     loaded = th.load(file_name)
     vae = VAE(input_size=sum(env.feature_sizes.values()) + env.observation_space.low.size,
               latent_size=variant['latent_size'],
-              encoder_hidden_sizes=[M],
-              decoder_hidden_sizes=[M]
+              encoder_hidden_sizes=[M] * variant['n_layers'],
+              decoder_hidden_sizes=[M] * variant['n_layers']
               ).to(ptu.device)
     policy = loaded['trainer/policy']
     if 'trainer/vae' in loaded.keys():
@@ -59,7 +59,7 @@ def experiment(variant):
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
         incl_state=True,
-        sample=True,
+        sample=variant['trainer_kwargs']['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
     )
@@ -69,7 +69,7 @@ def experiment(variant):
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
         incl_state=True,
-        sample=True,
+        sample=variant['trainer_kwargs']['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
     )
@@ -86,6 +86,7 @@ def experiment(variant):
         env=env,
         vae=vae,
         prev_vae=prev_vae,
+        incl_state=True
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -140,7 +141,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate')
+    parser.add_argument('--exp_name', default='calibrate_sac_5')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -150,36 +151,33 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_3_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_5switch_sac.pkl',
         latent_size=3,
         layer_size=64,
         lr=5e-4,
         replay_buffer_size=int(1e4 * path_length),
         trainer_kwargs=dict(
-            temp=10,
-            sample=True,
             beta=0.01,
+            grad_norm_clip=0.5
         ),
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=50,
-            num_eval_steps_per_epoch=200,
+            num_epochs=100,
+            num_eval_steps_per_epoch=1000,
             num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             num_trains_per_train_loop=1,
-            trajs_per_index=3,
-            calibration_indices=None,
-            pretrain_steps=500,
-            max_failures=10,
-            calibrate_split=False
+            pretrain_steps=1000,
+            max_failures=5,
         ),
 
         env_config=dict(
             env_name=args.env_name,
+            terminate_on_failure=True,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3, target_indices=[0, 1, 2]),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
 
             action_type='trajectory',
             smooth_alpha=1,
@@ -200,9 +198,13 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
+        'n_layers': [1],
+        'algorithm_args.trajs_per_index': [3],
+        'trainer_kwargs.sample': [True, False],
+        'algorithm_args.calibrate_split': [False, True],
+        'algorithm_args.calibration_indices': [[0, 2, 4], [0, 2], [2, 4], [0, 4]],
         'seedid': [2000, 2001, 2002],
         'freeze_decoder': [True],
-        'freeze_rf': [True],
         'trainer_kwargs.use_supervised': ['calibrate_kl'],
     }
     sweeper = hyp.DeterministicHyperparameterSweeper(

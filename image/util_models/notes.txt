@@ -1,4 +1,0 @@
-OneSwitch_params_s1_dense_encoder_3.pkl is near perfect DQN model for 3 switch env (>99%).
-OneSwitch_params_s1_dense_encoder_5.pkl is near perfect DQN model for 5 switch env (~97%).
-OneSwitch_params_s1_dense_encoder_3_sac.pkl is near perfect SAC model for 3 switch env (>99%).
-OneSwitch_params_s1_dense_encoder_5_sac.pkl is near perfect SAC model for 5 switch env (>99%).
