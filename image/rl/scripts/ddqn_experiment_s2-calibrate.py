@@ -82,7 +82,6 @@ def experiment(variant):
         logit_scale=-1,
         incl_state=True
     )
-    expl_policy = KeyboardPolicy()
     calibration_policy = CalibrationPolicy(
         qf=qf,
         features_keys=list(env.feature_sizes.keys()),
@@ -146,7 +145,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_dqn_5')
+    parser.add_argument('--exp_name', default='calibrate_dqn_3')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
