@@ -67,7 +67,7 @@ class EncDecDQNTrainer(TorchTrainer):
         if 'kl' in self.use_supervised:
             target_q_dist = th.log_softmax(self.qf(obs, target_latent) * self.temp, dim=1).detach()
             pred_q_dist = th.log_softmax(self.qf(obs, pred_latent) * self.temp, dim=1)
-            supervised_loss = th.nn.KLDivLoss(log_target=True)(pred_q_dist, target_q_dist)
+            supervised_loss = th.nn.KLDivLoss(log_target=True, reduction='batchmean')(pred_q_dist, target_q_dist)
         elif 'AWR' in self.use_supervised:
             pred_mean, pred_logvar = self.vae.encode(inputs)
             kl_loss = self.vae.kl_loss(pred_mean, pred_logvar)

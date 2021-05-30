@@ -112,12 +112,16 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         **variant['trainer_kwargs']
     )
-    calibration_buffer = ModdedReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-        sample_base=0,
-        latent_size=variant['latent_size']
-    )
+
+    if variant['keep_calibration_data']:
+        calibration_buffer = replay_buffer
+    else:
+        calibration_buffer = ModdedReplayBuffer(
+            variant['replay_buffer_size'],
+            env,
+            sample_base=0,
+            latent_size=variant['latent_size']
+        )
 
     alg_class = TorchCalibrationRLAlgorithm
     algorithm = alg_class(
@@ -154,11 +158,11 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_5switch_sac.pkl',
         latent_size=3,
         layer_size=64,
-        lr=5e-4,
         replay_buffer_size=int(1e4 * path_length),
+        keep_calibration_data=True,
         trainer_kwargs=dict(
             beta=0.01,
-            grad_norm_clip=0.5
+            grad_norm_clip=1
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -200,9 +204,10 @@ if __name__ == "__main__":
     search_space = {
         'n_layers': [1],
         'algorithm_args.trajs_per_index': [3],
-        'trainer_kwargs.sample': [True, False],
+        'lr': [5e-4, 1e-4],
+        'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False, True],
-        'algorithm_args.calibration_indices': [[0, 2, 4], [0, 2], [2, 4], [0, 4]],
+        'algorithm_args.calibration_indices': [[0, 2], [2, 4], [0, 4], [0, 2, 4]],
         'seedid': [2000, 2001, 2002],
         'freeze_decoder': [True],
         'trainer_kwargs.use_supervised': ['calibrate_kl'],

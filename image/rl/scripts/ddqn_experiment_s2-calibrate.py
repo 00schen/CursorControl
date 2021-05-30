@@ -114,12 +114,16 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         **variant['trainer_kwargs']
     )
-    calibration_buffer = ModdedReplayBuffer(
-        variant['replay_buffer_size'],
-        env,
-        sample_base=0,
-        latent_size=variant['latent_size']
-    )
+
+    if variant['keep_calibration_data']:
+        calibration_buffer = replay_buffer
+    else:
+        calibration_buffer = ModdedReplayBuffer(
+            variant['replay_buffer_size'],
+            env,
+            sample_base=0,
+            latent_size=variant['latent_size']
+        )
 
     alg_class = TorchCalibrationRLAlgorithmAWR if 'AWR' in variant['trainer_kwargs']['use_supervised'] else \
         TorchCalibrationRLAlgorithm
@@ -155,15 +159,15 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_5switch_dqn.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_3switch_dqn.pkl',
         latent_size=3,
         layer_size=64,
-        lr=5e-4,
         replay_buffer_size=int(1e4 * path_length),
+        keep_calibration_data=True,
         trainer_kwargs=dict(
             temp=10,
             beta=0.01,
-            grad_norm_clip=0.5
+            grad_norm_clip=1
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -174,7 +178,7 @@ if __name__ == "__main__":
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             num_trains_per_train_loop=1,
-            pretrain_steps=500,
+            pretrain_steps=1000,
             max_failures=5,
         ),
 
@@ -182,7 +186,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             terminate_on_failure=True,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=3, target_indices=[0, 1, 2]),
 
             action_type='disc_traj',
             smooth_alpha=1,
@@ -205,9 +209,10 @@ if __name__ == "__main__":
     search_space = {
         'n_layers': [1],
         'algorithm_args.trajs_per_index': [3],
-        'trainer_kwargs.sample': [True, False],
+        'lr': [5e-4, 1e-4],
+        'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False, True],
-        'algorithm_args.calibration_indices': [[0, 2, 4], [0, 2], [2, 4], [0, 4]],
+        'algorithm_args.calibration_indices': [[0, 1], [1, 2], [0, 2], [0, 1, 2]],
         'seedid': [2000, 2001, 2002],
         'layer_norm': [True],
         'freeze_decoder': [True],
