@@ -204,7 +204,7 @@ if __name__ == "__main__":
     search_space = {
         'n_layers': [1],
         'algorithm_args.trajs_per_index': [3],
-        'lr': [5e-4, 1e-4],
+        'lr': [5e-4],
         'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False, True],
         'algorithm_args.calibration_indices': [[0, 2], [2, 4], [0, 4], [0, 2, 4]],
