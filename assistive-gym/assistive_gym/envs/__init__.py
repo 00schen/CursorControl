@@ -10,7 +10,8 @@ from assistive_gym.envs.scratch_itch_direct import ScratchItchJacoDirectEnv
 from assistive_gym.envs.feeding_direct import FeedingJacoDirectEnv
 from assistive_gym.envs.laptop import *
 from assistive_gym.envs.light_switch import *
-from assistive_gym.envs.bottle import *
+# from assistive_gym.envs.bottle import *
+from assistive_gym.envs.bottle1 import *
 from assistive_gym.envs.kitchen import *
 from assistive_gym.envs.reach import *
 from assistive_gym.envs.reference_arm import JacoReference

@@ -161,12 +161,12 @@ if __name__ == "__main__":
         
         demo_paths=[
             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_debug1.npy"),
-        ], # no latent
+        ],
 
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],

@@ -54,7 +54,7 @@ def collect_demonstrations(variant):
 					success_count += path['env_infos'][-1]['task_success']
 					success_found = True
 			if success_found:
-				target_index += 1
+				target_index += 3
 			print("total paths collected: ", len(paths), "successes: ", success_count)
 	return paths
 
@@ -96,9 +96,9 @@ if __name__ == "__main__":
 
 		on_policy=True,
 		p=.9,
-		num_episodes=5000,
+		num_episodes=500,
 		path_length=path_length,
-		save_name_suffix="debug"
+		save_name_suffix="debug1"
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise

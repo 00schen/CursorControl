@@ -7,25 +7,18 @@ from .base_oracles import UserModelOracle
 class BottleOracle(UserModelOracle):
 	def _query(self,obs,info):
 		target = obs['goal'][:3]
-		# target1 = obs['goal'][3:]
-		target1 = obs['goal'][:3]
 		tool_pos = obs['raw_obs'][:3]
-		target1_reached = obs['raw_obs'][7]
-		checkpoint_poses = np.array([-.2,-1.1,0]) + np.array([0,.1,1.1]) + np.array([0,.3, 0])
+		door_pos = obs['raw_obs'][7:10]
+		shelf_pos = info['shelf_pos']
+		final_door_pos = (np.array([-.15,.13,0]) if info['target_index']//2 else np.array([.15,.13,0])) + shelf_pos
+		door_offset = np.array([.05,.05,0]) if info['target_index']%2 else np.array([-.02,.05,0])
+		door_open = norm(door_pos-final_door_pos) < .05
 
-		if not target1_reached:
-			if norm(tool_pos-target1) > .15:
-				target_pos = target1 + np.array([0,.15,0])
-			else:
-				target_pos = target1
-			self.first_target = target_pos
-		elif not self.checkpoint:
-			target_pos = checkpoint_poses
-			if norm(tool_pos-checkpoint_poses) < .05:
-				self.checkpoint = True
+		if not door_open:
+			target_pos = door_pos + door_offset
 		else:
-			if norm(tool_pos-target) > .15:
-				target_pos = target + np.array([0,.15,0])
+			if norm(tool_pos-target) > .2:
+				target_pos = target + np.array([0,.2,0])
 			else:
 				target_pos = target
 
@@ -36,4 +29,4 @@ class BottleOracle(UserModelOracle):
 		# info['distance_to_target'] = norm(info['tool_pos']-target_pos)
 		return criterion, target_pos
 	def reset(self):
-		self.checkpoint = False
+		pass

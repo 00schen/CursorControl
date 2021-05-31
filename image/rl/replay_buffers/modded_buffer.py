@@ -27,10 +27,10 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 		self._obs_dict = {}
 		self._next_obs_dict = {}
 		self._obs_dict_keys = set(env.feature_sizes.keys()) | set(['goal'])
-		self._obs_dict_keys.add('latents')
+		# self._obs_dict_keys.add('latents')
 		iter_dict = {'goal': env.goal_size}
 		iter_dict.update(env.feature_sizes)
-		iter_dict['latents'] = latent_size
+		# iter_dict['latents'] = latent_size
 		for key, size in iter_dict.items():
 			self._obs_dict[key] = np.zeros((max_replay_buffer_size, size))
 			self._next_obs_dict[key] = np.zeros((max_replay_buffer_size, size))

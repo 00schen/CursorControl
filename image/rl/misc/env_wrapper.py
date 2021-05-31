@@ -45,11 +45,7 @@ def default_overhead(config):
 			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs,info), self.adapts, (obs))
 
 		def step(self, action):
-			try:
-				tran = super().step(action)
-			except:
-				# breakpoint()
-				pass
+			tran = super().step(action)
 			tran = self.adapt_step(*tran)
 			return tran
 
@@ -163,7 +159,8 @@ def action_factory(base):
 		def step(self, action):
 			action, ainfo = self.translate(action)
 			obs, r, done, info = super().step(action)
-			info.update(ainfo)
+			info = {**info,**ainfo}
+			# breakpoint()
 			return obs, r, done, info
 
 		def reset(self):
@@ -289,7 +286,8 @@ class goal:
 		self.env_name = master_env.env_name
 		self.master_env = master_env
 		self.goal_feat_func = dict(
-			Bottle=lambda info: [info['target_pos'],info['target1_pos']],
+			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
+			Bottle=lambda info: [info['target_pos'],],
 			OneSwitch=lambda info: [info['switch_pos'][info['target_index']],],
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
@@ -323,8 +321,8 @@ class reward:
 		self.range = (config['reward_min'], config['reward_max'])
 		self.master_env = master_env
 		self.reward_type = config['reward_type']
-		if self.master_env.env_name == 'Bottle' and self.reward_type == 'sparse':
-			self.reward_type = 'part_sparse'
+		# if self.master_env.env_name == 'Bottle' and self.reward_type == 'sparse':
+		# 	self.reward_type = 'part_sparse'
 		self.reward_temp = config['reward_temp']
 		self.reward_offset = config['reward_offset']
 
@@ -337,6 +335,11 @@ class reward:
 				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/2
 			if info['task_success']:
 				r = 0
+		elif self.reward_type == 'dist':
+			r = 0
+			if not info['task_success']:
+				dist = np.linalg.norm(info['tool_pos'] - info['target_pos'])
+				r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset)) - 1
 		elif self.reward_type == 'custom_switch':
 			r = 0
 			if not info['task_success']:

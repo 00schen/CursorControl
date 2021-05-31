@@ -6,6 +6,7 @@ from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 from rl.policies import EncDecSACPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
+from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
@@ -26,7 +27,8 @@ def experiment(variant):
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    obs_dim = env.observation_space.low.size + variant['latent_size']
+    feat_dim = env.observation_space.low.size
+    obs_dim = env.observation_space.low.size + sum(env.feature_sizes.values())
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -52,17 +54,17 @@ def experiment(variant):
             hidden_sizes=[M, M],
         )
         policy = ConcatTanhGaussianPolicy(
-            obs_dim=obs_dim,
+            obs_dim=feat_dim + variant['latent_size'],
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=env.observation_space.low.size + sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
                   ).to(ptu.device)
     else:
-        file_name = os.path.join('image/util_models', variant['pretrain_path'])
+        file_name = os.path.join('util_models', variant['pretrain_path'])
         loaded = th.load(file_name)
         qf1 = loaded['trainer/qf1']
         qf2 = loaded['trainer/qf2']
@@ -75,7 +77,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=False,
+        incl_state=True,
         sample=False,
         deterministic=False
     )
@@ -84,7 +86,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=False,
+        incl_state=True,
         sample=False,
         deterministic=True
     )
@@ -126,6 +128,12 @@ def experiment(variant):
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
+    path_loader = SimplePathLoader(
+        demo_path=variant['demo_paths'],
+        demo_path_proportion=variant['demo_path_proportions'],
+        replay_buffer=replay_buffer,
+    )
+    path_loader.load_demos()
 
     if variant.get('render', False):
         env.render('human')
@@ -145,14 +153,14 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_dense_encoder_5_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
-            num_epochs=1000,
+            num_epochs=int(1e6),
             num_eval_steps_per_epoch=0,
             eval_paths=False,
-            num_trains_per_train_loop=1000,
+            # num_trains_per_train_loop=1000,
             num_expl_steps_per_train_loop=1000,
             min_num_steps_before_training=1000,
             max_path_length=path_length,
@@ -170,11 +178,14 @@ if __name__ == "__main__":
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
+        demo_paths=[
+            os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_500_debug1.npy"),
+        ], # no latent
         env_config=dict(
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
-            action_type='trajectory',
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, ),
+            action_type='joint',
             smooth_alpha=1,
             factories=[],
             adapts=['goal', 'reward'],
@@ -182,17 +193,21 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='custom_switch',
+            reward_type='sparse',
             reward_temp=1,
             reward_offset=-0.1
         )
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
-        'trainer_kwargs.beta': [.01],
+        'from_pretrain': [False],
+        'demo_path_proportions': [[500], ],
+        'trainer_kwargs.beta': [.01,.1],
+        # 'trainer_kwargs.beta': [.01,],
+        'algorithm_args.num_trains_per_train_loop': [100,30],
+        # 'algorithm_args.num_trains_per_train_loop': [1000,],
         'buffer_type': [ModdedReplayBuffer],
-        'replay_buffer_size': [200000],
+        'replay_buffer_size': [int(2e7)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

@@ -31,7 +31,8 @@ def run_exp(experiment,variants,args):
 				run_id = ray.get(iterator.next.remote())
 				save_path = os.path.join(args.main_dir,'logs')
 				reset_execution_environment()
-				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,exp_id=run_id,snapshot_mode='gap_and_last',snapshot_gap=10)
+				setup_logger(exp_prefix=args.exp_name,variant=variant,base_log_dir=save_path,
+							exp_id=run_id,snapshot_mode='gap_and_last',snapshot_gap=50)
 				experiment(variant)
 		runners = [Runner.remote() for i in range(args.gpus*args.per_gpu if args.gpus > 0 else args.per_gpu)]
 		runner_pool = ActorPool(runners)

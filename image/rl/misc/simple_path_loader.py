@@ -6,25 +6,25 @@ class SimplePathLoader:
         self.demo_path = demo_path
         self.demo_path_proportion = demo_path_proportion
         self.replay_buffer = replay_buffer
-        self.n_trans = []
-        self.n_noop = []
+        # self.n_trans = []
+        # self.n_noop = []
     
     def load_demos(self):
         if type(self.demo_path) is not list:
             self.demo_path = [self.demo_path]
         for demo_path,proportion in zip(self.demo_path,self.demo_path_proportion):
-            trans = 0
-            noop = 0
+            # trans = 0
+            # noop = 0
             data = load_local_or_remote_file(demo_path)
             print("using", len(data), "paths for training")
             for i, path in enumerate(data[:proportion]):
                 infos = path['env_infos']
-                trans += len(infos)
-                noop += sum([x['noop'] for x in infos])
+                # trans += len(infos)
+                # noop += sum([x['noop'] for x in infos])
                 self.load_path(path, self.replay_buffer)
-            self.n_trans.append(trans)
-            self.n_noop.append(noop)
-        noop_rates = [y / x for x, y in zip(self.n_trans, self.n_noop) if x != 0]
+        #     self.n_trans.append(trans)
+        #     self.n_noop.append(noop)
+        # noop_rates = [y / x for x, y in zip(self.n_trans, self.n_noop) if x != 0]
 
     def load_path(self, path, replay_buffer, obs_dict=None):
         tran_iter = zip(list(path['observations'][1:])+[path['next_observations'][-1]],
@@ -42,7 +42,11 @@ class SimplePathLoader:
 
         for next_obs,action,r,done,info,ainfo in tran_iter:
             info.update(ainfo)
-            action = info.get(env.action_type,action)
+            action = ainfo.get(env.action_type,action)
+            try:
+                action = info[env.action_type]
+            except:
+                breakpoint()
             next_obs,r,done,info = env.adapt_step(next_obs,r,done,info)
 
             processed_trans.append((obs,next_obs,action,r,done,info))
