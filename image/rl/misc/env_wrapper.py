@@ -36,6 +36,7 @@ def default_overhead(config):
             adapt_map = {
                 'oracle': oracle,
                 'static_gaze': static_gaze,
+                'real_gaze': real_gaze,
                 'goal': goal,
                 'reward': reward,
             }
