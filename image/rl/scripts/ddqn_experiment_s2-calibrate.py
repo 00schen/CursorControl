@@ -1,7 +1,6 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
-from rl.misc.calibration_rl_algorithm_awr import BatchRLAlgorithm as TorchCalibrationRLAlgorithmAWR
 
 from rl.policies import EncDecPolicy, CalibrationPolicy, KeyboardPolicy
 from rl.path_collectors import FullPathCollector
@@ -20,6 +19,9 @@ from copy import deepcopy
 
 def experiment(variant):
     import torch as th
+
+    gaze_type = 'real_gaze' if variant['real_user'] else ['static_gaze']
+    variant['env_config']['adapts'].insert(1, gaze_type)
 
     expl_config = deepcopy(variant['env_config'])
     if 'calibrate' in variant['trainer_kwargs']['use_supervised']:
@@ -93,11 +95,13 @@ def experiment(variant):
         env,
         expl_policy,
         save_env_in_snapshot=False,
+        real_user=variant['real_user']
     )
     calibration_path_collector = FullPathCollector(
         env,
         calibration_policy,
         save_env_in_snapshot=False,
+        real_user=variant['real_user']
     )
     replay_buffer = ModdedReplayBuffer(
         variant['replay_buffer_size'],
@@ -125,10 +129,11 @@ def experiment(variant):
             latent_size=variant['latent_size']
         )
 
-    alg_class = TorchCalibrationRLAlgorithmAWR if 'AWR' in variant['trainer_kwargs']['use_supervised'] else \
-        TorchCalibrationRLAlgorithm
-    alg_class = TorchCalibrationRLAlgorithm
-    algorithm = alg_class(
+    # no eval paths with real user
+    if variant['real_user']:
+        variant['algorithm_args']['eval_paths'] = False
+
+    algorithm = TorchCalibrationRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
@@ -159,6 +164,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
+        real_user=True,
         pretrain_path=f'{args.env_name}_params_s1_5switch_dqn.pkl',
         latent_size=3,
         layer_size=64,
@@ -192,7 +198,7 @@ if __name__ == "__main__":
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal', 'static_gaze', 'reward'],
+            adapts=['goal', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,

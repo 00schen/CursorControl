@@ -3,7 +3,6 @@ import abc
 import gtimer as gt
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.data_management.replay_buffer import ReplayBuffer
-import numpy as np
 
 
 class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
@@ -43,16 +42,13 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def _train(self):
         # For some reason, pybullet crashes for me when pre-train path collect isn't used.
         # So a token sample is taken
-        self.expl_env.new_goal()
-        self.expl_data_collector.collect_new_paths(
-            self.max_path_length,
-            10,
-            discard_incomplete_paths=False,
-        )
-        self.expl_data_collector.end_epoch(-1)
-
-        self.expl_env.per_step = True
-        self.eval_env.per_step = True
+        # self.expl_env.new_goal()
+        # self.expl_data_collector.collect_new_paths(
+        #     self.max_path_length,
+        #     10,
+        #     discard_incomplete_paths=False,
+        # )
+        # self.expl_data_collector.end_epoch(-1)
 
         # calibrate
         self.expl_env.base_env.calibrate_mode(self.calibrate_split)

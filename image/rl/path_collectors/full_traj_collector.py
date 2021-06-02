@@ -1,31 +1,61 @@
 from rlkit.samplers.data_collector import MdpPathCollector
-import numpy as np
+import pybullet as p
+from rlkit.samplers.rollout_functions import rollout
+
+
+def _wait_for_key(env, agent, o, key=p.B3G_SPACE):
+    while True:
+        keys = p.getKeyboardEvents()
+        if key in keys and keys[key] & p.KEY_WAS_TRIGGERED:
+            break
+
 
 class FullPathCollector(MdpPathCollector):
-	def collect_new_paths(
-		self,
-		max_path_length,
-		num_steps,
-		discard_incomplete_paths=False,
-	):
-		paths = []
-		num_steps_collected = 0
-		while num_steps_collected < num_steps:
-			path = self._rollout_fn(
-				self._env,
-				self._policy,
-				max_path_length=max_path_length,
-				render=self._render,
-				render_kwargs=self._render_kwargs,
-			)
-			path_len = len(path['actions'])
-			num_steps_collected += path_len
-			# path['terminals'] = np.logical_or(path['rewards'] < 0, path['terminals'])
-			paths.append(path)
-		self._num_paths_total += len(paths)
-		self._num_steps_total += num_steps_collected
-		self._epoch_paths.extend(paths)
-		return paths
-	def get_snapshot(self):
-		return dict()
-		
+    def __init__(
+            self,
+            env,
+            policy,
+            max_num_epoch_paths_saved=None,
+            render=False,
+            render_kwargs=None,
+            rollout_fn=rollout,
+            save_env_in_snapshot=True,
+            real_user=False
+    ):
+        super().__init__(env,
+                         policy,
+                         max_num_epoch_paths_saved,
+                         render, render_kwargs,
+                         rollout_fn,
+                         save_env_in_snapshot)
+
+        self.reset_callback = lambda e, agent, o: _wait_for_key if real_user else None
+
+    def collect_new_paths(
+            self,
+            max_path_length,
+            num_steps,
+            discard_incomplete_paths=False,
+    ):
+        paths = []
+        num_steps_collected = 0
+        while num_steps_collected < num_steps:
+            path = self._rollout_fn(
+                self._env,
+                self._policy,
+                max_path_length=max_path_length,
+                render=self._render,
+                render_kwargs=self._render_kwargs,
+                reset_callback=self.reset_callback
+            )
+            path_len = len(path['actions'])
+            num_steps_collected += path_len
+            # path['terminals'] = np.logical_or(path['rewards'] < 0, path['terminals'])
+            paths.append(path)
+        self._num_paths_total += len(paths)
+        self._num_steps_total += num_steps_collected
+        self._epoch_paths.extend(paths)
+        return paths
+
+    def get_snapshot(self):
+        return dict()
