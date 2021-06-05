@@ -1,14 +1,15 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import ConcatMlp, VAE
+from rlkit.torch.networks import ConcatMlp, VAE, ConcatMlpPolicy
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
-from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 
 from rl.policies import EncDecQfPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.trainers import EncDecSACTrainer
+from rl.trainers import EncDecTD3Trainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rlkit.exploration_strategies.base import PolicyWrappedWithExplorationStrategy
+from rlkit.exploration_strategies.gaussian_strategy import GaussianStrategy
 
 import os
 from pathlib import Path
@@ -32,33 +33,39 @@ def experiment(variant):
                                                       getattr(env.base_env, 'goal_set_shape', (0,)),
                                                       1) + variant['latent_size']
     action_dim = env.action_space.low.size
-    M = variant["layer_size"]
 
     if not variant['from_pretrain']:
         qf1 = ConcatMlp(
             input_size=obs_dim + action_dim,
             output_size=1,
-            hidden_sizes=[M, M],
+            hidden_sizes=variant['hidden_sizes'],
         )
         qf2 = ConcatMlp(
             input_size=obs_dim + action_dim,
             output_size=1,
-            hidden_sizes=[M, M],
+            hidden_sizes=variant['hidden_sizes'],
         )
         target_qf1 = ConcatMlp(
             input_size=obs_dim + action_dim,
             output_size=1,
-            hidden_sizes=[M, M],
+            hidden_sizes=variant['hidden_sizes'],
         )
         target_qf2 = ConcatMlp(
             input_size=obs_dim + action_dim,
             output_size=1,
-            hidden_sizes=[M, M],
+            hidden_sizes=variant['hidden_sizes'],
         )
-        policy = ConcatTanhGaussianPolicy(
-            obs_dim=obs_dim,
-            action_dim=action_dim,
-            hidden_sizes=[M, M],
+        policy = ConcatMlpPolicy(
+            input_size=obs_dim,
+            output_size=action_dim,
+            output_activation=th.tanh,
+            hidden_sizes=variant['hidden_sizes'],
+        )
+        target_policy = ConcatMlpPolicy(
+            input_size=obs_dim,
+            output_size=action_dim,
+            output_activation=th.tanh,
+            hidden_sizes=variant['hidden_sizes'],
         )
         vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
@@ -73,10 +80,21 @@ def experiment(variant):
         target_qf1 = loaded['trainer/target_qf1']
         target_qf2 = loaded['trainer/target_qf2']
         policy = loaded['trainer/policy']
+        target_policy = loaded['trainer/target_policy']
         vae = loaded['trainer/vae']
 
-    expl_policy = EncDecQfPolicy(
+    es = GaussianStrategy(
+        action_space=env.action_space,
+        max_sigma=0.05,
+        min_sigma=0.05,  # Constant sigma
+    )
+    expl_policy = PolicyWrappedWithExplorationStrategy(
+        exploration_strategy=es,
         policy=policy,
+    )
+
+    expl_policy = EncDecQfPolicy(
+        policy=expl_policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
         incl_state=False,
@@ -90,7 +108,7 @@ def experiment(variant):
         vae=vae,
         incl_state=False,
         sample=False,
-        deterministic=True
+        deterministic=False
     )
 
     eval_path_collector = FullPathCollector(
@@ -104,9 +122,9 @@ def experiment(variant):
         expl_policy,
         save_env_in_snapshot=False,
     )
-    trainer = EncDecSACTrainer(
-        env=env,
+    trainer = EncDecTD3Trainer(
         policy=policy,
+        target_policy=target_policy,
         qf1=qf1,
         qf2=qf2,
         target_qf1=target_qf1,
@@ -139,7 +157,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='pretrain_sac')
+    parser.add_argument('--exp_name', default='pretrain_td3')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -149,9 +167,9 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_td3.pkl',
         latent_size=3,
-        layer_size=256,
+        hidden_sizes=[400, 300],
         algorithm_args=dict(
             num_epochs=1000,
             num_eval_steps_per_epoch=0,
@@ -165,13 +183,14 @@ if __name__ == "__main__":
         ),
         trainer_kwargs=dict(
             discount=0.99,
-            soft_target_tau=5e-3,
-            target_update_period=1,
-            policy_lr=3e-4,
-            qf_lr=3e-4,
-            encoder_lr=3e-4,
+            tau=5e-3,
+            policy_and_target_update_period=2,
+            policy_learning_rate=3e-4,
+            qf_learning_rate=3e-4,
+            encoder_learning_rate=3e-4,
+            target_policy_noise=0.05,
+            target_policy_noise_clip=0.1,
             reward_scale=1,
-            use_automatic_entropy_tuning=True,
             sample=True,
         ),
         env_config=dict(

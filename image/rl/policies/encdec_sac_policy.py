@@ -2,23 +2,20 @@ import numpy as np
 import torch as th
 from rlkit.torch.core import PyTorchModule
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks.stochastic.distribution_generator import (
-    DistributionGenerator
-)
 from rlkit.torch.distributions import (
     Delta
 )
-from rlkit.torch.core import elem_or_tuple_to_numpy
-from rlkit.torch.sac.policies.base import TorchStochasticPolicy
+from rlkit.torch.networks.stochastic.distribution_generator import DistributionGenerator
 
 
-class EncDecSACPolicy(PyTorchModule):
+class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vae=None, incl_state=True, sample=False, latent_size=None,
                  deterministic=False):
         super().__init__()
         self.vae = vae
         self.policy = policy
         if deterministic:
+            assert isinstance(policy, DistributionGenerator)
             self.policy = EncDecMakeDeterministic(self.policy)
         self.features_keys = features_keys
         self.incl_state = incl_state
@@ -31,9 +28,13 @@ class EncDecSACPolicy(PyTorchModule):
         features = [obs[k] for k in self.features_keys]
         with th.no_grad():
             raw_obs = obs['raw_obs']
+            goal_set = obs.get('goal_set')
+
             if self.vae != None:
                 if self.incl_state:
                     features.append(raw_obs)
+                    if goal_set is not None:
+                        features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
                 pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
@@ -41,7 +42,12 @@ class EncDecSACPolicy(PyTorchModule):
                 pred_features = np.concatenate(features)
 
             obs['latents'] = pred_features
-            action = self.policy.get_action(raw_obs, pred_features)
+
+            policy_input = [raw_obs, pred_features]
+            if goal_set is not None:
+                policy_input.insert(1, goal_set.ravel())
+
+            action = self.policy.get_action(*policy_input)
             return action
 
     def reset(self):

@@ -12,3 +12,4 @@ from .enc_dec_ddqn_trainer_s2_latent import EncDecDQNTrainer as LatentEncDecCQLT
 from .enc_dec_cql_trainer_s2_recur_latent import EncDecCQLTrainer as LatentRecurEncDecCQLTrainer
 from .enc_dec_sac_trainer_s1 import EncDecSACTrainer
 from .enc_dec_sac_trainer_s2_latent import EncDecSACTrainer as LatentEncDecSACTrainer
+from .enc_dec_td3_trainer_s1 import EncDecTD3Trainer

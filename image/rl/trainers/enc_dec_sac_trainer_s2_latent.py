@@ -13,10 +13,11 @@ class EncDecSACTrainer(TorchTrainer):
                  policy,
                  optimizer,
                  latent_size,
+                 feature_keys,
                  beta=1,
                  sample=True,
                  use_supervised='none',
-                 grad_norm_clip=0.5,
+                 grad_norm_clip=1,
                  ):
         super().__init__()
         self.policy = policy
@@ -26,6 +27,7 @@ class EncDecSACTrainer(TorchTrainer):
         self.beta = beta
         self.sample = sample
         self.latent_size = latent_size
+        self.feature_keys = feature_keys
         self.use_supervised = use_supervised
         self.grad_norm_clip = grad_norm_clip
 
@@ -43,28 +45,43 @@ class EncDecSACTrainer(TorchTrainer):
     def train_from_torch(self, batch):
         episode_success = batch['episode_success']
         obs = batch['observations']
-        inputs = th.cat((batch['curr_gaze_features'], obs), dim=1)
-        gazes = batch['curr_gaze_features']
+        features = th.cat([batch['curr_' + key] for key in self.feature_keys], dim=1)
         latents = batch['curr_latents']
         goals = batch['curr_goal']
-        actions = batch['actions']
+        curr_goal_set = batch.get('curr_goal_set')
+
+        has_goal_set = curr_goal_set is not None
+        batch_size = obs.shape[0]
 
         loss = ptu.zeros(1)
 
-        eps = th.normal(ptu.zeros((inputs.size(0), self.latent_size)), 1) if self.sample else None
-        pred_latent, kl_loss = self.vae.sample(th.cat((gazes, obs), dim=1), eps=eps, return_kl=True)
+        if has_goal_set:
+            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+            encoder_features = [features, obs, curr_goal_set_flat]
+        else:
+            encoder_features = [features, obs]
+
+        eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
+        pred_latent, kl_loss = self.vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
         success_indices = episode_success.flatten() == 1
 
         if self.prev_vae is not None:
-            target_latent = self.prev_vae.sample(th.cat((goals, obs), dim=1), eps=None)
+            target_latent = self.prev_vae.sample(goals, eps=None)
         else:
             target_latent = goals
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
         if 'kl' in self.use_supervised:
-            target_mean = self.policy(obs, target_latent).mean.detach()
-            pred_mean = self.policy(obs, pred_latent).mean
+            if has_goal_set:
+                curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+                target_policy_features = [obs, curr_goal_set_flat, target_latent]
+                pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
+            else:
+                target_policy_features = [obs, target_latent]
+                pred_policy_features = [obs, pred_latent]
+            target_mean = self.policy(*target_policy_features).mean.detach()
+            pred_mean = self.policy(*pred_policy_features).mean
             supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
 
         else:
@@ -83,7 +100,8 @@ class EncDecSACTrainer(TorchTrainer):
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
         total_norm = total_norm ** (1. / 2)
-        th.nn.utils.clip_grad_norm_(self.vae.encoder.parameters(), self.grad_norm_clip)
+        if self.grad_norm_clip is not None:
+            th.nn.utils.clip_grad_norm_(self.vae.encoder.parameters(), self.grad_norm_clip)
         self.optimizer.step()
 
 

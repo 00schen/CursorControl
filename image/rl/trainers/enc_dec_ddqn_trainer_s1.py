@@ -17,6 +17,7 @@ class EncDecDDQNTrainer(DQNTrainer):
                  add_ood_term=-1,
                  beta=1,
                  sample=True,
+                 permute_aug=True,
                  **kwargs):
         super().__init__(qf, target_qf, optimizer, **kwargs)
         self.vae = vae
@@ -36,41 +37,56 @@ class EncDecDDQNTrainer(DQNTrainer):
         # episode_success = batch['episode_success']
         curr_goal = batch['curr_goal']
         next_goal = batch['next_goal']
+        curr_goal_set = batch.get('curr_goal_set')
+        next_goal_set = batch.get('next_goal_set')
 
-        loss = 0
+        has_goal_set = curr_goal_set is not None
 
+        batch_size = obs.shape[0]
         eps = th.normal(ptu.zeros((obs.size(0), self.latent_size)), 1) if self.sample else None
 
         if self.vae is not None:
-            curr_latent, kl_loss = self.vae.sample(th.cat((curr_goal, obs), dim=1), eps=eps, return_kl=True)
-            next_latent = self.vae.sample(th.cat((next_goal, next_obs), dim=1), eps=eps, return_kl=False)
+            curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
+            next_latent = self.vae.sample(curr_goal, eps=eps, return_kl=False)
             next_latent = next_latent.detach()
 
         else:
             curr_latent, next_latent = curr_goal, next_goal
             kl_loss = 0
 
-        loss += self.beta * kl_loss
-
-        curr_obs_features = [obs, curr_latent]
-        next_obs_features = [next_obs, next_latent]
+        loss = self.beta * kl_loss
 
         """
         Q loss
         """
-        best_action_idxs = self.qf(*next_obs_features).max(
+
+        if has_goal_set:
+            next_goal_set_flat = next_goal_set.reshape((batch_size, -1))
+            next_qf_features = [next_obs, next_goal_set_flat, next_latent]
+        else:
+            next_qf_features = [next_obs, next_latent]
+
+        best_action_idxs = self.qf(*next_qf_features).max(
             1, keepdim=True
         )[1]
-        target_q_values = self.target_qf(*next_obs_features).gather(
+        target_q_values = self.target_qf(*next_qf_features).gather(
             1, best_action_idxs
         )
+
         y_target = rewards + (1. - terminals) * self.discount * target_q_values
-        y_target = y_target.detach()
 
         # actions is a one-hot vector
-        curr_qf = self.qf(*curr_obs_features)
+        if has_goal_set:
+            curr_qf_features = [obs, curr_goal_set.reshape((batch_size, -1)), curr_latent]
+        else:
+            curr_qf_features = [obs, curr_latent]
+
+        curr_qf = self.qf(*curr_qf_features)
         y_pred = th.sum(curr_qf * actions, dim=1, keepdim=True)
+
+        y_target = y_target.detach()
         qf_loss = self.qf_criterion(y_pred, y_target)
+
         loss += qf_loss
 
         """

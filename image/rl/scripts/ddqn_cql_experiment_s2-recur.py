@@ -3,7 +3,7 @@ from rlkit.torch.networks import ConcatMlp, MlpPolicy, ConcatMlpPolicy, ConcatRN
 from rlkit.torch.networks import Clamp
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import BoltzmannPolicy, ArgmaxPolicy, EncDecPolicy
+from rl.policies import BoltzmannPolicy, ArgmaxPolicy, EncDecQfPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -99,7 +99,7 @@ def experiment(variant):
 	# 	qf,
 	# 	list(env.feature_sizes.keys())
 	# )
-	eval_policy = EncDecPolicy(
+	eval_policy = EncDecQfPolicy(
 		encoder,
 		qf,
 		list(env.feature_sizes.keys())
@@ -118,7 +118,7 @@ def experiment(variant):
 		# 	qf,
 		# 	list(env.feature_sizes.keys())
 		# )
-		expl_policy = EncDecPolicy(
+		expl_policy = EncDecQfPolicy(
 			encoder,
 			qf,
 			list(env.feature_sizes.keys()),

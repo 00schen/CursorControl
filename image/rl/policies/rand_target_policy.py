@@ -1,11 +1,11 @@
 import numpy as np
 import torch as th
-from .encdec_policy import EncDecPolicy
+from .encdec_policy import EncDecQfPolicy
 import torch.nn.functional as F
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 
-class RandTargetPolicy(EncDecPolicy):
+class RandTargetPolicy(EncDecQfPolicy):
 	def __init__(self, *args, env, prev_encoder=None, sample=False, eps=.1, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.env = env

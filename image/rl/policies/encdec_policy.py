@@ -3,10 +3,9 @@ import torch as th
 from rlkit.torch.core import PyTorchModule
 import torch.nn.functional as F
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.distributions import OneHotCategorical as TorchOneHot
 
 
-class EncDecPolicy(PyTorchModule):
+class EncDecQfPolicy(PyTorchModule):
     def __init__(self, qf, features_keys, vae=None, logit_scale=-1, eps=0, incl_state=True, sample=False,
                  latent_size=None):
         super().__init__()
@@ -22,12 +21,17 @@ class EncDecPolicy(PyTorchModule):
             assert self.latent_size is not None
 
     def get_action(self, obs):
-        features = [obs[k] for k in self.features_keys]
+        features = [obs[k].ravel() for k in self.features_keys]
         with th.no_grad():
             raw_obs = obs['raw_obs']
+            goal_set = obs.get('goal_set')
+
             if self.vae != None:
                 if self.incl_state:
                     features.append(raw_obs)
+                    if goal_set is not None:
+                        features.append(goal_set.ravel())
+
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
 
@@ -37,7 +41,11 @@ class EncDecPolicy(PyTorchModule):
                 pred_features = np.concatenate(features)
                 obs['latents'] = pred_features
 
-            q_values, ainfo = self.qf.get_action(raw_obs, pred_features)
+            qf_input = [raw_obs, pred_features]
+            if goal_set is not None:
+                qf_input.insert(1, goal_set.ravel())
+
+            q_values, ainfo = self.qf.get_action(*qf_input)
             q_values = ptu.tensor(q_values)
             if np.random.rand() > self.eps:
                 action = F.one_hot(q_values.argmax().long(), 6).flatten()

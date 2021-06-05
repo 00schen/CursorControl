@@ -2,7 +2,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationSACPolicy, EncDecSACPolicy
+from rl.policies import CalibrationPolicy, EncDecQfPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import LatentEncDecSACTrainer
@@ -15,13 +15,16 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from torch import optim
 from copy import deepcopy
+from functools import reduce
+import operator
 
 
 def experiment(variant):
     import torch as th
 
-    gaze_type = 'real_gaze' if variant['real_user'] else ['static_gaze']
-    variant['env_config']['adapts'].insert(1, gaze_type)
+    if variant['real_user']:
+        gaze_type = 'real_gaze' if variant['real_user'] else ['static_gaze']
+        variant['env_config']['adapts'].insert(1, gaze_type)
 
     expl_config = deepcopy(variant['env_config'])
     if 'calibrate' in variant['trainer_kwargs']['use_supervised']:
@@ -37,7 +40,12 @@ def experiment(variant):
 
     file_name = os.path.join('image/util_models', variant['pretrain_path'])
     loaded = th.load(file_name)
-    vae = VAE(input_size=sum(env.feature_sizes.values()) + env.observation_space.low.size,
+
+    obs_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                      getattr(env.base_env, 'goal_set_shape', (0,)),
+                                                      1)
+
+    vae = VAE(input_size=sum(env.feature_sizes.values()) + obs_dim,
               latent_size=variant['latent_size'],
               encoder_hidden_sizes=[M] * variant['n_layers'],
               decoder_hidden_sizes=[M] * variant['n_layers']
@@ -57,7 +65,7 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    expl_policy = EncDecSACPolicy(
+    expl_policy = EncDecQfPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -67,7 +75,7 @@ def experiment(variant):
         latent_size=variant['latent_size'],
     )
 
-    eval_policy = EncDecSACPolicy(
+    eval_policy = EncDecQfPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -83,13 +91,13 @@ def experiment(variant):
         save_env_in_snapshot=False
     )
 
-    calibration_policy = CalibrationSACPolicy(
+    calibration_policy = CalibrationPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         env=env,
         vae=vae,
         prev_vae=prev_vae,
-        incl_state=True
+        incl_state=False
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -115,6 +123,7 @@ def experiment(variant):
         policy=policy,
         optimizer=optimizer,
         latent_size=variant['latent_size'],
+        feature_keys=list(env.feature_sizes.keys()),
         **variant['trainer_kwargs']
     )
 
@@ -152,7 +161,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac_5')
+    parser.add_argument('--exp_name', default='calibrate_sac')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -162,15 +171,15 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        real_user=True,
-        pretrain_path=f'{args.env_name}_params_s1_5switch_sac.pkl',
+        real_user=False,
+        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         keep_calibration_data=True,
         trainer_kwargs=dict(
             beta=0.01,
-            grad_norm_clip=1
+            grad_norm_clip=None
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -180,18 +189,19 @@ if __name__ == "__main__":
             num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
-            num_trains_per_train_loop=1,
             pretrain_steps=1000,
             max_failures=5,
+            eval_paths=False
         ),
 
         env_config=dict(
             env_name=args.env_name,
+            goal_noise_std=0.1,
             terminate_on_failure=True,
             step_limit=path_length,
             env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
 
-            action_type='trajectory',
+            action_type='joint',
             smooth_alpha=1,
 
             factories=[],
@@ -214,8 +224,9 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [3],
         'lr': [5e-4],
         'trainer_kwargs.sample': [True],
-        'algorithm_args.calibrate_split': [False, True],
-        'algorithm_args.calibration_indices': [[0, 2], [2, 4], [0, 4], [0, 2, 4]],
+        'algorithm_args.calibrate_split': [False],
+        'algorithm_args.calibration_indices': [[2, 4]],
+        'algorithm_args.num_trains_per_train_loop': [5],
         'seedid': [2000, 2001, 2002],
         'freeze_decoder': [True],
         'trainer_kwargs.use_supervised': ['calibrate_kl'],

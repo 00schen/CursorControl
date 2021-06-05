@@ -9,15 +9,12 @@ class HERReplayBuffer(ModdedReplayBuffer):
             self,
             max_replay_buffer_size,
             env,
-            # env_info_sizes={'episode_success':1, 'target1_reached': 1},
-            env_info_sizes=None,
+            env_info_sizes={'episode_success':1},
             sample_base=5000 * 200,
             k=4,
             reward_fn=lambda state, goal: -int(np.linalg.norm(state - goal) > 0.01),
             terminal_fn=lambda state, goal: np.linalg.norm(state - goal) <= 0.01,
     ):
-        # env_info_sizes.update({'episode_success':1, 'target1_reached': 1})
-        # env_info_sizes.update({'episode_success': 1, })
         super().__init__(
             max_replay_buffer_size=max_replay_buffer_size * (1 + k),
             env=env,
@@ -29,6 +26,7 @@ class HERReplayBuffer(ModdedReplayBuffer):
         self.terminal_fn = terminal_fn
 
     def add_path(self, path):
+        self.modify_path(path)
         for i, (
                 obs,
                 action,

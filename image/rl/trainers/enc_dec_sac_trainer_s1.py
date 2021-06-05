@@ -128,11 +128,17 @@ class EncDecSACTrainer(SACTrainer):
         next_obs = batch['next_observations']
         curr_goal = batch['curr_goal']
         next_goal = batch['next_goal']
-        eps = torch.normal(ptu.zeros((obs.size(0), self.latent_size)), 1) if self.sample else None
+        curr_goal_set = batch.get('curr_goal_set')
+        next_goal_set = batch.get('next_goal_set')
+
+        batch_size = obs.shape[0]
+        has_goal_set = curr_goal_set is not None
+
+        eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
 
         if self.vae is not None:
-            curr_latent, kl_loss = self.vae.sample(torch.cat((curr_goal, obs), dim=1), eps=eps, return_kl=True)
-            next_latent = self.vae.sample(torch.cat((next_goal, next_obs), dim=1), eps=eps, return_kl=False)
+            curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
+            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
 
             next_latent = next_latent.detach()
 
@@ -143,9 +149,18 @@ class EncDecSACTrainer(SACTrainer):
         """
         Policy and Alpha Loss
         """
-        dist = self.policy(obs, curr_latent)
+
+        if has_goal_set:
+            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+            curr_policy_features = [obs, curr_goal_set_flat, curr_latent]
+        else:
+            curr_policy_features = [obs, curr_latent]
+
+        dist = self.policy(*curr_policy_features)
+
         new_obs_actions, log_pi = dist.rsample_and_logprob()
         log_pi = log_pi.unsqueeze(-1)
+
         if self.use_automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
             alpha = self.log_alpha.exp()
@@ -153,26 +168,49 @@ class EncDecSACTrainer(SACTrainer):
             alpha_loss = 0
             alpha = 1
 
+        if has_goal_set:
+            new_qf_features = [obs, curr_goal_set_flat, curr_goal, new_obs_actions]
+        else:
+            new_qf_features = [obs, curr_goal, new_obs_actions]
+
         q_new_actions = torch.min(
-            self.qf1(obs, curr_goal, new_obs_actions),
-            self.qf2(obs, curr_goal, new_obs_actions),
+            self.qf1(*new_qf_features),
+            self.qf2(*new_qf_features),
         )
+
         policy_loss = (alpha * log_pi - q_new_actions).mean()
 
         """
         QF Loss
         """
-        q1_pred = self.qf1(obs, curr_goal, actions)
-        q2_pred = self.qf2(obs, curr_goal, actions)
-        next_dist = self.policy(next_obs, next_latent)
+
+        if has_goal_set:
+            curr_qf_features = [obs, curr_goal_set_flat, curr_goal, actions]
+            next_goal_set_flat = next_goal_set.reshape((batch_size, -1))
+            next_policy_features = [next_obs, next_goal_set_flat, next_latent]
+        else:
+            curr_qf_features = [obs, curr_goal, actions]
+            next_policy_features = [next_obs, next_latent]
+
+        q1_pred = self.qf1(*curr_qf_features)
+        q2_pred = self.qf2(*curr_qf_features)
+        next_dist = self.policy(*next_policy_features)
+
         new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
         new_log_pi = new_log_pi.unsqueeze(-1)
+
+        if has_goal_set:
+            next_qf_features = [next_obs, next_goal_set_flat, next_goal, new_next_actions]
+        else:
+            next_qf_features = [next_obs, next_goal, new_next_actions]
+
         target_q_values = torch.min(
-            self.target_qf1(next_obs, next_goal, new_next_actions),
-            self.target_qf2(next_obs, next_goal, new_next_actions),
+            self.target_qf1(*next_qf_features),
+            self.target_qf2(*next_qf_features),
         ) - alpha * new_log_pi
 
         q_target = self.reward_scale * rewards + (1. - terminals) * self.discount * target_q_values
+
         qf1_loss = self.qf_criterion(q1_pred, q_target.detach())
         qf2_loss = self.qf_criterion(q2_pred, q_target.detach())
 

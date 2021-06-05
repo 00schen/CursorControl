@@ -268,7 +268,9 @@ class oracle:
 class static_gaze:
     def __init__(self, master_env, config):
         self.gaze_dim = config['gaze_dim']
-        del master_env.feature_sizes['goal']
+        for feature in ['goal', 'noisy_goal']:
+            if feature in master_env.feature_sizes.keys():
+                del master_env.feature_sizes[feature]
         master_env.feature_sizes['gaze_features'] = self.gaze_dim
         self.env_name = master_env.env_name
         self.master_env = master_env
@@ -297,7 +299,9 @@ class static_gaze:
 class real_gaze:
     def __init__(self, master_env, config):
         self.gaze_dim = config['gaze_dim']
-        del master_env.feature_sizes['goal']
+        for feature in ['goal', 'noisy_goal']:
+            if feature in master_env.feature_sizes.keys():
+                del master_env.feature_sizes[feature]
         master_env.feature_sizes['gaze_features'] = self.gaze_dim
         self.env_name = master_env.env_name
         self.master_env = master_env
@@ -360,25 +364,38 @@ class goal:
         )[self.env_name]
         self.hindsight_feat = dict(
             Bottle={'tool_pos': 3},
-            OneSwitch={'tool_pos': 3, },
+            OneSwitch={'tool_pos': 3},
             AnySwitch={'tool_pos': 3}
         )[self.env_name]
         master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
+        self.goal_noise_std = config['goal_noise_std']
+        if self.goal_noise_std:
+            master_env.feature_sizes['noisy_goal'] = master_env.feature_sizes['goal']
+            del master_env.feature_sizes['goal']
 
     def _step(self, obs, r, done, info):
         if self.goal is None:
             self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
-        # goal_feat = np.concatenate((goal_feat,np.zeros(self.high_dim_size-goal_feat.size)))
         hindsight_feat = np.concatenate(
             [np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
-        # hindsight_feat = np.concatenate((hindsight_feat,np.zeros(self.high_dim_size-hindsight_feat.size)))
+
+        # obs['goal'] = np.concatenate((self.goal.copy(), [1]))
+        # if self.goal_noise_std:
+        #     obs['noisy_goal'] = obs['goal'].copy()
+        #     obs['noisy_goal'][:-1] += np.random.normal(scale=self.goal_noise_std, size=obs['goal'][:-1].shape)
+        # obs['hindsight_goal'] = np.concatenate((hindsight_feat, [0]))
+
         obs['goal'] = self.goal.copy()
+        if self.goal_noise_std:
+            obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
         obs['hindsight_goal'] = hindsight_feat
         return obs, r, done, info
 
     def _reset(self, obs, info=None):
         self.goal = None
         obs['goal'] = np.zeros(self.goal_size)
+        if self.goal_noise_std:
+            obs['noisy_goal'] = np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
         obs['hindsight_goal'] = np.zeros(self.goal_size)
         return obs
 

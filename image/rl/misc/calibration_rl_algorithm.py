@@ -68,7 +68,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
         self.expl_env.base_env.calibrate_mode(False)
         self.eval_env.base_env.calibrate_mode(False)
-
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),
                 save_itrs=True,

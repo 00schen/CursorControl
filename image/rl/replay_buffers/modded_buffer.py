@@ -28,12 +28,21 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 		self._next_obs_dict = {}
 		self._obs_dict_keys = set(env.feature_sizes.keys()) | set(['goal'])
 		self._obs_dict_keys.add('latents')
+
 		iter_dict = {'goal': env.goal_size}
 		iter_dict.update(env.feature_sizes)
 		iter_dict['latents'] = latent_size
+
 		for key, size in iter_dict.items():
 			self._obs_dict[key] = np.zeros((max_replay_buffer_size, size))
 			self._next_obs_dict[key] = np.zeros((max_replay_buffer_size, size))
+
+		# for envs with goal sets separate from observation
+		if hasattr(env.base_env, 'goal_set_shape'):
+			self._obs_dict_keys.add('goal_set')
+			self._obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
+			self._next_obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
+
 		self.sample_base=sample_base
 
 	def _advance(self):
@@ -49,10 +58,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 	def add_sample(self, observation, action, reward, next_observation,
 				   terminal, env_info, **kwargs):
 		for key in self._obs_dict_keys:
-			try:
-				self._obs_dict[key][self._top] = observation[key]
-			except:
-				breakpoint()
+			self._obs_dict[key][self._top] = observation[key]
 			if key in next_observation.keys():
 				self._next_obs_dict[key][self._top] = next_observation[key]
 			else:
