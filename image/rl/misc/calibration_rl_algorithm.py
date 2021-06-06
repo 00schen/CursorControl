@@ -51,7 +51,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         # self.expl_data_collector.end_epoch(-1)
 
         # calibrate
-        self.expl_env.base_env.calibrate_mode(self.calibrate_split)
+        self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
 
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
@@ -66,8 +66,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
 
-        self.expl_env.base_env.calibrate_mode(False)
-        self.eval_env.base_env.calibrate_mode(False)
+        self.expl_env.base_env.calibrate_mode(False, False)
+        self.eval_env.base_env.calibrate_mode(False, False)
         for epoch in gt.timed_for(
                 range(self._start_epoch, self.num_epochs),
                 save_itrs=True,
