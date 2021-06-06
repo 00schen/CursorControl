@@ -199,7 +199,8 @@ if __name__ == "__main__":
             goal_noise_std=0.1,
             terminate_on_failure=True,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, target_indices=[0, 2, 4]),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=True,
+                            target_indices=[0, 2, 4]),
 
             action_type='joint',
             smooth_alpha=1,

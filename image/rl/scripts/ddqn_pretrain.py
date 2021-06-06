@@ -145,7 +145,7 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=1000,
+            num_epochs=1500,
             eval_paths=False,
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,
@@ -158,7 +158,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
+        'from_pretrain': [False],
         'layer_norm': [True],
         'expl_kwargs.logit_scale': [10],
         'expl_kwargs.eps': [0.1],
