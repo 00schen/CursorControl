@@ -110,7 +110,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                         self.replay_buffer.add_paths(successful_paths + failed_paths)
                         gt.stamp('data storing', unique=False)
 
-                if self.replay_buffer.num_steps_can_sample():
-                    self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
+                self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
 
             self._end_epoch(epoch)

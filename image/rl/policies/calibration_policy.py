@@ -6,7 +6,7 @@ import rlkit.torch.pytorch_util as ptu
 import numpy as np
 
 
-class CalibrationDQNPolicy(EncDecPolicy):
+class CalibrationDQNPolicy(EncDecQfPolicy):
     def __init__(self, *args, env, prev_vae=None, sample=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = env

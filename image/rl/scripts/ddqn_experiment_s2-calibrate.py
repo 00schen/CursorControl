@@ -38,7 +38,7 @@ def experiment(variant):
     M = variant["layer_size"]
 
     file_name = os.path.join('image/util_models', variant['pretrain_path'])
-    loaded = th.load(file_name)
+    loaded = th.load(file_name, map_location=ptu.device)
 
     obs_dim = env.observation_space.low.size + reduce(operator.mul,
                                                       getattr(env.base_env, 'goal_set_shape', (0,)),
@@ -173,7 +173,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        real_user=False,
+        real_user=True,
         pretrain_path=f'{args.env_name}_params_s1_dqn.pkl',
         latent_size=3,
         layer_size=64,

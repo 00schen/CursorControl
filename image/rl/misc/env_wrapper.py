@@ -305,7 +305,7 @@ class real_gaze:
         master_env.feature_sizes['gaze_features'] = self.gaze_dim
         self.env_name = master_env.env_name
         self.master_env = master_env
-        self.webcam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.webcam = cv2.VideoCapture(0)
         self.face_processor = FaceProcessor(
             os.path.join(main_dir, 'gaze_capture', 'model_files', 'shape_predictor_68_face_landmarks.dat'))
 

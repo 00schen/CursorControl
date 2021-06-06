@@ -2,7 +2,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationPolicy, EncDecQfPolicy
+from rl.policies import CalibrationPolicy, EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import LatentEncDecSACTrainer
@@ -39,7 +39,7 @@ def experiment(variant):
     M = variant["layer_size"]
 
     file_name = os.path.join('image/util_models', variant['pretrain_path'])
-    loaded = th.load(file_name)
+    loaded = th.load(file_name, map_location=ptu.device)
 
     obs_dim = env.observation_space.low.size + reduce(operator.mul,
                                                       getattr(env.base_env, 'goal_set_shape', (0,)),
@@ -65,7 +65,7 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    expl_policy = EncDecQfPolicy(
+    expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -75,7 +75,7 @@ def experiment(variant):
         latent_size=variant['latent_size'],
     )
 
-    eval_policy = EncDecQfPolicy(
+    eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -171,7 +171,7 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        real_user=False,
+        real_user=True,
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=64,
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         'lr': [5e-4],
         'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False],
-        'algorithm_args.calibration_indices': [[2, 4]],
+        'algorithm_args.calibration_indices': [[0, 2, 4]],
         'algorithm_args.num_trains_per_train_loop': [5],
         'seedid': [2000, 2001, 2002],
         'freeze_decoder': [True],
