@@ -22,8 +22,23 @@ import operator
 def experiment(variant):
     import torch as th
 
-    # gaze_type = 'real_gaze' if variant['real_user'] else ['static_gaze']
-    # variant['env_config']['adapts'].insert(1, gaze_type)
+    mode_dict = {'default': {'calibrate_split': False,
+                             'calibration_indices': [1, 2, 3],
+                             'num_trains_per_train_loop': 5},
+                 'no_online': {'calibrate_split': False,
+                               'calibration_indices': [1, 2, 3],
+                               'num_trains_per_train_loop': 0},
+                 'shift': {'calibrate_split': True,
+                           'calibration_indices': [1, 2, 3],
+                           'num_trains_per_train_loop': 5},
+                 'no_right': {'calibrate_split': False,
+                              'calibration_indices': [2, 3],
+                              'num_trains_per_train_loop': 5}}[variant['mode']]
+
+    variant['algorithm_args'].update(mode_dict)
+
+    if variant['real_user']:
+        variant['env_config']['adapts'].insert(1, 'real_gaze')
 
     expl_config = deepcopy(variant['env_config'])
     if 'calibrate' in variant['trainer_kwargs']['use_supervised']:
@@ -168,12 +183,15 @@ if __name__ == "__main__":
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
+    parser.add_argument('--mode', default='default', type=str)
+    parser.add_argument('--sim', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     variant = dict(
-        real_user=True,
+        mode=args.mode,
+        real_user=not args.sim,
         pretrain_path=f'{args.env_name}_params_s1_dqn.pkl',
         latent_size=3,
         layer_size=64,
@@ -189,13 +207,12 @@ if __name__ == "__main__":
             max_path_length=path_length,
             num_epochs=100,
             num_eval_steps_per_epoch=1000,
-            num_expl_steps_per_train_loop=1,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             num_trains_per_train_loop=5,
             pretrain_steps=1000,
             max_failures=5,
-            eval_paths=False
+            eval_paths=False,
         ),
 
         env_config=dict(

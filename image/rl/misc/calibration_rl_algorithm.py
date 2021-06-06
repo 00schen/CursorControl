@@ -3,6 +3,9 @@ import abc
 import gtimer as gt
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.data_management.replay_buffer import ReplayBuffer
+import pickle as pkl
+import os
+from rlkit.core import logger
 
 
 class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
@@ -19,7 +22,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         **kwargs,
     ):
         super().__init__(
-            *args,**kwargs
+            num_expl_steps_per_train_loop=1, *args, **kwargs
         )
         self.calibration_data_collector = calibration_data_collector
         if calibration_indices is None:
@@ -30,6 +33,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.pretrain_steps = pretrain_steps
         self.max_failures = max_failures
         self.calibrate_split = calibrate_split
+        self.blocks = []
 
     def _sample_and_train(self, steps, buffer):
         self.training_mode(True)
@@ -52,6 +56,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
         # calibrate
         self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
+        calibration_data = []
 
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
@@ -63,6 +68,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 )
                 self.expl_data_collector.end_epoch(-1)
                 self.calibration_buffer.add_paths(calibration_paths)
+                calibration_data.extend(calibration_paths)
+
+        logger.save_extra_data(calibration_data, 'calibration_data.pkl', mode='pickle')
+
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
 
@@ -95,6 +104,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             discard_incomplete_paths=False,
                         )
                         gt.stamp('exploration sampling', unique=False)
+                        assert len(new_expl_paths) == 1
                         for path in new_expl_paths:
                             if path['env_infos'][-1]['task_success']:
                                 successful_paths.append(path)
@@ -103,6 +113,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                 failed_paths.append(path)
                         if len(failed_paths) >= self.max_failures:
                             break
+
+                    self.blocks.append(failed_paths + successful_paths)
+
+                    logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
 
                     # no actual relabeling right now, since goals for all paths should be same
                     # only add to paths to buffer if successful

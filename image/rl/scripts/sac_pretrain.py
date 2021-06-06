@@ -3,7 +3,7 @@ from rlkit.torch.networks import ConcatMlp, VAE
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 
-from rl.policies import EncDecQfPolicy
+from rl.policies import EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import EncDecSACTrainer
@@ -75,7 +75,7 @@ def experiment(variant):
         policy = loaded['trainer/policy']
         vae = loaded['trainer/vae']
 
-    expl_policy = EncDecQfPolicy(
+    expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -84,7 +84,7 @@ def experiment(variant):
         deterministic=False
     )
 
-    eval_policy = EncDecQfPolicy(
+    eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
