@@ -182,6 +182,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
+    parser.add_argument('--epochs', default=50, type=int)
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -201,7 +202,7 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=100,
+            num_epochs=args.epochs,
             num_eval_steps_per_epoch=1000,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
