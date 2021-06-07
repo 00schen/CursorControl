@@ -4,6 +4,7 @@ import numpy as np
 import pybullet as p
 from numpy.linalg import norm
 from .env import AssistiveEnv
+from gym.utils import seeding
 
 LOW_LIMIT = -1
 HIGH_LIMIT = .2
@@ -32,7 +33,6 @@ class LightSwitchEnv(AssistiveEnv):
             obs_size += 7
         self.observation_space = spaces.Box(-np.inf, np.inf, (obs_size,), dtype=np.float32)
 
-
         self.feature_sizes = {'goal': 3}
         if target_indices is None:
             self.target_indices = list(np.arange(self.num_targets))
@@ -44,6 +44,11 @@ class LightSwitchEnv(AssistiveEnv):
         self.goal_set_shape = (self.num_targets, 4)
         self.wall_color = None
 
+    def seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        self.init_pos_random, _ = seeding.np_random(seed)
+        return [seed]
+
     def step(self, action):
         old_tool_pos = self.tool_pos
 
@@ -52,6 +57,7 @@ class LightSwitchEnv(AssistiveEnv):
         reward_switch = 0
         angle_diffs = []
         self.lever_angles = []
+
         for i, switch in enumerate(self.switches):
             angle_dirs[i], angle_diff = self.move_lever(switch)
 
@@ -85,17 +91,19 @@ class LightSwitchEnv(AssistiveEnv):
                 reward_switch += -abs(HIGH_LIMIT - lever_angle)
 
             if self.target_string[i] == self.current_string[i]:
-                p.changeVisualShape(self.targets1[i], -1, rgbaColor=[0, 1, 1, 1])
-                # if self.target_string[i] == 0:
-                # 	p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
-                # else:
-                # 	p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
                 self.update_targets()
-            else:
-                p.changeVisualShape(self.targets1[i], -1, rgbaColor=[0, 0, 1, 1])
 
         task_success = np.all(np.equal(self.current_string, self.target_string))
         self.task_success = task_success
+
+        if self.task_success:
+            color = [0, 1, 0, 1]
+        elif self.wrong_goal_reached():
+            color = [1, 0, 0, 1]
+        else:
+            color = [0, 0, 1, 1]
+        p.changeVisualShape(self.targets1[self.target_index], -1, rgbaColor=color)
+
         obs = self._get_obs([0])
 
         _, _, _, bad_contact_count = self.get_total_force()
@@ -259,9 +267,9 @@ class LightSwitchEnv(AssistiveEnv):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1.1])
         if self.stochastic:
-            self.init_pos[0] += self.np_random.uniform(-0.5, 0.5)
-            self.init_pos[1] += self.np_random.uniform(-0.1, 0.1)
-            self.init_pos[2] += self.np_random.uniform(-0.1, 0.1)
+            self.init_pos[0] += self.init_pos_random.uniform(-0.5, 0.5)
+            self.init_pos[1] += self.init_pos_random.uniform(-0.1, 0.1)
+            self.init_pos[2] += self.init_pos_random.uniform(-0.1, 0.1)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -299,7 +307,7 @@ class LightSwitchEnv(AssistiveEnv):
 
     def calibrate_mode(self, calibrate, split):
         self.wall_offset = 0.1 if split else 0
-        self.wall_color = [255/255, 187/255, 120/255, 1] if calibrate else None
+        self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
 
     def generate_target(self):
         # Place a switch on a wall
@@ -319,10 +327,6 @@ class LightSwitchEnv(AssistiveEnv):
                                       physicsClientId=self.id)
 
         self.target_string = np.array(self.messages[self.target_index].split(' ')).astype(int)
-        mask = self.np_random.choice([0, 1], len(self.target_string), p=[1 - self.switch_p, self.switch_p])
-        if not np.count_nonzero(mask):
-            mask = np.equal(np.arange(len(self.target_string)), self.np_random.choice(len(self.target_string))).astype(
-                int)
         self.initial_string = np.ones(self.num_targets)
         self.current_string = self.initial_string.copy()
         wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
@@ -351,22 +355,23 @@ class LightSwitchEnv(AssistiveEnv):
                 p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
         sphere_collision = -1
-        target_sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist,
-                                                   rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
-        other_sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist,
-                                                  rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist,
+                                            rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
 
         self.targets = []
         self.targets1 = []
         for i, switch in enumerate(self.switches):
-            sphere_visual = other_sphere_visual if \
-                self.current_string[i] == self.target_string[i] else target_sphere_visual
             self.targets.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
-                                          baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
-                                          useMaximalCoordinates=False, physicsClientId=self.id))
-            self.targets1.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
-                                           baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
-                                           useMaximalCoordinates=False, physicsClientId=self.id))
+                                                  basePosition=[-10, -10, -10], useMaximalCoordinates=False,
+                                                  physicsClientId=self.id))
+            if i == self.target_index:
+                self.targets1.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
+                                                       baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
+                                                       useMaximalCoordinates=False, physicsClientId=self.id))
+            else:
+                self.targets1.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
+                                                       basePosition=[-10, -10, -10],
+                                                       useMaximalCoordinates=False, physicsClientId=self.id))
 
         self.update_targets()
 

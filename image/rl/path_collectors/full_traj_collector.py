@@ -1,6 +1,7 @@
 from rlkit.samplers.data_collector import MdpPathCollector
 import pybullet as p
 from rlkit.samplers.rollout_functions import rollout
+import time
 
 
 def _wait_for_key(env, agent, o, key=p.B3G_SPACE):
@@ -28,7 +29,7 @@ class FullPathCollector(MdpPathCollector):
                          render, render_kwargs,
                          rollout_fn,
                          save_env_in_snapshot)
-
+        self.real_user = real_user
         self.reset_callback = _wait_for_key if real_user else None
 
     def collect_new_paths(
@@ -55,6 +56,8 @@ class FullPathCollector(MdpPathCollector):
         self._num_paths_total += len(paths)
         self._num_steps_total += num_steps_collected
         self._epoch_paths.extend(paths)
+        if self.real_user:
+            time.sleep(1)
         return paths
 
     def get_snapshot(self):
