@@ -3,23 +3,25 @@ import abc
 import gtimer as gt
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.data_management.replay_buffer import ReplayBuffer
-import pickle as pkl
-import os
+import pybullet as p
 from rlkit.core import logger
+import numpy as np
+import time
 
 
 class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def __init__(
-        self,
-        *args,
-        calibration_data_collector,
-        calibration_indices,
-        trajs_per_index,
-        calibration_buffer: ReplayBuffer,
-        pretrain_steps=100,
-        max_failures=10,
-        calibrate_split=True,
-        **kwargs,
+            self,
+            *args,
+            calibration_data_collector,
+            calibration_indices,
+            trajs_per_index,
+            calibration_buffer: ReplayBuffer,
+            pretrain_steps=100,
+            max_failures=10,
+            calibrate_split=True,
+            real_user=True,
+            **kwargs,
     ):
         super().__init__(
             num_expl_steps_per_train_loop=1, *args, **kwargs
@@ -33,7 +35,16 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.pretrain_steps = pretrain_steps
         self.max_failures = max_failures
         self.calibrate_split = calibrate_split
+        self.real_user = real_user
         self.blocks = []
+
+        self.metrics = {'success_episodes': [],
+                        'success_blocks': [],
+                        'block_lengths': []
+                        }
+
+        if self.real_user:
+            self.metrics['correct_rewards'] = []
 
     def _sample_and_train(self, steps, buffer):
         self.training_mode(True)
@@ -105,18 +116,63 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                         )
                         gt.stamp('exploration sampling', unique=False)
                         assert len(new_expl_paths) == 1
-                        for path in new_expl_paths:
-                            if path['env_infos'][-1]['task_success']:
-                                successful_paths.append(path)
-                                success = True
+                        path = new_expl_paths[0]
+                        if self.real_user:
+                            # automate reward if timeout. currently specific only to light switch.
+                            if all(path['env_infos'][-1]['current_string'] == 1):
+                                time.sleep(1)
+                                success = False
+                                self.metrics['correct_rewards'].append(None)
+
                             else:
-                                failed_paths.append(path)
+                                while True:
+                                    keys = p.getKeyboardEvents()
+
+                                    if p.B3G_RETURN in keys and keys[p.B3G_RETURN] & p.KEY_WAS_TRIGGERED:
+                                        success = True
+
+                                        # relabel with wrong goals that were reached if not actual success.
+                                        # currently specific only to light switch
+                                        if not path['env_infos'][-1]['task_success']:
+                                            wrong_reached_index = np.where(path['env_infos'][-1]['current_string']
+                                                                           == 0)[0][0]
+                                            wrong_reached_goal = path['env_infos'][0]['switch_pos'][wrong_reached_index]
+
+                                            for failed_path in failed_paths:
+                                                for i in range(len(failed_path['observations'])):
+                                                    if i > 0:  # due to off by one error where first goal always zeros
+                                                        failed_path['observations'][i][
+                                                            'goal'] = wrong_reached_goal.copy()
+                                                    failed_path['next_observations'][i][
+                                                        'goal'] = wrong_reached_goal.copy()
+
+                                        break
+                                    elif p.B3G_SHIFT in keys and keys[p.B3G_SHIFT] & p.KEY_WAS_TRIGGERED:
+                                        success = False
+                                        break
+
+                                self.metrics['correct_rewards'].append(success == path['env_infos'][-1]['task_success'])
+
+                        else:
+                            success = path['env_infos'][-1]['task_success']
+
+                        self.metrics['success_episodes'].append(path['env_infos'][-1]['task_success'])
+
+                        if success:
+                            successful_paths.append(path)
+                        else:
+                            failed_paths.append(path)
+
                         if len(failed_paths) >= self.max_failures:
                             break
+
+                    self.metrics['success_blocks'].append(path['env_infos'][-1]['task_success'])
+                    self.metrics['block_lengths'].append(len(failed_paths) + len(successful_paths))
 
                     self.blocks.append(failed_paths + successful_paths)
 
                     logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
+                    logger.save_extra_data(self.metrics, 'metrics.pkl', mode='pickle')
 
                     # no actual relabeling right now, since goals for all paths should be same
                     # only add to paths to buffer if successful
