@@ -220,9 +220,8 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0.1,
             terminate_on_failure=True,
-            step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False,
-                            target_indices=[0, 2, 4]),
+            env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
+                            joint_in_state=False, target_indices=[0, 2, 4]),
 
             action_type='disc_traj',
             smooth_alpha=1,

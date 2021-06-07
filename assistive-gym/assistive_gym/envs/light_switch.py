@@ -13,7 +13,7 @@ HIGH_LIMIT = .2
 class LightSwitchEnv(AssistiveEnv):
     def __init__(self, message_indices=None, success_dist=.05, session_goal=False, frame_skip=5, robot_type='jaco',
                  capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
-                 joint_in_state=True):
+                 joint_in_state=True, step_limit=200):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
                                              time_step=0.02, action_robot_len=7, obs_robot_len=18)
         self.success_dist = success_dist
@@ -43,6 +43,8 @@ class LightSwitchEnv(AssistiveEnv):
 
         self.goal_set_shape = (self.num_targets, 4)
         self.wall_color = None
+        self.step_limit = step_limit
+        self.curr_step = 0
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -50,6 +52,7 @@ class LightSwitchEnv(AssistiveEnv):
         return [seed]
 
     def step(self, action):
+        self.curr_step += 1
         old_tool_pos = self.tool_pos
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
@@ -95,10 +98,9 @@ class LightSwitchEnv(AssistiveEnv):
 
         task_success = np.all(np.equal(self.current_string, self.target_string))
         self.task_success = task_success
-
         if self.task_success:
             color = [0, 1, 0, 1]
-        elif self.wrong_goal_reached():
+        elif self.wrong_goal_reached() or self.curr_step >= self.step_limit:
             color = [1, 0, 0, 1]
         else:
             color = [0, 0, 1, 1]
@@ -260,6 +262,7 @@ class LightSwitchEnv(AssistiveEnv):
         self.lever_angles = [p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
                              for switch in self.switches]
         self.goal_positions = None
+        self.curr_step = 0
 
         return self._get_obs([0])
 
