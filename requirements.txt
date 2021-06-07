@@ -51,7 +51,7 @@ hiredis==1.1.0
 httplib2==0.17.2
 idna==2.10
 importlib-metadata==3.1.1
-ipython==7.19.0
+ipython
 ipython-genutils==0.2.0
 itsdangerous==1.1.0
 jedi==0.17.2
@@ -125,7 +125,7 @@ threadpoolctl==2.1.0
 torch==1.7.0
 torchvision==0.8.1
 tqdm==4.54.0
-traitlets==5.0.5
+traitlets
 typing-extensions==3.7.4.3
 uritemplate==3.0.1
 urllib3==1.26.2
