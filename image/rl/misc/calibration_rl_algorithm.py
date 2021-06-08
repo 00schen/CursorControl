@@ -140,9 +140,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
                                             for failed_path in failed_paths:
                                                 for i in range(len(failed_path['observations'])):
-                                                    if i > 0:  # due to off by one error where first goal always zeros
-                                                        failed_path['observations'][i][
-                                                            'goal'] = wrong_reached_goal.copy()
+                                                    failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
                                                     failed_path['next_observations'][i][
                                                         'goal'] = wrong_reached_goal.copy()
 

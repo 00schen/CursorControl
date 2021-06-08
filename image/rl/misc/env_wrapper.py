@@ -319,7 +319,9 @@ class real_gaze:
             state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'),
                                map_location=torch.device('cpu'))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
+
         self.gaze = np.zeros(self.gaze_dim)
+        self.gaze_lock = threading.Lock()
         self.gaze_thread = None
 
     def record_gaze(self):
@@ -327,25 +329,34 @@ class real_gaze:
         features = self.face_processor.get_gaze_features(frame)
 
         if features is None:
-            self.gaze = np.zeros(self.gaze_dim)
+            gaze = np.zeros(self.gaze_dim)
         else:
             i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
             i_tracker_features = self.i_tracker(*i_tracker_input).detach().cpu().numpy()
-            self.gaze = i_tracker_features[0]
+            gaze = i_tracker_features[0]
+
+        self.gaze_lock.acquire()
+        self.gaze = gaze
+        self.gaze_lock.release()
 
     def restart_gaze_thread(self):
         if self.gaze_thread is None or not self.gaze_thread.is_alive():
             self.gaze_thread = threading.Thread(target=self.record_gaze, name='gaze_thread')
             self.gaze_thread.start()
 
-    def _step(self, obs, r, done, info):
+    def update_obs(self, obs):
+        self.gaze_lock.acquire()
         obs['gaze_features'] = self.gaze
+        self.gaze_lock.release()
+
+    def _step(self, obs, r, done, info):
         self.restart_gaze_thread()
+        self.update_obs(obs)
         return obs, r, done, info
 
     def _reset(self, obs, info=None):
-        obs['gaze_features'] = self.gaze = np.zeros(self.gaze_dim)
         self.restart_gaze_thread()
+        self.update_obs(obs)
         return obs
 
 
@@ -359,13 +370,11 @@ class goal:
         self.master_env = master_env
         self.goal_feat_func = dict(
             Bottle=lambda info: [info['target_pos']] if info['target1_reached'] else [info['target1_pos']],
-            OneSwitch=lambda info: [info['switch_pos'][info['target_index']], ],
-            AnySwitch=lambda info: [info['switch_pos'], ]
+            OneSwitch=None,
         )[self.env_name]
         self.hindsight_feat = dict(
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
-            AnySwitch={'tool_pos': 3}
         )[self.env_name]
         master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
         self.goal_noise_std = config['goal_noise_std']
@@ -374,18 +383,14 @@ class goal:
             del master_env.feature_sizes['goal']
 
     def _step(self, obs, r, done, info):
-        if self.goal is None:
-            self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
+        if self.goal_feat_func is not None:
+            if self.goal is None:
+                self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
+            obs['goal'] = self.goal.copy()
+
         hindsight_feat = np.concatenate(
             [np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
 
-        # obs['goal'] = np.concatenate((self.goal.copy(), [1]))
-        # if self.goal_noise_std:
-        #     obs['noisy_goal'] = obs['goal'].copy()
-        #     obs['noisy_goal'][:-1] += np.random.normal(scale=self.goal_noise_std, size=obs['goal'][:-1].shape)
-        # obs['hindsight_goal'] = np.concatenate((hindsight_feat, [0]))
-
-        obs['goal'] = self.goal.copy()
         if self.goal_noise_std:
             obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
         obs['hindsight_goal'] = hindsight_feat
@@ -393,9 +398,10 @@ class goal:
 
     def _reset(self, obs, info=None):
         self.goal = None
-        obs['goal'] = np.zeros(self.goal_size)
+        if self.goal_feat_func is not None:
+            obs['goal'] = np.zeros(self.goal_size)
         if self.goal_noise_std:
-            obs['noisy_goal'] = np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
+            obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
         obs['hindsight_goal'] = np.zeros(self.goal_size)
         return obs
 
