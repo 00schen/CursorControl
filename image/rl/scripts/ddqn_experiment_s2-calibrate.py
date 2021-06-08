@@ -147,6 +147,7 @@ def experiment(variant):
         replay_buffer=replay_buffer,
         calibration_data_collector=calibration_path_collector,
         calibration_buffer=calibration_buffer,
+        real_user=variant['real_user'],
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
