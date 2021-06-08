@@ -66,7 +66,6 @@ class EncDecDQNTrainer(TorchTrainer):
 
         eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
         pred_latent, kl_loss = self.vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
-        success_indices = episode_success.flatten() == 1
 
         if self.prev_vae is not None:
             target_latent = self.prev_vae.sample(goals, eps=None)
@@ -92,9 +91,9 @@ class EncDecDQNTrainer(TorchTrainer):
         #     weights = th.where(success_indices, 1., 0.)
         #     supervised_loss = th.mean(supervised_loss * weights)
         elif self.objective == 'awr':
-            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, latents.detach()),
-                                             dim=-1))
-
+            pred_mean, pred_logvar = self.vae.encode(th.cat(encoder_features, dim=1))
+            kl_loss = self.vae.kl_loss(pred_mean, pred_logvar)
+            supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
         else:
             raise NotImplementedError()
 
