@@ -13,7 +13,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def __init__(
             self,
             *args,
-            calibration_env,
             calibration_data_collector,
             calibration_indices,
             trajs_per_index,
@@ -23,15 +22,15 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             calibrate_split=True,
             real_user=True,
             relabel_failures=True,
+            seedid=0,
             **kwargs,
     ):
         super().__init__(
             num_expl_steps_per_train_loop=1, *args, **kwargs
         )
-        self.calibration_env = calibration_env
         self.calibration_data_collector = calibration_data_collector
         if calibration_indices is None:
-            calibration_indices = self.calibration_env.base_env.target_indices
+            calibration_indices = self.expl_env.base_env.target_indices
         self.calibration_indices = calibration_indices
         self.trajs_per_index = trajs_per_index
         self.calibration_buffer = calibration_buffer
@@ -40,6 +39,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.calibrate_split = calibrate_split
         self.real_user = real_user
         self.relabel_failures = relabel_failures
+        self.seedid = seedid
         self.blocks = []
 
         self.metrics = {'success_episodes': [],
@@ -71,12 +71,13 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         # self.expl_data_collector.end_epoch(-1)
 
         # calibrate
-        self.calibration_env.base_env.calibrate_mode(True, self.calibrate_split)
+        self.expl_env.seed(self.seedid)
+        self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
         calibration_data = []
 
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
-                self.calibration_env.new_goal(index)
+                self.expl_env.new_goal(index)
                 calibration_paths = self.calibration_data_collector.collect_new_paths(
                     self.max_path_length,
                     1,
@@ -90,6 +91,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
         gt.stamp('pretrain exploring', unique=False)
         self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
+
+        self.expl_env.seed(self.seedid + 100)
+        self.eval_env.seed(self.seedid + 200)
 
         self.expl_env.base_env.calibrate_mode(False, False)
         self.eval_env.base_env.calibrate_mode(False, False)

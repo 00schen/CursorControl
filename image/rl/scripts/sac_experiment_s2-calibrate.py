@@ -25,16 +25,12 @@ def experiment(variant):
     expl_config = deepcopy(variant['env_config'])
     expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
-    env.seed(variant['seedid'])
 
     # separate calibration env for seeding purposes
-    calibration_env = default_overhead(expl_config)
-    calibration_env.seed(variant['seedid'] + 100)
 
     eval_config = deepcopy(variant['env_config'])
     eval_config['gaze_path'] = eval_config['eval_gaze_path']
     eval_env = default_overhead(eval_config)
-    eval_env.seed(variant['seedid'] + 1)
 
     M = variant["layer_size"]
 
@@ -94,7 +90,7 @@ def experiment(variant):
     calibration_policy = CalibrationPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        env=calibration_env,
+        env=env,
         vae=vae,
         prev_vae=prev_vae,
         incl_state=False
@@ -106,7 +102,7 @@ def experiment(variant):
         real_user=variant['real_user']
     )
     calibration_path_collector = FullPathCollector(
-        calibration_env,
+        env,
         calibration_policy,
         save_env_in_snapshot=False,
         real_user=variant['real_user']
@@ -144,7 +140,6 @@ def experiment(variant):
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
-        calibration_env=calibration_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
         replay_buffer=replay_buffer,
@@ -157,7 +152,6 @@ def experiment(variant):
 
     if variant.get('render', False):
         env.render('human')
-        calibration_env.render('human')
     algorithm.train()
 
 
@@ -234,8 +228,8 @@ if __name__ == "__main__":
         # 'algorithm_args.calibration_indices': [[1, 2, 3]],
         'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
+        'algorithm_args.seedid': [2001],
         # 'mode': ['overcalibrate'],
-        'seedid': [2001],
         'freeze_decoder': [True],
         'trainer_kwargs.objective': ['kl'],
     }
@@ -248,7 +242,6 @@ if __name__ == "__main__":
 
 
     def process_args(variant):
-        variant['env_config']['seedid'] = variant['seedid']
         if not args.use_ray:
             variant['render'] = args.no_render
 
