@@ -156,7 +156,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             success = False
                             break
 
-                        self.metrics['correct_rewards'].append(success == real_success)
+                    self.metrics['correct_rewards'].append(success == real_success)
 
             else:
                 success = real_success
