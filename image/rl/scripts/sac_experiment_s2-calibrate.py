@@ -26,6 +26,11 @@ def experiment(variant):
     expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
     env.seed(variant['seedid'])
+
+    # separate calibration env for seeding purposes
+    calibration_env = default_overhead(expl_config)
+    calibration_env.seed(variant['seedid'] + 100)
+
     eval_config = deepcopy(variant['env_config'])
     eval_config['gaze_path'] = eval_config['eval_gaze_path']
     eval_env = default_overhead(eval_config)
@@ -139,6 +144,7 @@ def experiment(variant):
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
+        calibration_env=calibration_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
         replay_buffer=replay_buffer,
@@ -195,7 +201,7 @@ if __name__ == "__main__":
 
         env_config=dict(
             env_name=args.env_name,
-            goal_noise_std=0.1,
+            goal_noise_std=0.05,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
                             joint_in_state=True, target_indices=[1, 2, 3]),
@@ -226,8 +232,8 @@ if __name__ == "__main__":
         # 'algorithm_args.calibrate_split': [False],
         # 'algorithm_args.calibration_indices': [[1, 2, 3]],
         'algorithm_args.relabel_failures': [True],
-        'algorithm_args.num_trains_per_train_loop': [1, 10, 100],
-        # 'mode': ['default', 'no_online', 'shift', 'no_right'],
+        'algorithm_args.num_trains_per_train_loop': [100],
+        # 'mode': ['overcalibrate'],
         'seedid': [2000, 2001, 2002],
         'freeze_decoder': [True],
         'trainer_kwargs.objective': ['kl'],
@@ -246,17 +252,16 @@ if __name__ == "__main__":
             variant['render'] = args.no_render
 
         mode_dict = {'default': {'calibrate_split': False,
-                                 'calibration_indices': [1, 2, 3],
-                                 'num_trains_per_train_loop': 5},
+                                 'calibration_indices': [1, 2, 3]},
                      'no_online': {'calibrate_split': False,
                                    'calibration_indices': [1, 2, 3],
                                    'num_trains_per_train_loop': 0},
                      'shift': {'calibrate_split': True,
-                               'calibration_indices': [1, 2, 3],
-                               'num_trains_per_train_loop': 5},
+                               'calibration_indices': [1, 2, 3]},
                      'no_right': {'calibrate_split': False,
-                                  'calibration_indices': [2, 3],
-                                  'num_trains_per_train_loop': 5}}[variant['mode']]
+                                  'calibration_indices': [2, 3]},
+                     'overcalibrate': {'calibrate_split': False,
+                                       'calibration_indices': [0, 1, 2, 3, 4]}}[variant['mode']]
 
         variant['algorithm_args'].update(mode_dict)
 

@@ -26,6 +26,11 @@ def experiment(variant):
     expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
     env.seed(variant['seedid'])
+
+    # separate calibration env for seeding purposes
+    calibration_env = default_overhead(expl_config)
+    calibration_env.seed(variant['seedid'] + 100)
+
     eval_config = deepcopy(variant['env_config'])
     eval_config['gaze_path'] = eval_config['eval_gaze_path']
     eval_env = default_overhead(eval_config)
@@ -142,6 +147,7 @@ def experiment(variant):
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
+        calibration_env=calibration_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
         replay_buffer=replay_buffer,

@@ -13,6 +13,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def __init__(
             self,
             *args,
+            calibration_env,
             calibration_data_collector,
             calibration_indices,
             trajs_per_index,
@@ -27,9 +28,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         super().__init__(
             num_expl_steps_per_train_loop=1, *args, **kwargs
         )
+        self.calibration_env = calibration_env
         self.calibration_data_collector = calibration_data_collector
         if calibration_indices is None:
-            calibration_indices = self.expl_env.base_env.target_indices
+            calibration_indices = self.calibration_env.base_env.target_indices
         self.calibration_indices = calibration_indices
         self.trajs_per_index = trajs_per_index
         self.calibration_buffer = calibration_buffer
@@ -69,18 +71,18 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         # self.expl_data_collector.end_epoch(-1)
 
         # calibrate
-        self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
+        self.calibration_env.base_env.calibrate_mode(True, self.calibrate_split)
         calibration_data = []
 
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
-                self.expl_env.new_goal(index)
+                self.calibration_env.new_goal(index)
                 calibration_paths = self.calibration_data_collector.collect_new_paths(
                     self.max_path_length,
                     1,
                     discard_incomplete_paths=False,
                 )
-                self.expl_data_collector.end_epoch(-1)
+                self.calibration_data_collector.end_epoch(-1)
                 self.calibration_buffer.add_paths(calibration_paths)
                 calibration_data.extend(calibration_paths)
 
