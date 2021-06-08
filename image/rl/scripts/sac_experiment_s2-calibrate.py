@@ -94,7 +94,7 @@ def experiment(variant):
     calibration_policy = CalibrationPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        env=env,
+        env=calibration_env,
         vae=vae,
         prev_vae=prev_vae,
         incl_state=False
@@ -106,7 +106,7 @@ def experiment(variant):
         real_user=variant['real_user']
     )
     calibration_path_collector = FullPathCollector(
-        env,
+        calibration_env,
         calibration_policy,
         save_env_in_snapshot=False,
         real_user=variant['real_user']
@@ -157,6 +157,7 @@ def experiment(variant):
 
     if variant.get('render', False):
         env.render('human')
+        calibration_env.render('human')
     algorithm.train()
 
 
@@ -234,7 +235,7 @@ if __name__ == "__main__":
         'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
         # 'mode': ['overcalibrate'],
-        'seedid': [2000, 2001, 2002],
+        'seedid': [2001],
         'freeze_decoder': [True],
         'trainer_kwargs.objective': ['kl'],
     }
