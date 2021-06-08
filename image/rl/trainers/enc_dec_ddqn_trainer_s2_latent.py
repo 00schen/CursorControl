@@ -17,7 +17,7 @@ class EncDecDQNTrainer(TorchTrainer):
                  temp=1.0,
                  beta=1,
                  sample=True,
-                 use_supervised='none',
+                 objective='none',
                  grad_norm_clip=0.5
                  ):
 
@@ -32,7 +32,7 @@ class EncDecDQNTrainer(TorchTrainer):
         self.sample = sample
         self.latent_size = latent_size
         self.feature_keys = feature_keys
-        self.use_supervised = use_supervised
+        self.objective = objective
         self.grad_norm_clip = grad_norm_clip
 
         self.eval_statistics = OrderedDict()
@@ -75,7 +75,7 @@ class EncDecDQNTrainer(TorchTrainer):
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
-        if 'kl' in self.use_supervised:
+        if self.objective == 'kl':
             if has_goal_set:
                 target_qf_features = [obs, curr_goal_set_flat, target_latent]
                 pred_qf_features = [obs, curr_goal_set_flat, pred_latent]
@@ -91,9 +91,12 @@ class EncDecDQNTrainer(TorchTrainer):
         #     supervised_loss = th.nn.GaussianNLLLoss(reduction='none')(pred_mean, latents, th.exp(pred_logvar))
         #     weights = th.where(success_indices, 1., 0.)
         #     supervised_loss = th.mean(supervised_loss * weights)
-        else:
-            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, target_latent.detach()),
+        elif self.objective == 'awr':
+            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, latents.detach()),
                                              dim=-1))
+
+        else:
+            raise NotImplementedError()
 
         loss += supervised_loss + self.beta * kl_loss
 

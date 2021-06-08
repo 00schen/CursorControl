@@ -16,7 +16,7 @@ class EncDecSACTrainer(TorchTrainer):
                  feature_keys,
                  beta=1,
                  sample=True,
-                 use_supervised='none',
+                 objective='kl',
                  grad_norm_clip=1,
                  ):
         super().__init__()
@@ -28,7 +28,7 @@ class EncDecSACTrainer(TorchTrainer):
         self.sample = sample
         self.latent_size = latent_size
         self.feature_keys = feature_keys
-        self.use_supervised = use_supervised
+        self.objective = objective
         self.grad_norm_clip = grad_norm_clip
 
 
@@ -72,7 +72,7 @@ class EncDecSACTrainer(TorchTrainer):
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
-        if 'kl' in self.use_supervised:
+        if self.objective == 'kl':
             if has_goal_set:
                 curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
                 target_policy_features = [obs, curr_goal_set_flat, target_latent]
@@ -84,9 +84,12 @@ class EncDecSACTrainer(TorchTrainer):
             pred_mean = self.policy(*pred_policy_features).mean
             supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
 
-        else:
-            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, target_latent.detach()),
+        elif self.objective == 'awr':
+            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_latent, latents.detach()),
                                              dim=-1))
+
+        else:
+            raise NotImplementedError()
 
         loss += supervised_loss + self.beta * kl_loss
 
