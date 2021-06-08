@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <robot name="shelf.urdf">
   <material name="Caramel">
-    <color rgba=".95 .8 .54 1"/>
+    <color rgba=".95 1 .95 1"/>
   </material>
   <link name="baseLink">
     <contact>
@@ -17,69 +17,69 @@
     <visual>
       <origin rpy="0 0 0" xyz=".3 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
       <material name="Caramel"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz=".3 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
     </collision>
 
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
       <material name="Caramel"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
     </collision>
 
     <visual>
       <origin rpy="0 0 0" xyz="-.3 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
       <material name="Caramel"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="-.3 0 0"/>
       <geometry>
-				<box size=".02 .25 .32"/>
+				<box size=".02 .25 .24"/>
       </geometry>
     </collision>
 
     <!-- horizontal slabs -->
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 .15"/>
+      <origin rpy="0 0 0" xyz="0 0 .12"/>
       <geometry>
 				<box size=".6 .25 .02"/>
       </geometry>
       <material name="Caramel"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="0 0 .15"/>
+      <origin rpy="0 0 0" xyz="0 0 .12"/>
       <geometry>
 				<box size=".6 .25 .02"/>
       </geometry>
     </collision>
 
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 -.15"/>
+      <origin rpy="0 0 0" xyz="0 0 -.12"/>
       <geometry>
 				<box size=".6 .25 .02"/>
       </geometry>
       <material name="Caramel"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="0 0 -.15"/>
+      <origin rpy="0 0 0" xyz="0 0 -.12"/>
       <geometry>
 				<box size=".6 .25 .02"/>
       </geometry>

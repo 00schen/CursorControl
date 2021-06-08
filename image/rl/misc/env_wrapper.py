@@ -73,10 +73,11 @@ class LibraryWrapper(Env):
 		self.observation_space = self.base_env.observation_space
 		self.action_space = self.base_env.action_space
 		self.feature_sizes = self.base_env.feature_sizes
+		self.terminate_on_failure = config['terminate_on_failure']
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
-		done = info['task_success']
+		done = info['task_success'] or (self.terminate_on_failure and self.base_env.wrong_goal_reached())
 		return obs, r, done, info
 
 	def reset(self):
@@ -269,12 +270,18 @@ class static_gaze:
 
 	def _step(self,obs,r,done,info):
 		if self.per_step:
-			self.static_gaze = self.sample_gaze(self.master_env.base_env.target_indices.index(info['unique_index']))
+			if self.env_name == 'OneSwitch':
+				self.static_gaze = self.sample_gaze(self.master_env.base_env.target_indices.index(info['unique_index']))
+			elif self.env_name == 'Bottle':
+				self.static_gaze = self.sample_gaze(info['unique_index'])
 		obs['gaze_features'] = self.static_gaze
 		return obs,r,done,info
 
 	def _reset(self,obs,info=None):
-		index = self.master_env.base_env.target_indices.index(self.master_env.base_env.unique_index)
+		if self.env_name == 'OneSwitch':
+			index = self.master_env.base_env.target_indices.index(self.master_env.base_env.unique_index)
+		elif self.env_name == 'Bottle':
+			index = self.master_env.base_env.unique_index
 		obs['gaze_features'] = self.static_gaze = self.sample_gaze(index)
 		return obs
 
@@ -287,11 +294,13 @@ class goal:
 		self.master_env = master_env
 		self.goal_feat_func = dict(
 			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
+			Kitchen=lambda info: [info['target_pos'],info['orders']],
 			Bottle=lambda info: [info['target_pos'],],
 			OneSwitch=lambda info: [info['switch_pos'][info['target_index']],],
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
 		self.hindsight_feat = dict(
+			Kitchen={'tool_pos':3, 'orders':2},
 			Bottle={'tool_pos': 3},
 			OneSwitch={'tool_pos':3,},
 			AnySwitch={'tool_pos':3}
@@ -333,6 +342,37 @@ class reward:
 			if info['target1_reached']:
 				r = -.5
 				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/2
+			if info['task_success']:
+				r = 0
+		elif self.reward_type == 'custom_kitchen':
+			r = -1
+			if not info['tasks'][0]:
+				r += np.exp(-norm(info['microwave_angle'] - -.7))/6
+			else:
+				r += 1/6
+			if not info['tasks'][1]:
+				r += np.exp(-norm(info['fridge_angle'] - .7))/6
+			else:
+				r += 1/6
+			
+			if not info['tasks'][2] and info['tasks'][0] and info['tasks'][1]:
+				r += np.exp(-norm(info['tool_pos'] - info['target1_pos']))/6
+			elif info['tasks'][2]:
+				r = 1/2
+			if not info['tasks'][3] and info['tasks'][2]:
+				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/6
+			elif info['tasks'][3]:
+				r = 2/3
+
+			if not info['tasks'][4] and info['tasks'][3]:
+				r += np.exp(-norm(info['microwave_angle'] - 0))/6
+			else:
+				r += 1/6
+			if not info['tasks'][5]:
+				r += np.exp(-norm(info['fridge_angle'] - 0))/6
+			else:
+				r += 1/6
+
 			if info['task_success']:
 				r = 0
 		elif self.reward_type == 'dist':

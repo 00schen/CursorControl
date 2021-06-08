@@ -142,7 +142,7 @@ class BottleEnv(AssistiveEnv):
 	def set_target_index(self):
 		self.target_index = self.np_random.choice(self.num_targets)
 
-	def generate_target(self): 
+	def generate_target(self):
 		bottle_poses = []
 		for increment in product(np.linspace(-.25,.25,num=2),[0],[-.2,.06]):
 			bottle_pos,bottle_orient = p.multiplyTransforms(self.shelf_pos, default_orientation, increment, default_orientation, physicsClientId=self.id)
@@ -163,7 +163,7 @@ class BottleEnv(AssistiveEnv):
 		# 	p.setCollisionFilterPair(bottle, self.robot, -1, i, 0, physicsClientId=self.id)
 		# for i in range(-1,2):
 		# 	p.setCollisionFilterPair(bottle, self.tool, -1, i, 0, physicsClientId=self.id)
-	
+
 		sphere_collision = -1
 		sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1], physicsClientId=self.id)
 		self.target1 = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision, baseVisualShapeIndex=sphere_visual, basePosition=target1_pos, useMaximalCoordinates=False, physicsClientId=self.id)
@@ -179,7 +179,7 @@ class BottleEnv(AssistiveEnv):
 	@property
 	def tool_pos(self):
 		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[0])
-	
+
 	@property
 	def tool_orient(self):
 		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[1])

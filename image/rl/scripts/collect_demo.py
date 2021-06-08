@@ -49,12 +49,12 @@ def collect_demonstrations(variant):
 			for path in collected_paths:
 				# path['observations'] = [obs['raw_obs'] for obs in path['observations']]
 				# path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
-				if path['env_infos'][-1]['task_success'] == variant['on_policy']:
-					paths.append(path)
-					success_count += path['env_infos'][-1]['task_success']
-					success_found = True
+				# if path['env_infos'][-1]['task_success']:
+				paths.append(path)
+				success_count += path['env_infos'][-1]['task_success']
+				success_found = True
 			if success_found:
-				target_index += 3
+				target_index += 9
 			print("total paths collected: ", len(paths), "successes: ", success_count)
 	return paths
 
@@ -67,15 +67,15 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 200
+	path_length = 2000
 	variant = dict(
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Bottle',
+			env_name='Kitchen',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
-			oracle='model',
+			oracle='keyboard',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
@@ -91,14 +91,16 @@ if __name__ == "__main__":
 			reward_min=-1,
 			input_penalty=1,
 			reward_type='sparse',
+			terminate_on_failure=False,
 		)},
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.9,
-		num_episodes=500,
+		p=1,
+		num_episodes=1,
 		path_length=path_length,
-		save_name_suffix="debug1"
+		save_name_suffix="full",
+		
 	)
 	search_space = {
 		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
@@ -147,4 +149,5 @@ if __name__ == "__main__":
 		variant['seedid'] = current_time
 		process_args(variant)
 		paths = collect_demonstrations(variant)
-		np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)
+		# np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)
+		np.save(os.path.join(main_dir,"demos",variant['save_name']), paths)

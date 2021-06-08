@@ -36,6 +36,7 @@ class EncDecSACPolicy(PyTorchModule):
                     features.append(raw_obs)
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
+                # print(encoder_input.shape,[(key,feature.shape) for key,feature in zip(self.features_keys,features)])
                 pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
             else:
                 pred_features = np.concatenate(features)

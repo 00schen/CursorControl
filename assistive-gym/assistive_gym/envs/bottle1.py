@@ -12,7 +12,7 @@ reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.1, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
+	def __init__(self, robot_type='jaco',success_dist=.1, target_indices=None, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(7+3+6,), dtype=np.float32)
 		self.num_targets = 4
@@ -22,6 +22,12 @@ class BottleEnv(AssistiveEnv):
 		self.goal_feat = ['target_pos',] # Just an FYI
 		self.feature_sizes = OrderedDict({'goal': 3})
 		self.session_goal = session_goal
+		if target_indices is None:
+			self.target_indices = list(np.arange(self.num_targets))
+		else:
+			for i in target_indices:
+				assert 0 <= i < self.num_targets
+			self.target_indices = target_indices
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -77,6 +83,13 @@ class BottleEnv(AssistiveEnv):
 		robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 		robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
+		final_door_pos = (np.array([-.15,.13,0]) if self.target_index//2 else np.array([.15,.13,0])) + self.shelf_pos
+		door_open = norm(self.door_pos-final_door_pos) < .05
+		if door_open:
+			self.unique_index = self.target_index//2
+		else:
+			self.unique_index = 2 + self.target_index%2
+
 		# robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
 		robot_obs = dict(
 			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses]),
@@ -85,6 +98,9 @@ class BottleEnv(AssistiveEnv):
 			goal = self.goal,
 		)
 		return robot_obs
+
+	def get_true_target(self):
+		return self.target_pos
 
 	def reset(self):
 		"""set up standard environment"""
@@ -110,7 +126,7 @@ class BottleEnv(AssistiveEnv):
 			self.set_target_index() # instance override in demos
 		self.init_robot_arm()
 		self.generate_target()
-		self.unique_index = self.target_index
+		# self.unique_index = self.target_index
 
 		"""configure pybullet"""
 		# p.setGravity(0, 0, -9.81, physicsClientId=self.id)
@@ -144,8 +160,22 @@ class BottleEnv(AssistiveEnv):
 	def get_random_target(self):
 		return np.concatenate(self.bottle_poses[np.random.randint(2)])
 
-	def set_target_index(self):
-		self.target_index = self.np_random.choice(self.num_targets)
+	def set_target_index(self, index=None):
+		if index is None:
+			self.target_index = self.np_random.choice(self.target_indices)
+		else:
+			assert index in self.target_indices
+			self.target_index = index
+		# self.unique_index = self.target_index
+
+	def reset_noise(self):
+		pass
+
+	def wrong_goal_reached(self):
+		return False
+
+	def calibrate_mode(self, calibrate):
+		pass
 
 	def generate_target(self): 
 		self.shelf_pos = self.table_pos+np.array([0,.1,1])
