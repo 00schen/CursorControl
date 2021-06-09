@@ -1,13 +1,22 @@
 from rlkit.samplers.data_collector import MdpPathCollector
 import pybullet as p
 from rlkit.samplers.rollout_functions import rollout
+from rl.misc.env_wrapper import real_gaze
+import time
 
 
-def _wait_for_key(env, agent, o, key=p.B3G_RETURN):
+def _wait_for_key(env, agent, o, key=p.B3G_RETURN, update_obs_class=real_gaze):
     while True:
         keys = p.getKeyboardEvents()
         if key in keys and keys[key] & p.KEY_WAS_TRIGGERED:
             break
+
+    # for some reason needed for obs to be updated
+    time.sleep(0.1)
+
+    for adapt in env.adapts:
+        if isinstance(adapt, update_obs_class):
+            adapt.update_obs(o)
 
 
 class FullPathCollector(MdpPathCollector):

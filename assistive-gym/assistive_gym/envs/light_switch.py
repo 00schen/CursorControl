@@ -195,9 +195,6 @@ class LightSwitchEnv(AssistiveEnv):
         # switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
         # robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 
-        if self.goal_positions is None:
-            self.goal_positions = np.array(self.target_pos).copy()
-
         obs_features = [tool_orient, tool_pos]
         if self.joint_in_state:
             obs_features.append(robot_joint_positions)
@@ -205,7 +202,7 @@ class LightSwitchEnv(AssistiveEnv):
         robot_obs = dict(
             raw_obs=np.concatenate(obs_features),
             hindsight_goal=np.zeros(3),
-            goal=self.goal,
+            goal=self.goal.copy(),
             goal_set=np.concatenate((self.goal_positions, np.array(self.lever_angles)[:, None]),
                                     axis=1)
         )
@@ -260,12 +257,12 @@ class LightSwitchEnv(AssistiveEnv):
         nearPlane = 0.01
         farPlane = 100
         self.projMatrix = p.computeProjectionMatrixFOV(fov, aspect, nearPlane, farPlane)
-        self.goal = np.array(self.target_string)
+        self.goal = self.target_pos[self.target_index].copy()
 
         self.lever_angles = [p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
                              for switch in self.switches]
-        self.goal_positions = None
         self.curr_step = 0
+        self.goal_positions = np.array(self.target_pos).copy()
 
         return self._get_obs([0])
 

@@ -22,33 +22,13 @@ import operator
 def experiment(variant):
     import torch as th
 
-    mode_dict = {'default': {'calibrate_split': False,
-                             'calibration_indices': [1, 2, 3],
-                             'num_trains_per_train_loop': 5},
-                 'no_online': {'calibrate_split': False,
-                               'calibration_indices': [1, 2, 3],
-                               'num_trains_per_train_loop': 0},
-                 'shift': {'calibrate_split': True,
-                           'calibration_indices': [1, 2, 3],
-                           'num_trains_per_train_loop': 5},
-                 'no_right': {'calibrate_split': False,
-                              'calibration_indices': [2, 3],
-                              'num_trains_per_train_loop': 5}}[variant['mode']]
-
-    variant['algorithm_args'].update(mode_dict)
-
-    if variant['real_user']:
-        variant['env_config']['adapts'].insert(1, 'real_gaze')
-
     expl_config = deepcopy(variant['env_config'])
-    if 'calibrate' in variant['trainer_kwargs']['use_supervised']:
-        expl_config['factories'] += ['session']
+    expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
-    env.seed(variant['seedid'])
+
     eval_config = deepcopy(variant['env_config'])
     eval_config['gaze_path'] = eval_config['eval_gaze_path']
     eval_env = default_overhead(eval_config)
-    eval_env.seed(variant['seedid'] + 1)
 
     M = variant["layer_size"]
 
@@ -166,6 +146,8 @@ def experiment(variant):
         replay_buffer=replay_buffer,
         calibration_data_collector=calibration_path_collector,
         calibration_buffer=calibration_buffer,
+        real_user=variant['real_user'],
+
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
@@ -248,11 +230,12 @@ if __name__ == "__main__":
         'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False],
         'algorithm_args.calibration_indices': [[0, 2, 4]],
-        'seedid': [2000, 2001, 2002],
+        'algorithm_args.relabel_failures': [True],
+        'algorithm_args.seedid': [2000, 2001, 2002],
         'layer_norm': [True],
         'freeze_decoder': [True],
         'freeze_rf': [True],
-        'trainer_kwargs.use_supervised': ['calibrate_kl'],
+        'trainer_kwargs.objective': ['kl'],
     }
     sweeper = hyp.DeterministicHyperparameterSweeper(
         search_space, default_parameters=variant,
@@ -262,10 +245,29 @@ if __name__ == "__main__":
 
 
     def process_args(variant):
-        variant['env_config']['seedid'] = variant['seedid']
         if not args.use_ray:
             variant['render'] = args.no_render
 
+        mode_dict = {'default': {'calibrate_split': False,
+                                 'calibration_indices': [1, 2, 3],
+                                 'num_trains_per_train_loop': 5},
+                     'no_online': {'calibrate_split': False,
+                                   'calibration_indices': [1, 2, 3],
+                                   'num_trains_per_train_loop': 0},
+                     'shift': {'calibrate_split': True,
+                               'calibration_indices': [1, 2, 3],
+                               'num_trains_per_train_loop': 5},
+                     'no_right': {'calibrate_split': False,
+                                  'calibration_indices': [2, 3],
+                                  'num_trains_per_train_loop': 5}}[variant['mode']]
+
+        variant['algorithm_args'].update(mode_dict)
+
+        if variant['real_user']:
+            variant['env_config']['adapts'].insert(1, 'real_gaze')
+
+        if variant['trainer_kwargs']['objective'] == 'awr':
+            variant['algorithm_args']['relabel_failures'] = False
 
     args.process_args = process_args
 
