@@ -22,45 +22,6 @@ main_dir = str(Path(__file__).resolve().parents[2])
 
 
 def default_overhead(config):
-<<<<<<< HEAD
-	factory_map = {
-		'session': session_factory,
-	}
-	factories = [factory_map[factory] for factory in config['factories']]
-	factories = [action_factory] + factories
-	wrapper = reduce(lambda value, func: func(value), factories, LibraryWrapper)
-
-	class Overhead(wrapper):
-		def __init__(self, config):
-			self.rng = default_rng(config['seedid'])
-			super().__init__(config)
-			adapt_map = {
-				'oracle': oracle,
-				'static_gaze': static_gaze,
-				'real_gaze': real_gaze,
-				'goal': goal,
-				'reward': reward,
-			}
-			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
-			# self.adapts = [array_to_dict] + self.adapts
-			self.adapts = [adapt(self, config) for adapt in self.adapts]
-			self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
-																self.adapts, (obs, r, done, info))
-			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs, info), self.adapts,
-															 (obs))
-
-		def step(self, action):
-			tran = super().step(action)
-			tran = self.adapt_step(*tran)
-			return tran
-
-		def reset(self):
-			obs = super().reset()
-			obs = self.adapt_reset(obs)
-			return obs
-
-	return Overhead(config)
-=======
 	factory_map = {
 		'session': session_factory,
 	}
@@ -97,7 +58,6 @@ def default_overhead(config):
 			return obs
 
 	return Overhead(config)
->>>>>>> 902e15c845437a8f8ce75a285b55dfb5e82ae036
 
 
 class LibraryWrapper(Env):
@@ -342,7 +302,6 @@ class static_gaze:
 
 
 class real_gaze:
-<<<<<<< HEAD
 	def __init__(self, master_env, config):
 		self.gaze_dim = config['gaze_dim']
 		for feature in ['goal', 'noisy_goal']:
@@ -456,116 +415,6 @@ class goal:
 		obs['hindsight_goal'] = np.zeros(self.goal_size)
 		return obs
 
-=======
-	def __init__(self, master_env, config):
-		self.gaze_dim = config['gaze_dim']
-		for feature in ['goal', 'noisy_goal']:
-			if feature in master_env.feature_sizes.keys():
-				del master_env.feature_sizes[feature]
-		master_env.feature_sizes['gaze_features'] = self.gaze_dim
-		self.env_name = master_env.env_name
-		self.master_env = master_env
-		self.webcam = cv2.VideoCapture(0)
-		self.face_processor = FaceProcessor(
-			os.path.join(main_dir, 'gaze_capture', 'model_files', 'shape_predictor_68_face_landmarks.dat'))
-
-		self.i_tracker = ITrackerModel()
-		if torch.cuda.is_available():
-			self.device = torch.device("cuda:0")
-			self.i_tracker.cuda()
-			state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'))['state_dict']
-		else:
-			self.device = "cpu"
-			state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'),
-							   map_location=torch.device('cpu'))['state_dict']
-		self.i_tracker.load_state_dict(state, strict=False)
-
-		self.gaze = np.zeros(self.gaze_dim)
-		self.gaze_lock = threading.Lock()
-		self.gaze_thread = None
-
-	def record_gaze(self):
-		_, frame = self.webcam.read()
-		features = self.face_processor.get_gaze_features(frame)
-
-		if features is None:
-			gaze = np.zeros(self.gaze_dim)
-		else:
-			i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
-			i_tracker_features = self.i_tracker(*i_tracker_input).detach().cpu().numpy()
-			gaze = i_tracker_features[0]
-
-		self.gaze_lock.acquire()
-		self.gaze = gaze
-		self.gaze_lock.release()
-
-	def restart_gaze_thread(self):
-		if self.gaze_thread is None or not self.gaze_thread.is_alive():
-			self.gaze_thread = threading.Thread(target=self.record_gaze, name='gaze_thread')
-			self.gaze_thread.start()
-
-	def update_obs(self, obs):
-		self.gaze_lock.acquire()
-		obs['gaze_features'] = self.gaze
-		self.gaze_lock.release()
-
-	def _step(self, obs, r, done, info):
-		self.restart_gaze_thread()
-		self.update_obs(obs)
-		return obs, r, done, info
-
-	def _reset(self, obs, info=None):
-		self.restart_gaze_thread()
-		self.update_obs(obs)
-		return obs
-
-
-class goal:
-	"""
-	Chooses what features from info to add to obs
-	"""
-
-	def __init__(self, master_env, config):
-		self.env_name = master_env.env_name
-		self.master_env = master_env
-		self.goal_feat_func = dict(
-			Bottle=lambda info: [info['target_pos']] if info['target1_reached'] else [info['target1_pos']],
-			OneSwitch=None,
-		)[self.env_name]
-		self.hindsight_feat = dict(
-			Bottle={'tool_pos': 3},
-			OneSwitch={'tool_pos': 3},
-		)[self.env_name]
-		master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
-		self.goal_noise_std = config['goal_noise_std']
-		if self.goal_noise_std:
-			master_env.feature_sizes['noisy_goal'] = master_env.feature_sizes['goal']
-			del master_env.feature_sizes['goal']
-
-	def _step(self, obs, r, done, info):
-		if self.goal_feat_func is not None:
-			if self.goal is None:
-				self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
-			obs['goal'] = self.goal.copy()
-
-		hindsight_feat = np.concatenate(
-			[np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
-
-		if self.goal_noise_std:
-			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
-		obs['hindsight_goal'] = hindsight_feat
-		return obs, r, done, info
-
-	def _reset(self, obs, info=None):
-		self.goal = None
-		if self.goal_feat_func is not None:
-			obs['goal'] = np.zeros(self.goal_size)
-		if self.goal_noise_std:
-			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
-		obs['hindsight_goal'] = np.zeros(self.goal_size)
-		return obs
-
->>>>>>> 902e15c845437a8f8ce75a285b55dfb5e82ae036
 
 class reward:
 	""" rewards capped at 'cap' """

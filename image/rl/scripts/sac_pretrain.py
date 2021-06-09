@@ -195,7 +195,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False, pretrain_assistance=True),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, pretrain_assistance=True),
             action_type='joint',
             smooth_alpha=1,
             factories=[],

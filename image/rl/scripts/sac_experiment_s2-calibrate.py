@@ -47,6 +47,10 @@ def experiment(variant):
               decoder_hidden_sizes=[M] * variant['n_layers']
               ).to(ptu.device)
     policy = loaded['trainer/policy']
+
+    qf1 = loaded['trainer/qf1']
+    qf2 = loaded['trainer/qf2']
+
     if 'trainer/vae' in loaded.keys():
         prev_vae = loaded['trainer/vae'].to(ptu.device)
     else:
@@ -117,6 +121,8 @@ def experiment(variant):
         vae=vae,
         prev_vae=prev_vae,
         policy=policy,
+        qf1=qf1,
+        qf2=qf2,
         optimizer=optimizer,
         latent_size=variant['latent_size'],
         feature_keys=list(env.feature_sizes.keys()),
@@ -160,7 +166,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac')
+    parser.add_argument('--exp_name', default='calibrate_sac_test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -173,7 +179,7 @@ if __name__ == "__main__":
 
     path_length = 200
     default_variant = dict(
-        mode=args.mode,
+        # mode=args.mode,
         real_user=not args.sim,
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
@@ -201,7 +207,7 @@ if __name__ == "__main__":
             goal_noise_std=0.05,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
-                            joint_in_state=True, target_indices=[1, 2, 3]),
+                            target_indices=[1, 2, 3]),
 
             action_type='joint',
             smooth_alpha=1,
@@ -231,10 +237,11 @@ if __name__ == "__main__":
         # 'algorithm_args.calibration_indices': [[1, 2, 3]],
         'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'algorithm_args.seedid': [0],
-        # 'mode': ['overcalibrate'],
+        # 'algorithm_args.seedid': [0],
+        'trainer_kwargs.objective': ['kl', 'joint', 'awr'],
+        'mode': ['default', 'no_online', 'shift', 'no_right'],
+        'algorithm_args.seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
         'freeze_decoder': [True],
-        'trainer_kwargs.objective': ['kl'],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -266,8 +273,6 @@ if __name__ == "__main__":
     #     variants.append(variant)
 
     def process_args(variant):
-        variant['env_config']['seedid'] = variant['seedid']
-
         if not args.use_ray:
             variant['render'] = args.no_render
 
