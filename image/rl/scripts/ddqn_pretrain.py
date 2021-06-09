@@ -2,12 +2,12 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import ConcatMlpPolicy, VAE
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import EncDecPolicy, KeyboardPolicy
+from rl.policies import EncDecQfPolicy, KeyboardPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecDDQNTrainer
-from rl.replay_buffers import HERReplayBuffer, ModdedReplayBuffer
+from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
 
 import os
@@ -15,6 +15,8 @@ from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
 from torch import optim
+from functools import reduce
+import operator
 
 
 def experiment(variant):
@@ -26,7 +28,9 @@ def experiment(variant):
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
-    obs_dim = env.observation_space.low.size + variant['latent_size']
+    obs_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                      getattr(env.base_env, 'goal_set_shape', (0,)),
+                                                      1) + variant['latent_size']
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -41,7 +45,7 @@ def experiment(variant):
                                     hidden_sizes=[M, M, M, M],
                                     layer_norm=variant['layer_norm'],
                                     )
-        vae = VAE(input_size=env.observation_space.low.size + sum(env.feature_sizes.values()),
+        vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -57,11 +61,11 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    eval_policy = EncDecPolicy(
+    eval_policy = EncDecQfPolicy(
         qf,
         list(env.feature_sizes.keys()),
         vae=vae,
-        incl_state=True,
+        incl_state=False,
         sample=False,
     )
     eval_path_collector = FullPathCollector(
@@ -69,13 +73,13 @@ def experiment(variant):
         eval_policy,
         save_env_in_snapshot=False
     )
-    expl_policy = EncDecPolicy(
+    expl_policy = EncDecQfPolicy(
         qf,
         list(env.feature_sizes.keys()),
         vae=vae,
         logit_scale=variant['expl_kwargs']['logit_scale'],
         eps=variant['expl_kwargs']['eps'],
-        incl_state=True,
+        incl_state=False,
         sample=False,
     )
     expl_path_collector = FullPathCollector(
@@ -95,7 +99,6 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
-        # k=variant['her_k']
     )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
@@ -122,7 +125,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='pretrain')
+    parser.add_argument('--exp_name', default='pretrain_dqn')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -132,11 +135,10 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_5switch_dqn.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_dqn.pkl',
         latent_size=3,
         layer_size=128,
         lr=5e-4,
-        # her_k=4,
         expl_kwargs=dict(
         ),
         trainer_kwargs=dict(
@@ -150,7 +152,7 @@ if __name__ == "__main__":
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
-            num_epochs=300,
+            num_epochs=1500,
             eval_paths=False,
             num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=1000,
@@ -164,9 +166,11 @@ if __name__ == "__main__":
         ], # no latent
 
         env_config=dict(
+            terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            goal_noise_std=0,
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],
@@ -177,12 +181,12 @@ if __name__ == "__main__":
             reward_min=-1,
             reward_type='part_sparse',
             reward_temp=1,
-            reward_offset=-0.1
+            reward_offset=-0.2
         )
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
+        'from_pretrain': [False],
         'layer_norm': [True],
         'expl_kwargs.logit_scale': [10],
         'expl_kwargs.eps': [0.1],
@@ -190,7 +194,7 @@ if __name__ == "__main__":
         'demo_path_proportions': [[int(5e3)], ],
         'trainer_kwargs.beta': [.01],
         'buffer_type': [ModdedReplayBuffer],
-        'replay_buffer_size': [1000000],
+        'replay_buffer_size': [500000],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

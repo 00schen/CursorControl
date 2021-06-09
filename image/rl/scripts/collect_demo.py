@@ -49,12 +49,12 @@ def collect_demonstrations(variant):
 			for path in collected_paths:
 				# path['observations'] = [obs['raw_obs'] for obs in path['observations']]
 				# path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
-				# if path['env_infos'][-1]['task_success']:
-				paths.append(path)
-				success_count += path['env_infos'][-1]['task_success']
-				success_found = True
+				if path['env_infos'][-1]['task_success']:
+					paths.append(path)
+					success_count += path['env_infos'][-1]['task_success']
+					success_found = True
 			if success_found:
-				target_index += 9
+				target_index += 1
 			print("total paths collected: ", len(paths), "successes: ", success_count)
 	return paths
 
@@ -67,15 +67,15 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 2000
+	path_length = 1200
 	variant = dict(
 		seedid=3000,
 		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Kitchen',
+			env_name='Bottle',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
-			oracle='keyboard',
+			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
@@ -92,12 +92,13 @@ if __name__ == "__main__":
 			input_penalty=1,
 			reward_type='sparse',
 			terminate_on_failure=False,
+			goal_noise_std = 0
 		)},
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=1,
-		num_episodes=1,
+		p=.8,
+		num_episodes=5000,
 		path_length=path_length,
 		save_name_suffix="full",
 		
@@ -135,7 +136,7 @@ if __name__ == "__main__":
 				variant = deepcopy(variant)
 				variant['seedid'] += ray.get(iterator.next.remote())
 				return collect_demonstrations(variant)
-		num_workers = 10
+		num_workers = 12
 		variant['num_episodes'] = variant['num_episodes']//num_workers
 
 		samplers = [Sampler.remote() for i in range(num_workers)]

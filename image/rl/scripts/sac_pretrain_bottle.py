@@ -25,7 +25,6 @@ def experiment(variant):
     env = default_overhead(variant['env_config'])
     env.seed(variant['seedid'])
     eval_config = variant['env_config'].copy()
-    eval_config['env_kwargs']['pretrain_assistance'] = False
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
@@ -156,15 +155,15 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
-    path_length = 1200
+    path_length = 200
     variant = dict(
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
             num_epochs=int(1e6),
-            num_eval_steps_per_epoch=path_length,
-            eval_paths=True,
+            num_eval_steps_per_epoch=0,
+            eval_paths=False,
             # num_trains_per_train_loop=1000,
             num_expl_steps_per_train_loop=1000,
             min_num_steps_before_training=1000,
@@ -183,19 +182,19 @@ if __name__ == "__main__":
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
-        demo_paths=[
-            # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
-            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
-        ]*500, # no latent
         # demo_paths=[
-        #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
-        # ], # no latent
+        #     # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
+        #     os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
+        # ]*500, # no latent
+        demo_paths=[
+            os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
+        ], # no latent
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False, pretrain_assistance=True),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False,),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
@@ -204,7 +203,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='part_sparse_kitchen',
+            reward_type='part_sparse',
             reward_temp=1,
             reward_offset=-0.2
         )
@@ -212,8 +211,8 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[50]*500, ],
-        # 'demo_path_proportions': [[50], ],
+        # 'demo_path_proportions': [[50]*500, ],
+        'demo_path_proportions': [[5000], ],
         'trainer_kwargs.beta': [.01,.1],
         # 'trainer_kwargs.beta': [.01,],
         'algorithm_args.num_trains_per_train_loop': [100,1000],

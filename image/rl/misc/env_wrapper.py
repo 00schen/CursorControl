@@ -1,10 +1,7 @@
 from functools import reduce
-from collections import deque
 import os
 from pathlib import Path
 import h5py
-from copy import deepcopy
-from types import MethodType
 
 import numpy as np
 from numpy.random import default_rng
@@ -13,18 +10,23 @@ from numpy.linalg import norm
 import pybullet as p
 import assistive_gym as ag
 from gym import spaces, Env
-from rlkit.envs.env_utils import get_dim
-import gym
 
+import cv2
+import torch
+from gaze_capture.face_processor import FaceProcessor
+from gaze_capture.ITrackerModel import ITrackerModel
+import threading
 from rl.oracles import *
+
+main_dir = str(Path(__file__).resolve().parents[2])
 
 
 def default_overhead(config):
 	factory_map = {
-				'session': session_factory,
-			}
+		'session': session_factory,
+	}
 	factories = [factory_map[factory] for factory in config['factories']]
-	factories = [action_factory]+factories
+	factories = [action_factory] + factories
 	wrapper = reduce(lambda value, func: func(value), factories, LibraryWrapper)
 
 	class Overhead(wrapper):
@@ -34,6 +36,7 @@ def default_overhead(config):
 			adapt_map = {
 				'oracle': oracle,
 				'static_gaze': static_gaze,
+				'real_gaze': real_gaze,
 				'goal': goal,
 				'reward': reward,
 			}
@@ -42,7 +45,8 @@ def default_overhead(config):
 			self.adapts = [adapt(self, config) for adapt in self.adapts]
 			self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
 																self.adapts, (obs, r, done, info))
-			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs,info), self.adapts, (obs))
+			self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs, info), self.adapts,
+															 (obs))
 
 		def step(self, action):
 			tran = super().step(action)
@@ -94,6 +98,7 @@ class LibraryWrapper(Env):
 
 	def get_base_env(self):
 		return self.base_env
+
 
 def action_factory(base):
 	class Action(base):
@@ -176,34 +181,41 @@ def session_factory(base):
 			config['env_kwargs']['session_goal'] = True
 			super().__init__(config)
 			self.goal_reached = False
+
 		def new_goal(self, index=None):
 			self.base_env.set_target_index(index)
 			self.base_env.reset_noise()
 			self.goal_reached = False
-		def step(self,action):
-			o,r,d,info = super().step(action)
+
+		def step(self, action):
+			o, r, d, info = super().step(action)
 			if info['task_success']:
 				self.goal_reached = True
-			return o,r,d,info
+			return o, r, d, info
+
 		def reset(self):
 			return super().reset()
+
 	return Session
-		
+
 
 class array_to_dict:
-	def __init__(self,master_env,config):
+	def __init__(self, master_env, config):
 		pass
-	def _step(self,obs,r,done,info):
-		if not isinstance(obs,dict):
+
+	def _step(self, obs, r, done, info):
+		if not isinstance(obs, dict):
 			obs = {'raw_obs': obs}
-		return obs,r,done,info
-	def _reset(self,obs,info=None):
-		if not isinstance(obs,dict):
+		return obs, r, done, info
+
+	def _reset(self, obs, info=None):
+		if not isinstance(obs, dict):
 			obs = {'raw_obs': obs}
 		return obs
 
+
 class oracle:
-	def __init__(self,master_env,config):
+	def __init__(self, master_env, config):
 		self.oracle_type = config['oracle']
 		if 'model' in self.oracle_type:
 			self.oracle = master_env.oracle = {
@@ -214,70 +226,74 @@ class oracle:
 				"ThreeSwitch": ThreeSwitchOracle,
 				"Bottle": BottleOracle,
 				"Kitchen": StraightLineOracle,
-			}[master_env.env_name](master_env.rng,**config['oracle_kwargs'])
-			# if 'sim_gaze' in self.oracle_type:
-			# 	self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
-			# 														 **config['gaze_oracle_kwargs'])
-			# elif 'gaze' in self.oracle_type:
-			# 	self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
+			}[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
+		# if 'sim_gaze' in self.oracle_type:
+		# 	self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
+		# 														 **config['gaze_oracle_kwargs'])
+		# elif 'gaze' in self.oracle_type:
+		# 	self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
 		else:
 			oracle_type = {
 				'keyboard': KeyboardOracle,
 				'gaze': RealGazeKeyboardOracle,
 				# 'sim_gaze': SimGazeKeyboardOracle,
 				'dummy_gaze': BottleOracle,
-			# }[config['oracle']](master_env)
+				# }[config['oracle']](master_env)
 			}[config['oracle']]
-			if config['oracle'] == 'sim_gaze': #TODO: look at how oracke works (why oracle_type)
+			if config['oracle'] == 'sim_gaze':  # TODO: look at how oracke works (why oracle_type)
 				self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
 			elif config['oracle'] == 'dummy_gaze':
-				self.oracle = master_env.oracle = oracle_type(master_env.rng,**config['oracle_kwargs'])
+				self.oracle = master_env.oracle = oracle_type(master_env.rng, **config['oracle_kwargs'])
 			else:
 				self.oracle = master_env.oracle = oracle_type()
 		self.master_env = master_env
 		del master_env.feature_sizes['goal']
 		master_env.feature_sizes['recommend'] = self.oracle.size
 
-	def _step(self,obs,r,done,info):
-		self._predict(obs,info)
-		return obs,r,done,info
+	def _step(self, obs, r, done, info):
+		self._predict(obs, info)
+		return obs, r, done, info
 
-	def _reset(self,obs,info=None):
+	def _reset(self, obs, info=None):
 		self.oracle.reset()
 		self.master_env.recommend = obs['recommend'] = np.zeros(self.oracle.size)
 		return obs
 
-	def _predict(self,obs,info):
-		recommend,_info = self.oracle.get_action(obs,info)
+	def _predict(self, obs, info):
+		recommend, _info = self.oracle.get_action(obs, info)
 		self.master_env.recommend = obs['recommend'] = info['recommend'] = recommend
 		info['noop'] = not self.oracle.status.curr_intervention
 
+
 class static_gaze:
-	def __init__(self,master_env,config):
+	def __init__(self, master_env, config):
 		self.gaze_dim = config['gaze_dim']
-		del master_env.feature_sizes['goal']
+		for feature in ['goal', 'noisy_goal']:
+			if feature in master_env.feature_sizes.keys():
+				del master_env.feature_sizes[feature]
 		master_env.feature_sizes['gaze_features'] = self.gaze_dim
 		self.env_name = master_env.env_name
 		self.master_env = master_env
-		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]),'gaze_capture','gaze_data',config['gaze_path']),'r') as gaze_data:
-			self.gaze_dataset = {k:v[()] for k,v in gaze_data.items()}
+		with h5py.File(os.path.join(str(Path(__file__).resolve().parents[2]), 'gaze_capture', 'gaze_data',
+									config['gaze_path']), 'r') as gaze_data:
+			self.gaze_dataset = {k: v[()] for k, v in gaze_data.items()}
 		self.per_step = True
 
-	def sample_gaze(self,index):
+	def sample_gaze(self, index):
 		unique_target_index = index
 		data = self.gaze_dataset[str(unique_target_index)]
 		return self.master_env.rng.choice(data)
 
-	def _step(self,obs,r,done,info):
+	def _step(self, obs, r, done, info):
 		if self.per_step:
 			if self.env_name == 'OneSwitch':
 				self.static_gaze = self.sample_gaze(self.master_env.base_env.target_indices.index(info['unique_index']))
 			elif self.env_name == 'Bottle':
 				self.static_gaze = self.sample_gaze(info['unique_index'])
 		obs['gaze_features'] = self.static_gaze
-		return obs,r,done,info
+		return obs, r, done, info
 
-	def _reset(self,obs,info=None):
+	def _reset(self, obs, info=None):
 		if self.env_name == 'OneSwitch':
 			index = self.master_env.base_env.target_indices.index(self.master_env.base_env.unique_index)
 		elif self.env_name == 'Bottle':
@@ -285,41 +301,103 @@ class static_gaze:
 		obs['gaze_features'] = self.static_gaze = self.sample_gaze(index)
 		return obs
 
+
+class real_gaze:
+	def __init__(self, master_env, config):
+		self.gaze_dim = config['gaze_dim']
+		for feature in ['goal', 'noisy_goal']:
+			if feature in master_env.feature_sizes.keys():
+				del master_env.feature_sizes[feature]
+		master_env.feature_sizes['gaze_features'] = self.gaze_dim
+		self.env_name = master_env.env_name
+		self.master_env = master_env
+		self.webcam = cv2.VideoCapture(0)
+		self.face_processor = FaceProcessor(
+			os.path.join(main_dir, 'gaze_capture', 'model_files', 'shape_predictor_68_face_landmarks.dat'))
+
+		self.i_tracker = ITrackerModel()
+		if torch.cuda.is_available():
+			self.device = torch.device("cuda:0")
+			self.i_tracker.cuda()
+			state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'))['state_dict']
+		else:
+			self.device = "cpu"
+			state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'),
+							   map_location=torch.device('cpu'))['state_dict']
+		self.i_tracker.load_state_dict(state, strict=False)
+		self.gaze = np.zeros(self.gaze_dim)
+		self.gaze_thread = None
+
+	def record_gaze(self):
+		_, frame = self.webcam.read()
+		features = self.face_processor.get_gaze_features(frame)
+
+		if features is None:
+			self.gaze = np.zeros(self.gaze_dim)
+		else:
+			i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
+			i_tracker_features = self.i_tracker(*i_tracker_input).detach().cpu().numpy()
+			self.gaze = i_tracker_features[0]
+
+	def restart_gaze_thread(self):
+		if self.gaze_thread is None or not self.gaze_thread.is_alive():
+			self.gaze_thread = threading.Thread(target=self.record_gaze, name='gaze_thread')
+			self.gaze_thread.start()
+
+	def _step(self, obs, r, done, info):
+		obs['gaze_features'] = self.gaze
+		self.restart_gaze_thread()
+		return obs, r, done, info
+
+	def _reset(self, obs, info=None):
+		obs['gaze_features'] = self.gaze = np.zeros(self.gaze_dim)
+		self.restart_gaze_thread()
+		return obs
+
+
 class goal:
 	"""
 	Chooses what features from info to add to obs
 	"""
-	def __init__(self,master_env,config):
+	def __init__(self, master_env, config):
 		self.env_name = master_env.env_name
 		self.master_env = master_env
 		self.goal_feat_func = dict(
 			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
-			Kitchen=lambda info: [info['target_pos'],info['orders']],
-			Bottle=lambda info: [info['target_pos'],],
+			Kitchen=lambda info: [info['sub_target']],
+			Bottle=lambda info: [info['sub_target'],],
 			OneSwitch=lambda info: [info['switch_pos'][info['target_index']],],
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
 		self.hindsight_feat = dict(
-			Kitchen={'tool_pos':3, 'orders':2},
+			Kitchen={'tool_pos':3,},
 			Bottle={'tool_pos': 3},
 			OneSwitch={'tool_pos':3,},
 			AnySwitch={'tool_pos':3}
 		)[self.env_name]
 		master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
+		self.goal_noise_std = config['goal_noise_std']
+		if self.goal_noise_std:
+			master_env.feature_sizes['noisy_goal'] = master_env.feature_sizes['goal']
+			del master_env.feature_sizes['goal']
 
-	def _step(self,obs,r,done,info):
-		if self.goal is None:
+	def _step(self, obs, r, done, info):
+		if self.goal is None or self.env_name != 'OneSwitch':
 			self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
 		# goal_feat = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
 		hindsight_feat = np.concatenate([np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
 		obs['goal'] = self.goal.copy()
 		# obs['goal'] = goal_feat
+		if self.goal_noise_std:
+			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
 		obs['hindsight_goal'] = hindsight_feat
 		return obs,r,done,info
 
-	def _reset(self,obs,info=None):
+	def _reset(self, obs, info=None):
 		self.goal = None
 		obs['goal'] = np.zeros(self.goal_size)
+		if self.goal_noise_std:
+			obs['noisy_goal'] = np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
 		obs['hindsight_goal'] = np.zeros(self.goal_size)
 		return obs
 
@@ -391,17 +469,17 @@ class reward:
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':
-			r = -1 + .5*(info['task_success']+info['target1_reached'])
+			r = -1 + .5*(info['task_success']+info['door_open'])
 		elif self.reward_type == 'terminal_interrupt':
 			r = info['noop']
 			# done = info['noop']
-		elif self.reward_type == 'kitchen':
-			r = -1 + sum(info['item_placed']+info['item_reached']+[info['microwave_closed']])/len(info['item_placed']+info['item_reached']+[1])
+		elif self.reward_type == 'part_sparse_kitchen':
+			r = -1 + sum(info['tasks'])/6
 		else:
 			raise Exception
 
 		r = np.clip(r, *self.range)
 		return obs, r, done, info
 
-	def _reset(self, obs,info=None):
+	def _reset(self, obs, info=None):
 		return obs

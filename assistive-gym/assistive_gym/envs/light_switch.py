@@ -4,6 +4,7 @@ import numpy as np
 import pybullet as p
 from numpy.linalg import norm
 from .env import AssistiveEnv
+from gym.utils import seeding
 
 LOW_LIMIT = -1
 HIGH_LIMIT = .2
@@ -11,11 +12,11 @@ HIGH_LIMIT = .2
 
 class LightSwitchEnv(AssistiveEnv):
     def __init__(self, message_indices=None, success_dist=.05, session_goal=False, frame_skip=5, robot_type='jaco',
-                 capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5):
+                 capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
+                 joint_in_state=True, step_limit=200):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
                                              time_step=0.02, action_robot_len=7, obs_robot_len=18)
         self.success_dist = success_dist
-        # self.messages = np.array(['0 0 0','0 0 1','0 1 0', '0 1 1', '1 0 0', '1 0 1', '1 1 0', '1 1 1'])[message_indices]
         self.num_targets = num_targets
         self.messages = np.array([' '.join((['1'] * i) + ['0'] + ['1'] * (self.num_targets - i - 1))
                                   for i in range(self.num_targets)])
@@ -26,9 +27,11 @@ class LightSwitchEnv(AssistiveEnv):
         self.stochastic = stochastic
         self.session_goal = session_goal
         self.wall_offset = None
-        obs_size = (self.num_targets * 3) + 4 + self.num_targets + 3
+        obs_size = 4 + 3
+        self.joint_in_state = joint_in_state
+        if self.joint_in_state:
+            obs_size += 7
         self.observation_space = spaces.Box(-np.inf, np.inf, (obs_size,), dtype=np.float32)
-
 
         self.feature_sizes = {'goal': 3}
         if target_indices is None:
@@ -38,14 +41,26 @@ class LightSwitchEnv(AssistiveEnv):
                 assert 0 <= i < self.num_targets
             self.target_indices = target_indices
 
+        self.goal_set_shape = (self.num_targets, 4)
+        self.wall_color = None
+        self.step_limit = step_limit
+        self.curr_step = 0
+
+    def seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        self.init_pos_random, _ = seeding.np_random(seed)
+        return [seed]
+
     def step(self, action):
+        self.curr_step += 1
         old_tool_pos = self.tool_pos
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
         angle_dirs = np.zeros(len(self.switches))
         reward_switch = 0
         angle_diffs = []
-        lever_angles = []
+        self.lever_angles = []
+
         for i, switch in enumerate(self.switches):
             angle_dirs[i], angle_diff = self.move_lever(switch)
 
@@ -64,7 +79,7 @@ class LightSwitchEnv(AssistiveEnv):
                     self.update_targets()
 
             lever_angle = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
-            lever_angles.append(lever_angle)
+            self.lever_angles.append(lever_angle)
             angle_diffs.append(angle_diff)
             if lever_angle < LOW_LIMIT + .1:
                 self.current_string[i] = 0
@@ -79,17 +94,18 @@ class LightSwitchEnv(AssistiveEnv):
                 reward_switch += -abs(HIGH_LIMIT - lever_angle)
 
             if self.target_string[i] == self.current_string[i]:
-                p.changeVisualShape(self.targets1[i], -1, rgbaColor=[0, 0, 1, 1])
-                # if self.target_string[i] == 0:
-                # 	p.resetJointState(switch, jointIndex=0, targetValue=LOW_LIMIT, physicsClientId=self.id)
-                # else:
-                # 	p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
                 self.update_targets()
-            else:
-                p.changeVisualShape(self.targets1[i], -1, rgbaColor=[0, 1, 1, 1])
 
         task_success = np.all(np.equal(self.current_string, self.target_string))
         self.task_success = task_success
+        if self.task_success:
+            color = [0, 1, 0, 1]
+        elif self.wrong_goal_reached() or self.curr_step >= self.step_limit:
+            color = [1, 0, 0, 1]
+        else:
+            color = [0, 0, 1, 1]
+        p.changeVisualShape(self.targets1[self.target_index], -1, rgbaColor=color)
+
         obs = self._get_obs([0])
 
         _, _, _, bad_contact_count = self.get_total_force()
@@ -112,7 +128,7 @@ class LightSwitchEnv(AssistiveEnv):
 
             'target_index': self.target_index,
             'unique_index': self.target_index,
-            'lever_angle': lever_angles,
+            'lever_angle': self.lever_angles.copy(),
             'target_string': self.target_string.copy(),
             'current_string': self.current_string.copy(),
             'switch_pos': np.array(self.target_pos).copy(),
@@ -178,10 +194,20 @@ class LightSwitchEnv(AssistiveEnv):
 
         # switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
         # robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
+
+        if self.goal_positions is None:
+            self.goal_positions = np.array(self.target_pos).copy()
+
+        obs_features = [tool_orient, tool_pos]
+        if self.joint_in_state:
+            obs_features.append(robot_joint_positions)
+
         robot_obs = dict(
-            raw_obs=np.concatenate([np.array(self.target_pos).ravel(), tool_orient, self.current_string, tool_pos]),
-            hindsight_goal=np.concatenate([self.current_string, ]),
+            raw_obs=np.concatenate(obs_features),
+            hindsight_goal=np.zeros(3),
             goal=self.goal,
+            goal_set=np.concatenate((self.goal_positions, np.array(self.lever_angles)[:, None]),
+                                    axis=1)
         )
         return robot_obs
 
@@ -235,13 +261,21 @@ class LightSwitchEnv(AssistiveEnv):
         farPlane = 100
         self.projMatrix = p.computeProjectionMatrixFOV(fov, aspect, nearPlane, farPlane)
         self.goal = np.array(self.target_string)
+
+        self.lever_angles = [p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
+                             for switch in self.switches]
+        self.goal_positions = None
+        self.curr_step = 0
+
         return self._get_obs([0])
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
-        self.init_pos = np.array([0, -.5, 1])
+        self.init_pos = np.array([0, -.5, 1.1])
         if self.stochastic:
-            self.init_pos = self.init_pos + self.np_random.uniform(-0.02, 0.02, size=3)
+            self.init_pos[0] += self.init_pos_random.uniform(-0.5, 0.5)
+            self.init_pos[1] += self.init_pos_random.uniform(-0.1, 0.1)
+            self.init_pos[2] += self.init_pos_random.uniform(-0.1, 0.1)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -266,7 +300,7 @@ class LightSwitchEnv(AssistiveEnv):
         if index is None:
             self.target_index = self.np_random.choice(self.target_indices)
         else:
-            assert index in self.target_indices
+            # assert index in self.target_indices
             self.target_index = index
         self.unique_index = self.target_index
 
@@ -274,11 +308,12 @@ class LightSwitchEnv(AssistiveEnv):
         # default wall offset (for pretraining) is randomly chosen between (-0.1, 0)
         # calibration offset should be 0.1, online should be 0
         offset = self.np_random.choice((0.1, 0)) if self.wall_offset is None else self.wall_offset
-        self.switch_pos_noise = [self.np_random.uniform(-.05, .05), 0, 0]
+        self.switch_pos_noise = [self.np_random.uniform(-.25, .05), 0, 0]
         self.wall_noise = [0, self.np_random.uniform(-.05, .05) + offset, 0]
 
-    def calibrate_mode(self, calibrate):
-        self.wall_offset = 0.1 if calibrate else 0
+    def calibrate_mode(self, calibrate, split):
+        self.wall_offset = 0.1 if split else 0
+        self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
 
     def generate_target(self):
         # Place a switch on a wall
@@ -292,16 +327,12 @@ class LightSwitchEnv(AssistiveEnv):
         ]
         wall_pos, wall_orient = walls[wall_index]
         wall_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[1, .1, 1])
-        wall_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[1, .1, 1])
+        wall_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[1, .1, 1], rgbaColor=self.wall_color)
         self.wall = p.createMultiBody(basePosition=wall_pos, baseOrientation=wall_orient,
                                       baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,
                                       physicsClientId=self.id)
 
         self.target_string = np.array(self.messages[self.target_index].split(' ')).astype(int)
-        mask = self.np_random.choice([0, 1], len(self.target_string), p=[1 - self.switch_p, self.switch_p])
-        if not np.count_nonzero(mask):
-            mask = np.equal(np.arange(len(self.target_string)), self.np_random.choice(len(self.target_string))).astype(
-                int)
         self.initial_string = np.ones(self.num_targets)
         self.current_string = self.initial_string.copy()
         wall_pos, wall_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
@@ -330,16 +361,23 @@ class LightSwitchEnv(AssistiveEnv):
                 p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
         sphere_collision = -1
-        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist, rgbaColor=[0, 1, 1, 1],
-                                            physicsClientId=self.id)
-        self.targets = [p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
-                                          baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
-                                          useMaximalCoordinates=False, physicsClientId=self.id) for switch in
-                        self.switches]
-        self.targets1 = [p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
-                                           baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
-                                           useMaximalCoordinates=False, physicsClientId=self.id) for switch in
-                         self.switches]
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist,
+                                            rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
+
+        self.targets = []
+        self.targets1 = []
+        for i, switch in enumerate(self.switches):
+            self.targets.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
+                                                  basePosition=[-10, -10, -10], useMaximalCoordinates=False,
+                                                  physicsClientId=self.id))
+            if i == self.target_index:
+                self.targets1.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
+                                                       baseVisualShapeIndex=sphere_visual, basePosition=[-10, -10, -10],
+                                                       useMaximalCoordinates=False, physicsClientId=self.id))
+            else:
+                self.targets1.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
+                                                       basePosition=[-10, -10, -10],
+                                                       useMaximalCoordinates=False, physicsClientId=self.id))
 
         self.update_targets()
 

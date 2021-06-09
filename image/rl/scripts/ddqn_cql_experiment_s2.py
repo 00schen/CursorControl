@@ -3,7 +3,7 @@ from rlkit.torch.networks import ConcatMlpPolicy
 from rlkit.torch.networks import Clamp
 from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 
-from rl.policies import EncDecPolicy
+from rl.policies import EncDecQfPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -66,7 +66,7 @@ def experiment(variant):
 			lr=variant['qf_lr'],
 		)
 
-	eval_policy = EncDecPolicy(
+	eval_policy = EncDecQfPolicy(
 		qf,
 		list(env.feature_sizes.keys()),
 		encoder=encoder,
@@ -76,7 +76,7 @@ def experiment(variant):
 		eval_policy,
 		save_env_in_snapshot=False
 	)
-	expl_policy = EncDecPolicy(
+	expl_policy = EncDecQfPolicy(
 		qf,
 		list(env.feature_sizes.keys()),
 		encoder=encoder,

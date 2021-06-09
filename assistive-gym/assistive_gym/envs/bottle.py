@@ -11,7 +11,8 @@ from collections import OrderedDict
 reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.1, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
+	def __init__(self, robot_type='jaco',success_dist=.1, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False,
+				joint_in_state=False, step_limit=200,):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
 		self.observation_space = spaces.Box(-np.inf,np.inf,(8+12,), dtype=np.float32)
 		self.num_targets = 4*3

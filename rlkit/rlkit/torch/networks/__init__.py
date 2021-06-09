@@ -13,12 +13,10 @@ from rlkit.torch.networks.image_state import ImageStatePolicy, ImageStateQ
 from rlkit.torch.networks.linear_transform import LinearTransform
 from rlkit.torch.networks.normalization import LayerNorm
 from rlkit.torch.networks.mlp import (
-    Mlp, ConcatMlp, ConcatMlpPolicy, MlpPolicy, TanhMlpPolicy, MlpGazePolicy, VAE,
+    Mlp, ConcatMlp, ConcatMlpPolicy, MlpPolicy, TanhMlpPolicy, VAE,
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,
-    QrMlp,
-    QrGazeMlp,
 )
 from rlkit.torch.networks.rnn import (ConcatRNN,ConcatRNNPolicy)
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
@@ -49,8 +47,6 @@ __all__ = [
     'Split',
     'TwoHeadDCNN',
     'TwoHeadMlp',
-    'QrMlp',
-    'QrGazeMlp',
     'VQGazePolicy',
     'VAEGazePolicy',
     'VAE'

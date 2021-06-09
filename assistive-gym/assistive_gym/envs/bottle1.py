@@ -12,9 +12,10 @@ reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 
 class BottleEnv(AssistiveEnv):
-	def __init__(self, robot_type='jaco',success_dist=.1, target_indices=None, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False):
+	def __init__(self, robot_type='jaco',success_dist=.1, target_indices=None, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False,
+				num_targets=2, joint_in_state=False, step_limit=200):
 		super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(7+3+6,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(7+3+6+1,), dtype=np.float32)
 		self.num_targets = 4
 		self.success_dist = success_dist
 		self.debug = debug
@@ -22,12 +23,13 @@ class BottleEnv(AssistiveEnv):
 		self.goal_feat = ['target_pos',] # Just an FYI
 		self.feature_sizes = OrderedDict({'goal': 3})
 		self.session_goal = session_goal
-		if target_indices is None:
-			self.target_indices = list(np.arange(self.num_targets))
-		else:
-			for i in target_indices:
-				assert 0 <= i < self.num_targets
-			self.target_indices = target_indices
+		self.target_indices = list(np.arange(self.num_targets))
+		# if target_indices is None:
+		# 	self.target_indices = list(np.arange(self.num_targets))
+		# else:
+		# 	for i in target_indices:
+		# 		assert 0 <= i < self.num_targets
+		# 	self.target_indices = target_indices
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -45,9 +47,11 @@ class BottleEnv(AssistiveEnv):
 			'old_tool_pos': old_tool_pos,
 			'target_index': self.target_index,
 
+			'door_open': self.door_open,
 			'door_pos': self.door_pos,
 			'shelf_pos': self.shelf_pos,
 			'tool_pos': self.tool_pos,
+			'sub_target': self.sub_target_pos.copy(),
 			'target_pos': self.target_pos,
 			'unique_index': self.unique_index,
 			'unique_targets': self.bottle_poses,
@@ -62,7 +66,7 @@ class BottleEnv(AssistiveEnv):
 		contacts += p.getContactPoints(bodyA=self.tool, bodyB=self.shelf, linkIndexB=1, physicsClientId=self.id)
 		contacts += p.getContactPoints(bodyA=self.robot, bodyB=self.shelf, linkIndexB=0, physicsClientId=self.id)
 		contacts += p.getContactPoints(bodyA=self.tool, bodyB=self.shelf, linkIndexB=0, physicsClientId=self.id)
-		if len(contacts) == 0:
+		if len(contacts) == 0 or norm(self.tool_pos-self.door_pos) > .1:
 			return 0, 0
 
 		normal = contacts[0][7]
@@ -83,16 +87,18 @@ class BottleEnv(AssistiveEnv):
 		robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 		robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
-		final_door_pos = (np.array([-.15,.13,0]) if self.target_index//2 else np.array([.15,.13,0])) + self.shelf_pos
-		door_open = norm(self.door_pos-final_door_pos) < .05
+		final_door_pos = (np.array([-.15,.17,0]) if self.target_index//2 else np.array([.15,.17,0])) + self.shelf_pos
+		self.door_open = door_open = norm(self.door_pos-final_door_pos) < .02
 		if door_open:
 			self.unique_index = self.target_index//2
+			self.sub_target_pos = self.target_pos
 		else:
 			self.unique_index = 2 + self.target_index%2
+			self.sub_target_pos = final_door_pos
 
 		# robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses]),
+			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses, [door_open]]),
 			# raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.bottle_poses]),
 			hindsight_goal = np.concatenate([self.tool_pos,[0]]),
 			goal = self.goal,
@@ -174,13 +180,17 @@ class BottleEnv(AssistiveEnv):
 	def wrong_goal_reached(self):
 		return False
 
-	def calibrate_mode(self, calibrate):
-		pass
+	def calibrate_mode(self, calibrate, split):
+		if calibrate:
+			self.target_indices = [0,3]
+		else:
+			self.target_indices = list(range(self.num_targets))
 
 	def generate_target(self): 
 		self.shelf_pos = self.table_pos+np.array([0,.1,1])
-		# if self.stochastic:
-		# 	self.shelf_pos += self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
+		if self.stochastic:
+			# self.shelf_pos += self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
+			self.shelf_pos += np.array([-.1,0,0])
 		if self.target_index%2:
 			cabinet_urdf, self.slide_range = 'slide_cabinet_left.urdf', (-.3,0)
 		else:
@@ -220,7 +230,7 @@ class BottleEnv(AssistiveEnv):
 	@property
 	def door_pos(self):
 		location = p.getLinkState(self.shelf,1, computeForwardKinematics=True, physicsClientId=self.id)[:2]
-		door_pos = [.15,.13,0] if self.target_index%2 else [-.15,.13,0]
+		door_pos = [.15,.17,0] if self.target_index%2 else [-.15,.17,0]
 		return np.array(p.multiplyTransforms(*location, door_pos, [0, 0, 0, 1])[0])
 
 
