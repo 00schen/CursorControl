@@ -31,7 +31,6 @@ def default_overhead(config):
 
 	class Overhead(wrapper):
 		def __init__(self, config):
-			self.rng = default_rng(config['seedid'])
 			super().__init__(config)
 			adapt_map = {
 				'oracle': oracle,

@@ -11,6 +11,8 @@ class EncDecSACTrainer(TorchTrainer):
                  vae,
                  prev_vae,
                  policy,
+                 qf1,
+                 qf2,
                  optimizer,
                  latent_size,
                  feature_keys,
@@ -21,6 +23,8 @@ class EncDecSACTrainer(TorchTrainer):
                  ):
         super().__init__()
         self.policy = policy
+        self.qf1 = qf1
+        self.qf2 = qf2
         self.optimizer = optimizer
         self.vae = vae
         self.prev_vae = prev_vae
@@ -30,7 +34,6 @@ class EncDecSACTrainer(TorchTrainer):
         self.feature_keys = feature_keys
         self.objective = objective
         self.grad_norm_clip = grad_norm_clip
-
 
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -74,14 +77,15 @@ class EncDecSACTrainer(TorchTrainer):
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
+        if has_goal_set:
+            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+            target_policy_features = [obs, curr_goal_set_flat, target_latent]
+            pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
+        else:
+            target_policy_features = [obs, target_latent]
+            pred_policy_features = [obs, pred_latent]
+
         if self.objective == 'kl':
-            if has_goal_set:
-                curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-                target_policy_features = [obs, curr_goal_set_flat, target_latent]
-                pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
-            else:
-                target_policy_features = [obs, target_latent]
-                pred_policy_features = [obs, pred_latent]
             target_mean = self.policy(*target_policy_features).mean.detach()
             pred_mean = self.policy(*pred_policy_features).mean
             supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
@@ -89,6 +93,23 @@ class EncDecSACTrainer(TorchTrainer):
             pred_mean, pred_logvar = self.vae.encode(th.cat(encoder_features, dim=1))
             kl_loss = self.vae.kl_loss(pred_mean, pred_logvar)
             supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
+        elif self.objective == 'joint':
+            dist = self.policy(*pred_policy_features)
+
+            new_obs_actions, log_pi = dist.rsample_and_logprob()
+            log_pi = log_pi.unsqueeze(-1)
+
+            if has_goal_set:
+                new_qf_features = [obs, curr_goal_set_flat, goals, new_obs_actions]
+            else:
+                new_qf_features = [obs, goals, new_obs_actions]
+
+            q_new_actions = th.min(
+                self.qf1(*new_qf_features),
+                self.qf2(*new_qf_features),
+            )
+
+            supervised_loss = (-q_new_actions).mean()
         else:
             raise NotImplementedError()
 

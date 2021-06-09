@@ -13,7 +13,7 @@ HIGH_LIMIT = .2
 class LightSwitchEnv(AssistiveEnv):
     def __init__(self, message_indices=None, success_dist=.05, session_goal=False, frame_skip=5, robot_type='jaco',
                  capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
-                 joint_in_state=True, step_limit=200):
+                 step_limit=200):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
                                              time_step=0.02, action_robot_len=7, obs_robot_len=18)
         self.success_dist = success_dist
@@ -27,10 +27,7 @@ class LightSwitchEnv(AssistiveEnv):
         self.stochastic = stochastic
         self.session_goal = session_goal
         self.wall_offset = None
-        obs_size = 4 + 3
-        self.joint_in_state = joint_in_state
-        if self.joint_in_state:
-            obs_size += 7
+        obs_size = 4 + 3 + 7
         self.observation_space = spaces.Box(-np.inf, np.inf, (obs_size,), dtype=np.float32)
 
         self.feature_sizes = {'goal': 3}
@@ -195,9 +192,7 @@ class LightSwitchEnv(AssistiveEnv):
         # switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
         # robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 
-        obs_features = [tool_orient, tool_pos]
-        if self.joint_in_state:
-            obs_features.append(robot_joint_positions)
+        obs_features = [tool_orient, tool_pos, robot_joint_positions]
 
         robot_obs = dict(
             raw_obs=np.concatenate(obs_features),

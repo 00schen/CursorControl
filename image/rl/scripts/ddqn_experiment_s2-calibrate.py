@@ -203,7 +203,7 @@ if __name__ == "__main__":
             goal_noise_std=0.1,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
-                            joint_in_state=False, target_indices=[0, 2, 4]),
+                            target_indices=[0, 2, 4]),
 
             action_type='disc_traj',
             smooth_alpha=1,
