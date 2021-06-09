@@ -1,4 +1,4 @@
-from rl.policies import DemonstrationPolicy, UserInputPolicy, FollowerPolicy
+from rl.policies import DemonstrationPolicy, UserInputPolicy, FollowerPolicy, EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.misc.simple_path_loader import SimplePathLoader
@@ -19,16 +19,23 @@ def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+100)
 
-	# file_name = os.path.join(variant['eval_path'])
-	# policy = ArgmaxPolicy(
-	# 	qf=th.load(file_name,map_location=th.device("cpu"))['trainer/qf'],
-	# )
+	file_name = os.path.join(variant['eval_path'])
+	loaded = th.load(file_name,map_location='cpu')
+	policy = EncDecPolicy(
+        policy=loaded['trainer/policy'],
+        features_keys=list(env.feature_sizes.keys()),
+        vae=loaded['trainer/vae'],
+        incl_state=False,
+        sample=False,
+        deterministic=False
+    )
 
-	policy = FollowerPolicy(env)
+	# policy = FollowerPolicy(env)
+	# policy = DemonstrationPolicy(policy,env,p=variant['p'])
 
 	path_collector = FullPathCollector(
 		env,
-		DemonstrationPolicy(policy,env,p=variant['p']),
+		policy
 	)
 
 	if variant.get('render',False):
@@ -70,20 +77,20 @@ if __name__ == "__main__":
 	path_length = 1200
 	variant = dict(
 		seedid=3000,
-		eval_path=os.path.join(main_dir,'logs','test-b-ground-truth-offline-12','test-b-ground-truth-offline-12_2021_02_10_18_49_14_0000--s-0','params.pkl'),
+		eval_path=os.path.join(main_dir,'util_models','Kitchen_params_s1_subtask.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Bottle',
+			env_name='Kitchen',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
 			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
-			action_type='disc_traj',
+			action_type='joint',
 			smooth_alpha=.8,
 
 			factories = [],
-			adapts = ['goal','oracle'],
+			adapts = ['goal',],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
 			apply_projection=False,

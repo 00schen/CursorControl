@@ -46,7 +46,6 @@ class KitchenEnv(AssistiveEnv):
 											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
 		microwave_angle = p.getJointStates(self.microwave, jointIndices=[0], physicsClientId=self.id)[0][0]
 		fridge_angle = p.getJointStates(self.fridge, jointIndices=[0], physicsClientId=self.id)[0][0]
-		bowl_pos = p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[0]
 		# if food grabbed, cannot pull doors
 
 		if microwave_angle <= -.7:
@@ -55,7 +54,7 @@ class KitchenEnv(AssistiveEnv):
 			self.tasks[1] = 1
 		if (norm(self.bowl_pos - self.tool_pos) < .05 and self.tasks[0] and self.tasks[1]):
 			self.tasks[2] = 1
-		if norm(bowl_pos - self.microwave_target_pos) < .05:
+		if norm(self.curr_bowl_pos - self.microwave_target_pos) < .05:
 			self.tasks[3] = 1
 		if self.tasks[0] and microwave_angle > -.05:
 			self.tasks[4] = 1
@@ -369,6 +368,10 @@ class KitchenEnv(AssistiveEnv):
 	@property
 	def tool_orient(self):
 		return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[1])
+
+	@property
+	def curr_bowl_pos(self):
+		return np.array(p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[0])-np.array([0,0,.05])
 
 class KitchenJacoEnv(KitchenEnv):
 	def __init__(self,**kwargs):
