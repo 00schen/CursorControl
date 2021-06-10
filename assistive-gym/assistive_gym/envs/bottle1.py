@@ -17,7 +17,7 @@ class BottleEnv(AssistiveEnv):
                  capture_frames=False, stochastic=True, debug=False, step_limit=200):
         super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                         action_robot_len=7, obs_robot_len=14)
-        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 1,), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 1 + 7,), dtype=np.float32)
         self.num_targets = 4
         self.success_dist = success_dist
         self.debug = debug
@@ -105,7 +105,8 @@ class BottleEnv(AssistiveEnv):
 
         # robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
         robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses, [door_open]]),
+            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses, [door_open],
+                                    robot_joint_positions]),
             # raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.bottle_poses]),
             hindsight_goal=np.concatenate([self.tool_pos, [0]]),
             goal=self.goal,
@@ -142,6 +143,7 @@ class BottleEnv(AssistiveEnv):
         """set up target and initial robot position"""
         if not self.session_goal:
             self.set_target_index()  # instance override in demos
+            self.reset_noise()
         self.init_robot_arm()
         self.generate_target()
         # self.unique_index = self.target_index

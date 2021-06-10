@@ -213,9 +213,9 @@ if __name__ == "__main__":
         'from_pretrain': [False],
         # 'demo_path_proportions': [[50]*500, ],
         'demo_path_proportions': [[5000], ],
-        'trainer_kwargs.beta': [.01,.1],
+        'trainer_kwargs.beta': [.01],
         # 'trainer_kwargs.beta': [.01,],
-        'algorithm_args.num_trains_per_train_loop': [100,1000],
+        'algorithm_args.num_trains_per_train_loop': [1000],
         # 'algorithm_args.num_trains_per_train_loop': [1000,],
         'replay_buffer_size': [int(2e7)],
     }
