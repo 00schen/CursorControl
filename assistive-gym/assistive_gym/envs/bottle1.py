@@ -164,8 +164,8 @@ class BottleEnv(AssistiveEnv):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1])
 
-    # if self.stochastic:
-    # 	self.init_pos += self.np_random.uniform([-0.1,-0.1,0], [0.1,0.1,0], size=3)
+        if self.stochastic:
+            self.init_pos += self.np_random.uniform([-0.1,-0.1,0], [0.1,0.1,0], size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -196,7 +196,7 @@ class BottleEnv(AssistiveEnv):
     # self.unique_index = self.target_index
 
     def reset_noise(self):
-        pass
+        self.shelf_noise = self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
 
     def wrong_goal_reached(self):
         return False
@@ -210,8 +210,7 @@ class BottleEnv(AssistiveEnv):
     def generate_target(self):
         self.shelf_pos = self.table_pos + np.array([0, .1, 1])
         if self.stochastic:
-            # self.shelf_pos += self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
-            self.shelf_pos += np.array([-.1, 0, 0])
+            self.shelf_pos += self.shelf_noise
         if self.target_index % 2:
             cabinet_urdf, self.slide_range = 'slide_cabinet_left.urdf', (-.3, 0)
         else:

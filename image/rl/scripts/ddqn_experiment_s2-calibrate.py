@@ -110,7 +110,8 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
-        latent_size=variant['latent_size']
+        latent_size=variant['latent_size'],
+        store_latents=True
     )
     trainer = LatentEncDecCQLTrainer(
         vae=vae,
@@ -231,7 +232,7 @@ if __name__ == "__main__":
         'algorithm_args.calibrate_split': [False],
         'algorithm_args.calibration_indices': [[0, 2, 4]],
         'algorithm_args.relabel_failures': [True],
-        'algorithm_args.seedid': [2000, 2001, 2002],
+        'seedid': [2000, 2001, 2002],
         'layer_norm': [True],
         'freeze_decoder': [True],
         'freeze_rf': [True],
@@ -245,6 +246,9 @@ if __name__ == "__main__":
 
 
     def process_args(variant):
+        variant['env_config']['seedid'] = variant['seedid']
+        variant['algorithm_args']['seedid'] = variant['seedid']
+
         if not args.use_ray:
             variant['render'] = args.no_render
 

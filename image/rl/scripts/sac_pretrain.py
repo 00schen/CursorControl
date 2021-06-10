@@ -118,10 +118,11 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         **variant['trainer_kwargs']
     )
-    replay_buffer = variant['buffer_type'](
+    replay_buffer = ModdedReplayBuffer(
         variant['replay_buffer_size'],
         env,
         sample_base=0,
+        store_latents=False
     )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
@@ -218,7 +219,6 @@ if __name__ == "__main__":
         # 'trainer_kwargs.beta': [.01,],
         'algorithm_args.num_trains_per_train_loop': [100,1000],
         # 'algorithm_args.num_trains_per_train_loop': [1000,],
-        'buffer_type': [ModdedReplayBuffer],
         'replay_buffer_size': [int(2e7)],
     }
 

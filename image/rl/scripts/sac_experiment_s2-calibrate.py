@@ -113,7 +113,8 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
-        latent_size=variant['latent_size']
+        latent_size=variant['latent_size'],
+        store_latents=True
     )
     trainer = LatentEncDecSACTrainer(
         vae=vae,
@@ -134,7 +135,8 @@ def experiment(variant):
             variant['replay_buffer_size'],
             env,
             sample_base=0,
-            latent_size=variant['latent_size']
+            latent_size=variant['latent_size'],
+            store_latents=True
         )
 
     if variant['real_user']:
@@ -236,7 +238,7 @@ if __name__ == "__main__":
         'algorithm_args.num_trains_per_train_loop': [100],
         'trainer_kwargs.objective': ['kl'],
         # 'mode': ['default', 'no_online', 'shift', 'no_right'],
-        'algorithm_args.seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
+        'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
         'freeze_decoder': [True],
     }
 
@@ -269,6 +271,9 @@ if __name__ == "__main__":
     #     variants.append(variant)
 
     def process_args(variant):
+        variant['env_config']['seedid'] = variant['seedid']
+        variant['algorithm_args']['seedid'] = variant['seedid']
+
         if not args.use_ray:
             variant['render'] = args.no_render
 

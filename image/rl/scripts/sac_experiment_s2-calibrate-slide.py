@@ -104,7 +104,8 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
-        latent_size=variant['latent_size']
+        latent_size=variant['latent_size'],
+        store_latents=True
     )
     trainer = LatentEncDecSACTrainer(
         vae=vae,
@@ -207,7 +208,6 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
-        'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,],
         'n_layers': [1],
         'algorithm_args.trajs_per_index': [3],
         'lr': [5e-4],
@@ -217,6 +217,7 @@ if __name__ == "__main__":
         'algorithm_args.max_path_length': [path_length,],
         'algorithm_args.max_failures': [5],
         'eval_config.env_kwargs.target_indices': [[1,2],[0,3]],
+        'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, ],
         'freeze_decoder': [True],
         'trainer_kwargs.use_supervised': ['calibrate_kl'],
     }
@@ -228,6 +229,8 @@ if __name__ == "__main__":
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
+        variant['algorithm_args']['seedid'] = variant['seedid']
+
         if not args.use_ray:
             variant['render'] = args.no_render
 
