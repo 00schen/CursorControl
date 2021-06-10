@@ -35,7 +35,7 @@
 legacy_code
 */*/*/oracle_training.py
 */*/oracle_training.py
-*demos
+# *demos
 */*demos
 */*/*demos
 */*/*/*demos
