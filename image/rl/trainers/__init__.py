@@ -1,6 +1,6 @@
 from .cql_trainer import CQLTrainer
 from .ddqn_trainer import DDQNTrainer
-from .bc_trainer import TorchBCTrainer, VQVAEBCTrainerTorch, DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch, DiscreteCycleGANBCTrainerTorch
+from .bc_trainer import TorchBCTrainer, DiscreteVAEBCTrainerTorch, DiscreteBCTrainerTorch, DiscreteCycleGANBCTrainerTorch, TorchEncDecAWACTrainer
 from .ddqn_cql_trainer import DDQNCQLTrainer
 from .qr_ddqn_cql_trainer import QRDDQNCQLTrainer
 from .reward_trainer import RewardTrainer

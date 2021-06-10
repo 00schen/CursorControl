@@ -15,7 +15,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 			env,
 			env_info_sizes={'episode_success':1},
 			# env_info_sizes={'noop':1,},
-			sample_base=5000*200,
+			sample_base=0,
 			latent_size=3,
 			store_latents=True
 	):

@@ -10,6 +10,7 @@ from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.trainers.bc_trainer import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -140,6 +141,26 @@ def experiment(variant):
     )
     path_loader.load_demos()
 
+    if variant['pretrain_steps']:
+        awac_trainer = TorchEncDecAWACTrainer(
+            policy=policy,
+            policy_lr=variant['trainer_kwargs']['policy_lr'],
+            qf1=qf1,
+            qf2=qf2,
+            target_qf1=target_qf1,
+            target_qf2=target_qf2,
+            qf_lr=variant['trainer_kwargs']['qf_lr'],
+            vae=vae,
+            latent_size=variant['latent_size'],
+            beta=0.01,
+            sample=True,
+            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+            target_update_period=variant['trainer_kwargs']['target_update_period'],
+        )
+        for _ in range(variant['pretrain_steps']):
+            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+            awac_trainer.train(train_data)
+
     if variant.get('render', False):
         env.render('human')
     algorithm.train()
@@ -161,8 +182,9 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
+        pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=int(1e6),
+            num_epochs=5000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -182,13 +204,9 @@ if __name__ == "__main__":
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
-        # demo_paths=[
-        #     # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
-        #     os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
-        # ]*500, # no latent
         demo_paths=[
             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
-        ], # no latent
+        ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
@@ -211,13 +229,10 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        # 'demo_path_proportions': [[50]*500, ],
-        'demo_path_proportions': [[5000], ],
+        'demo_path_proportions': [[5000]],
         'trainer_kwargs.beta': [.01],
-        # 'trainer_kwargs.beta': [.01,],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        # 'algorithm_args.num_trains_per_train_loop': [1000,],
-        'replay_buffer_size': [int(2e7)],
+        'replay_buffer_size': [1000000],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

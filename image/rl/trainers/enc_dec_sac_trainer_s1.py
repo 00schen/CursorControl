@@ -138,7 +138,7 @@ class EncDecSACTrainer(SACTrainer):
 
         if self.vae is not None:
             curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
-            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)            
+            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
 
             next_latent = next_latent.detach()
 
