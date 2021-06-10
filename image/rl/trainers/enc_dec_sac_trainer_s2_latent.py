@@ -68,10 +68,7 @@ class EncDecSACTrainer(TorchTrainer):
         pred_latent, kl_loss = self.vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
 
         if self.prev_vae is not None:
-            if self.prev_vae.encoder.input_size == goals.shape[-1]:
-                target_latent = self.prev_vae.sample(goals, eps=None)
-            else:
-                target_latent = self.prev_vae.sample(th.cat((goals,obs), dim=1), eps=None)
+            target_latent = self.prev_vae.sample(goals, eps=None)
         else:
             target_latent = goals
 

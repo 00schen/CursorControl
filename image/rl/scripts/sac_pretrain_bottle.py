@@ -62,7 +62,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()) if env.env_name == 'OneSwitch' else obs_dim,
+        vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]

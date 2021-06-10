@@ -63,7 +63,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()) if env.env_name == 'OneSwitch' else obs_dim,
+        vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         demo_paths=[
             # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
             os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
-        ]*500, # no latent
+        ]*100, # no latent
         # demo_paths=[
         #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
         # ], # no latent
@@ -204,7 +204,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='part_sparse_kitchen',
+            reward_type='custom_kitchen',
             reward_temp=1,
             reward_offset=-0.2
         )
@@ -212,7 +212,7 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[50]*500, ],
+        'demo_path_proportions': [[50]*100, ],
         # 'demo_path_proportions': [[50], ],
         'trainer_kwargs.beta': [.01,.1],
         # 'trainer_kwargs.beta': [.01,],

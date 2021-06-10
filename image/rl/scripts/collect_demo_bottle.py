@@ -74,15 +74,15 @@ if __name__ == "__main__":
 	main_dir = str(Path(__file__).resolve().parents[2])
 	print(main_dir)
 
-	path_length = 1200
+	path_length = 200
 	variant = dict(
 		seedid=3000,
-		eval_path=os.path.join(main_dir,'util_models','Kitchen_params_s1_subtask.pkl'),
+		# eval_path=os.path.join(main_dir,'util_models','Kitchen_params_s1_subtask.pkl'),
 		env_kwargs={'config':dict(
-			env_name='Kitchen',
+			env_name='Bottle',
 			step_limit=path_length,
 			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
-			oracle='keyboard',
+			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 			smooth_alpha=.8,
 
 			factories = [],
-			adapts = ['goal','oracle','reward'],
+			adapts = ['goal','oracle',],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
 			apply_projection=False,
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=1,
+		p=.8,
 		num_episodes=5000,
 		path_length=path_length,
 		save_name_suffix="full",

@@ -137,13 +137,8 @@ class EncDecSACTrainer(SACTrainer):
         eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
 
         if self.vae is not None:
-            if self.vae.encoder.input_size == curr_goal.shape[-1]:
-                curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
-                next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
-            else:
-                curr_latent, kl_loss = self.vae.sample(torch.cat((curr_goal,obs),dim=1), eps=eps, return_kl=True)
-                next_latent = self.vae.sample(torch.cat((next_goal,next_obs),dim=1), eps=eps, return_kl=False)
-            
+            curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
+            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)            
 
             next_latent = next_latent.detach()
 

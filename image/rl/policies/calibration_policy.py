@@ -73,7 +73,7 @@ class CalibrationPolicy(EncDecPolicy):
             features = [self.target]
 
             if self.prev_vae is not None:
-                if self.incl_state or self.env.env_name == 'Bottle':
+                if self.incl_state:
                     features.append(raw_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())

@@ -59,7 +59,7 @@ class KitchenEnv(AssistiveEnv):
 		if self.tasks[0] and microwave_angle > -.05:
 			self.tasks[4] = 1
 		if self.tasks[1] and fridge_angle < .05:
-			self.tasks[5] = 1
+			self.tasks[5] = 1		
 
 		
 		sub_target = microwave_pos if self.door_orders[0] == 0 else fridge_pos

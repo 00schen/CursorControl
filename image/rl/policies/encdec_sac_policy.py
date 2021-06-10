@@ -31,7 +31,7 @@ class EncDecPolicy(PyTorchModule):
             goal_set = obs.get('goal_set')
 
             if self.vae != None:
-                if self.incl_state or sum([feat.shape[0] for feat in features]) != self.vae.encoder.input_size:
+                if self.incl_state:
                     features.append(raw_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())

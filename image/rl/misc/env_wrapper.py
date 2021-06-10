@@ -32,6 +32,7 @@ def default_overhead(config):
 	class Overhead(wrapper):
 		def __init__(self, config):
 			super().__init__(config)
+			self.rng = default_rng(config['seedid'])
 			adapt_map = {
 				'oracle': oracle,
 				'static_gaze': static_gaze,
@@ -375,14 +376,14 @@ class goal:
 		self.master_env = master_env
 		self.goal_feat_func = dict(
 			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
-			Kitchen=lambda info: [info['sub_target']],
-			Bottle=lambda info: [info['sub_target'],],
+			Kitchen=lambda info: [info['sub_target'],info['tasks']],
+			Bottle=lambda info: [info['sub_target'],np.array([info['door_open']])],
 			OneSwitch=None,
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
 		self.hindsight_feat = dict(
-			Kitchen={'tool_pos':3,},
-			Bottle={'tool_pos': 3},
+			Kitchen={'tool_pos':3,'tasks':6},
+			Bottle={'tool_pos': 3,'door_open':1},
 			OneSwitch={'tool_pos':3},
 			AnySwitch={'tool_pos':3}
 		)[self.env_name]
@@ -439,35 +440,42 @@ class reward:
 				r = 0
 		elif self.reward_type == 'custom_kitchen':
 			r = -1
+			# print(
+			# 	max(0,info['microwave_angle'] - -.7),
+			# 	max(0,.7-info['fridge_angle']),
+			# 	norm(info['tool_pos'] - info['target1_pos']),
+			# 	norm(info['tool_pos'] - info['target_pos'])
+			# 	)
 			if not info['tasks'][0]:
-				r += np.exp(-norm(info['microwave_angle'] - -.7))/6
+				r += np.exp(-10*max(0,info['microwave_angle'] - -.7))/6
 			else:
 				r += 1/6
 			if not info['tasks'][1]:
-				r += np.exp(-norm(info['fridge_angle'] - .7))/6
+				r += np.exp(-10*max(0,.7-info['fridge_angle']))/6
 			else:
 				r += 1/6
 
 			if not info['tasks'][2] and info['tasks'][0] and info['tasks'][1]:
 				r += np.exp(-norm(info['tool_pos'] - info['target1_pos']))/6
 			elif info['tasks'][2]:
-				r = 1/2
+				r = -1/2
 			if not info['tasks'][3] and info['tasks'][2]:
 				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/6
 			elif info['tasks'][3]:
-				r = 2/3
+				r = -1/3
 
 			if not info['tasks'][4] and info['tasks'][3]:
 				r += np.exp(-norm(info['microwave_angle'] - 0))/6
-			else:
+			elif info['tasks'][4]:
 				r += 1/6
-			if not info['tasks'][5]:
+			if not info['tasks'][5] and info['tasks'][3]:
 				r += np.exp(-norm(info['fridge_angle'] - 0))/6
-			else:
+			elif info['tasks'][5]:
 				r += 1/6
 
 			if info['task_success']:
 				r = 0
+
 		elif self.reward_type == 'dist':
 			r = 0
 			if not info['task_success']:
