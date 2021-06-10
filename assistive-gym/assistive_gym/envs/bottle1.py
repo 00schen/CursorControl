@@ -5,7 +5,7 @@ import pybullet as p
 from itertools import product
 from numpy.linalg import norm
 from .env import AssistiveEnv
-from copy import deepcopy
+from gym.utils import seeding
 from collections import OrderedDict
 
 reach_arena = (np.array([-.25, -.5, 1]), np.array([.6, .4, .2]))
@@ -34,6 +34,11 @@ class BottleEnv(AssistiveEnv):
         # 	for i in target_indices:
         # 		assert 0 <= i < self.num_targets
         # 	self.target_indices = target_indices
+
+    def seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        self.init_pos_random, _ = seeding.np_random(seed)
+        return [seed]
 
     def step(self, action):
         old_tool_pos = self.tool_pos
@@ -172,7 +177,7 @@ class BottleEnv(AssistiveEnv):
         self.init_pos = np.array([0, -.5, 1.1])
 
         if self.stochastic:
-            self.init_pos += self.np_random.uniform([-0.4,-0.1,-0.1], [0.4,0.1,0.1], size=3)
+            self.init_pos += self.init_pos_random.uniform([-0.4,-0.1,-0.1], [0.4,0.1,0.1], size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()
