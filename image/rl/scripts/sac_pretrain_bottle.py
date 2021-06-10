@@ -147,7 +147,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='pretrain_sac')
+    parser.add_argument('--exp_name', default='pretrain_sac_bottle')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -164,7 +164,6 @@ if __name__ == "__main__":
             num_epochs=int(1e6),
             num_eval_steps_per_epoch=0,
             eval_paths=False,
-            # num_trains_per_train_loop=1000,
             num_expl_steps_per_train_loop=1000,
             min_num_steps_before_training=1000,
             max_path_length=path_length,
@@ -194,7 +193,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5, joint_in_state=False,),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],

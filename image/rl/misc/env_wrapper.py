@@ -81,7 +81,9 @@ class LibraryWrapper(Env):
 
 	def step(self, action):
 		obs, r, done, info = self.base_env.step(action)
-		done = info['task_success'] or (self.terminate_on_failure and self.base_env.wrong_goal_reached())
+		done = info['task_success']
+		if self.terminate_on_failure and hasattr(self.base_env, 'wrong_goal_reached'):
+			done = done or self.base_env.wrong_goal_reached()
 		return obs, r, done, info
 
 	def reset(self):

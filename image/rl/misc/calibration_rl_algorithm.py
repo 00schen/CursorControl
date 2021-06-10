@@ -98,7 +98,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 		self.expl_env.base_env.calibrate_mode(False, False)
 		self.eval_env.base_env.calibrate_mode(False, False)
 
-		success = False
 		failed_paths = []
 		successful_paths = []
 		self.expl_env.new_goal()
