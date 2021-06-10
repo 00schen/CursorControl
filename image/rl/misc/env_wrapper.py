@@ -379,13 +379,13 @@ class goal:
 		self.goal_feat_func = dict(
 			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
 			Kitchen=lambda info: [info['sub_target'],info['tasks']],
-			Bottle=lambda info: [info['sub_target'],np.array([info['door_open']])],
+			Bottle=lambda info: [info['target_pos']],
 			OneSwitch=None,
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]
 		self.hindsight_feat = dict(
 			Kitchen={'tool_pos':3,'tasks':6},
-			Bottle={'tool_pos': 3,'door_open':1},
+			Bottle={'tool_pos': 3},
 			OneSwitch={'tool_pos':3},
 			AnySwitch={'tool_pos':3}
 		)[self.env_name]

@@ -17,7 +17,7 @@ class BottleEnv(AssistiveEnv):
                  capture_frames=False, stochastic=True, debug=False, step_limit=200):
         super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                         action_robot_len=7, obs_robot_len=14)
-        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 1 + 7,), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 7,), dtype=np.float32)
         self.num_targets = 4
         self.success_dist = success_dist
         self.debug = debug
@@ -26,6 +26,7 @@ class BottleEnv(AssistiveEnv):
         self.feature_sizes = OrderedDict({'goal': 3})
         self.session_goal = session_goal
         self.target_indices = list(np.arange(self.num_targets))
+        self.table_offset = None
 
         # if target_indices is None:
         # 	self.target_indices = list(np.arange(self.num_targets))
@@ -105,7 +106,7 @@ class BottleEnv(AssistiveEnv):
 
         # robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
         robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses, [door_open],
+            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses,
                                     robot_joint_positions]),
             # raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.bottle_poses]),
             hindsight_goal=np.concatenate([self.tool_pos, [0]]),
@@ -135,15 +136,19 @@ class BottleEnv(AssistiveEnv):
         self.human_lower_limits = np.array([])
         self.human_upper_limits = np.array([])
 
-        """set up shelf environment objects"""
-        self.table_pos = table_pos = np.array([-.2, -1.1, 0])
-        self.table = p.loadURDF(os.path.join(self.world_creation.directory, 'table', 'table_tall.urdf'),
-                                basePosition=table_pos, baseOrientation=default_orientation, physicsClientId=self.id)
-
         """set up target and initial robot position"""
         if not self.session_goal:
             self.set_target_index()  # instance override in demos
             self.reset_noise()
+
+        """set up shelf environment objects"""
+        self.table_pos = table_pos = np.array([0, -1.05, 0])
+        if self.stochastic:
+            self.table_pos = table_pos = table_pos + self.table_noise
+
+        self.table = p.loadURDF(os.path.join(self.world_creation.directory, 'table', 'table_tall.urdf'),
+                                basePosition=table_pos, baseOrientation=default_orientation, physicsClientId=self.id)
+
         self.init_robot_arm()
         self.generate_target()
         # self.unique_index = self.target_index
@@ -164,21 +169,21 @@ class BottleEnv(AssistiveEnv):
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
-        self.init_pos = np.array([0, -.5, 1])
+        self.init_pos = np.array([0, -.5, 1.1])
 
         if self.stochastic:
-            self.init_pos += self.np_random.uniform([-0.1,-0.1,0], [0.1,0.1,0], size=3)
+            self.init_pos += self.np_random.uniform([-0.4,-0.1,-0.1], [0.4,0.1,0.1], size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()
         init_orient = p.getQuaternionFromEuler(np.array([0, np.pi / 2.0, 0]), physicsClientId=self.id)
         # best_ik_joints = np.array([-1.0, 3.0, 0.5, 4.0, 0.0, 1.5, 1.0])
-        best_ik_joints = np.array([-1.0, 3.0, 1, 4.0, 0.0, 1.5, 1.0])
+        # best_ik_joints = np.array([-1.0, 3.0, 1, 4.0, 0.0, 1.5, 1.0])
         self.util.ik_random_restarts(self.robot, 11, self.init_pos, init_orient, self.world_creation,
                                      self.robot_left_arm_joint_indices, self.robot_lower_limits,
                                      self.robot_upper_limits,
-                                     best_ik_joints=best_ik_joints, ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=1,
-                                     max_ik_random_restarts=1, random_restart_threshold=0.03, step_sim=True)
+                                     ik_indices=[0, 1, 2, 3, 4, 5, 6], max_iterations=100,
+                                     max_ik_random_restarts=10, random_restart_threshold=0.03, step_sim=True)
         self.world_creation.set_gripper_open_position(self.robot, position=1, left=True, set_instantly=True)
         self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001] * 3, pos_offset=[0, 0, 0.02],
                                                   orient_offset=p.getQuaternionFromEuler([0, -np.pi / 2.0, 0],
@@ -198,12 +203,15 @@ class BottleEnv(AssistiveEnv):
     # self.unique_index = self.target_index
 
     def reset_noise(self):
-        self.shelf_noise = self.np_random.uniform([-0.05,0,0], [0.1,0,0], size=3)
+        offset = self.np_random.choice((0.1, 0)) if self.table_offset is None else self.table_offset
+        self.table_noise = self.np_random.uniform([-0.25, -0.05, 0], [0.15, 0.05, 0], size=3)
+        self.table_noise[1] = self.table_noise[1] + offset
 
     def wrong_goal_reached(self):
         return False
 
     def calibrate_mode(self, calibrate, split):
+        self.table_offset = 0.1 if split else 0
         if calibrate:
             self.target_indices = [0, 3]
         else:
@@ -211,8 +219,6 @@ class BottleEnv(AssistiveEnv):
 
     def generate_target(self):
         self.shelf_pos = self.table_pos + np.array([0, .1, 1])
-        if self.stochastic:
-            self.shelf_pos += self.shelf_noise
         if self.target_index % 2:
             cabinet_urdf, self.slide_range = 'slide_cabinet_left.urdf', (-.3, 0)
         else:
