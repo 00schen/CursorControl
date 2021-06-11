@@ -32,7 +32,7 @@ def experiment(variant):
 
     M = variant["layer_size"]
 
-    file_name = os.path.join('image','util_models', variant['pretrain_path'])
+    file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
     obs_dim = env.observation_space.low.size + reduce(operator.mul,
@@ -142,8 +142,6 @@ def experiment(variant):
     if variant['real_user']:
         variant['algorithm_args']['eval_paths'] = False
 
-    if env.env_name == 'Bottle':
-        variant['algorithm_args']['calibration_indices'] = [0,3]
     algorithm = TorchCalibrationRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
@@ -248,9 +246,6 @@ if __name__ == "__main__":
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
 
-    if args.env_name == 'Bottle':
-        variants[0]['algorithm_args']['calibration_indices'] = [0, 3]
-
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
         variant['algorithm_args']['seedid'] = variant['seedid']
@@ -258,17 +253,33 @@ if __name__ == "__main__":
         if not args.use_ray:
             variant['render'] = args.no_render
 
-        mode_dict = {'default': {'calibrate_split': False,
-                                 'calibration_indices': [1, 2, 3]},
-                     'no_online': {'calibrate_split': False,
-                                   'calibration_indices': [1, 2, 3],
-                                   'num_trains_per_train_loop': 0},
-                     'shift': {'calibrate_split': True,
-                               'calibration_indices': [1, 2, 3]},
-                     'no_right': {'calibrate_split': False,
-                                  'calibration_indices': [2, 3]},
-                     'overcalibrate': {'calibrate_split': False,
-                                       'calibration_indices': [0, 1, 2, 3, 4]}}[variant['mode']]
+        mode_dict = {'OneSwitch':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': [1, 2, 3]},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': [1, 2, 3],
+                                        'num_trains_per_train_loop': 0},
+                          'shift': {'calibrate_split': True,
+                                    'calibration_indices': [1, 2, 3]},
+                          'no_right': {'calibrate_split': False,
+                                       'calibration_indices': [2, 3]},
+                          'overcalibrate': {'calibrate_split': False,
+                                            'calibration_indices': [0, 1, 2, 3, 4]}
+                          },
+                     'Bottle':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': [0, 1, 2, 3]},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': [0, 1, 2, 3],
+                                        'num_trains_per_train_loop': 0},
+                          'shift': {'calibrate_split': True,
+                                    'calibration_indices': [0, 1, 2, 3]},
+                          'no_door': {'calibrate_split': False,
+                                      'calibration_indices': [0, 3]}
+
+
+                          }
+                     }[variant['env_config']['env_name']][variant['mode']]
 
         variant['algorithm_args'].update(mode_dict)
 
@@ -277,6 +288,7 @@ if __name__ == "__main__":
 
         if variant['trainer_kwargs']['objective'] == 'awr':
             variant['algorithm_args']['relabel_failures'] = False
+
 
     args.process_args = process_args
 
