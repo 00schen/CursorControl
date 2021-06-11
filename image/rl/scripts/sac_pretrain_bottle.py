@@ -84,7 +84,7 @@ def experiment(variant):
         vae=vae,
         incl_state=False,
         sample=False,
-        deterministic=True
+        deterministic=False
     )
 
     eval_policy = EncDecPolicy(
@@ -134,32 +134,33 @@ def experiment(variant):
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
-    # path_loader = SimplePathLoader(
-    #     demo_path=variant['demo_paths'],
-    #     demo_path_proportion=variant['demo_path_proportions'],
-    #     replay_buffer=replay_buffer,
-    # )
-    # path_loader.load_demos()
-    #
-    # if variant['pretrain_steps']:
-    #     awac_trainer = TorchEncDecAWACTrainer(
-    #         policy=policy,
-    #         policy_lr=variant['trainer_kwargs']['policy_lr'],
-    #         qf1=qf1,
-    #         qf2=qf2,
-    #         target_qf1=target_qf1,
-    #         target_qf2=target_qf2,
-    #         qf_lr=variant['trainer_kwargs']['qf_lr'],
-    #         vae=vae,
-    #         latent_size=variant['latent_size'],
-    #         beta=0.01,
-    #         sample=True,
-    #         soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
-    #         target_update_period=variant['trainer_kwargs']['target_update_period'],
-    #     )
-    #     for _ in range(variant['pretrain_steps']):
-    #         train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-    #         awac_trainer.train(train_data)
+
+    path_loader = SimplePathLoader(
+        demo_path=variant['demo_paths'],
+        demo_path_proportion=variant['demo_path_proportions'],
+        replay_buffer=replay_buffer,
+    )
+    path_loader.load_demos()
+
+    if variant['pretrain_steps']:
+        awac_trainer = TorchEncDecAWACTrainer(
+            policy=policy,
+            policy_lr=variant['trainer_kwargs']['policy_lr'],
+            qf1=qf1,
+            qf2=qf2,
+            target_qf1=target_qf1,
+            target_qf2=target_qf2,
+            qf_lr=variant['trainer_kwargs']['qf_lr'],
+            vae=vae,
+            latent_size=variant['latent_size'],
+            beta=0.01,
+            sample=True,
+            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+            target_update_period=variant['trainer_kwargs']['target_update_period'],
+        )
+        for _ in range(variant['pretrain_steps']):
+            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+            awac_trainer.train(train_data)
 
     if variant.get('render', False):
         env.render('human')
