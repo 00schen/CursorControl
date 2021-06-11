@@ -3,7 +3,7 @@ from rlkit.pythonplusplus import merge_recursive_dicts
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationSACPolicy, EncDecSACPolicy
+from rl.policies import CalibrationPolicy, EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import LatentEncDecSACTrainer
@@ -56,7 +56,7 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    expl_policy = EncDecSACPolicy(
+    expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -66,7 +66,7 @@ def experiment(variant):
         latent_size=variant['latent_size'],
     )
 
-    eval_policy = EncDecSACPolicy(
+    eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vae=vae,
@@ -82,7 +82,7 @@ def experiment(variant):
         save_env_in_snapshot=False
     )
 
-    calibration_policy = CalibrationSACPolicy(
+    calibration_policy = CalibrationPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         env=env,
@@ -148,7 +148,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac_5')
+    parser.add_argument('--exp_name', default='calibrate_sac_bottle')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -158,14 +158,13 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_1e-1_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         keep_calibration_data=True,
         trainer_kwargs=dict(
             beta=0.01,
-            grad_norm_clip=1
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -185,12 +184,12 @@ if __name__ == "__main__":
             terminate_on_failure=True,
             step_limit=path_length,
             env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False,),
-
+            goal_noise_std=0.05,
             action_type='joint',
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal', 'static_gaze', 'reward'],
+            adapts=['goal', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,

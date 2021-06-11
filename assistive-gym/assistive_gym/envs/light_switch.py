@@ -211,7 +211,7 @@ class LightSwitchEnv(AssistiveEnv):
         return self.target_pos[self.target_index]
 
     def reset(self):
-        self.task_success = 0
+        self.task_success = False
 
         """set up standard environment"""
         self.setup_timing()

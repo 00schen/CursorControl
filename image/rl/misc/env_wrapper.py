@@ -379,7 +379,7 @@ class goal:
 		self.goal_feat_func = dict(
 			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
 			Kitchen=lambda info: [info['sub_target'],info['tasks']],
-			Bottle=lambda info: [info['target_pos']],
+			Bottle=None,
 			OneSwitch=None,
 			AnySwitch=lambda info: [info['switch_pos'],]
 		)[self.env_name]

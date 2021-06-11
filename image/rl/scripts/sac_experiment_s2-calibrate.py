@@ -206,8 +206,8 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0.05,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
-                            target_indices=[1, 2, 3]),
+            env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False,
+                            target_indices=None),
 
             action_type='joint',
             smooth_alpha=1,
@@ -250,25 +250,6 @@ if __name__ == "__main__":
 
     if args.env_name == 'Bottle':
         variants[0]['algorithm_args']['calibration_indices'] = [0, 3]
-
-    # search_space = {
-    #     'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
-    #     'n_layers': [1],
-    #     'algorithm_args.trajs_per_index': [3],
-    #     'lr': [5e-4],
-    #     'trainer_kwargs.sample': [True],
-    #     'algorithm_args.calibrate_split': [False,],
-    #     'algorithm_args.calibration_indices': [[0], [4]],
-    #     'algorithm_args.max_path_length': [path_length, 5*path_length, 10*path_length],
-    #     'algorithm_args.max_failures': [1],
-    #     'freeze_decoder': [True],
-    #     'trainer_kwargs.use_supervised': ['calibrate_kl'],
-    # }
-    # sweeper = hyp.DeterministicHyperparameterSweeper(
-    #     search_space, default_parameters=default_variant,
-    # )
-    # for variant in sweeper.iterate_hyperparameters():
-    #     variants.append(variant)
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']

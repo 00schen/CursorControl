@@ -35,12 +35,17 @@ class BottleEnv(AssistiveEnv):
         # 		assert 0 <= i < self.num_targets
         # 	self.target_indices = target_indices
 
+        self.wall_color = None
+        self.step_limit = step_limit
+        self.curr_step = 0
+
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         self.init_pos_random, _ = seeding.np_random(seed)
         return [seed]
 
     def step(self, action):
+        self.curr_step += 1
         old_tool_pos = self.tool_pos
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
@@ -48,6 +53,16 @@ class BottleEnv(AssistiveEnv):
 
         self.task_success = norm(self.tool_pos - self.target_pos) < self.success_dist
         obs = self._get_obs([0])
+
+        if self.task_success:
+            target_color = slide_color = [0, 1, 0, 1]
+            p.changeVisualShape(self.target, -1, rgbaColor=target_color)
+            p.changeVisualShape(self.slide, -1, rgbaColor=slide_color)
+        elif self.curr_step >= self.step_limit:
+            target_color = [1, 0, 0, 1]
+            slide_color = [1, 0, 0, 1] if self.door_open else [0, 1, 0, 0]
+            p.changeVisualShape(self.target, -1, rgbaColor=target_color)
+            p.changeVisualShape(self.slide, -1, rgbaColor=slide_color)
 
         reward = self.task_success
 
@@ -101,8 +116,7 @@ class BottleEnv(AssistiveEnv):
 
         final_door_pos = (np.array([-.15, .17, 0]) if self.target_index // 2 else np.array(
             [.15, .17, 0])) + self.shelf_pos
-        self.door_open = door_open = norm(self.door_pos - final_door_pos) < .02
-        if door_open:
+        if self.door_open:
             self.unique_index = self.target_index // 2
             self.sub_target_pos = self.target_pos
         else:
@@ -115,7 +129,7 @@ class BottleEnv(AssistiveEnv):
                                     robot_joint_positions]),
             # raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.bottle_poses]),
             hindsight_goal=np.concatenate([self.tool_pos, [0]]),
-            goal=self.goal,
+            goal=self.goal.copy(),
         )
         return robot_obs
 
@@ -123,6 +137,8 @@ class BottleEnv(AssistiveEnv):
         return self.target_pos
 
     def reset(self):
+        self.task_success = False
+
         """set up standard environment"""
         self.setup_timing()
         _human, self.wheelchair, self.robot, self.robot_lower_limits, self.robot_upper_limits, _human_lower_limits, _human_upper_limits, self.robot_right_arm_joint_indices, self.robot_left_arm_joint_indices, self.gender \
@@ -156,6 +172,15 @@ class BottleEnv(AssistiveEnv):
 
         self.init_robot_arm()
         self.generate_target()
+
+        wall_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[4, .1, 1])
+        wall_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[4, .1, 1], rgbaColor=self.wall_color)
+
+        wall_pos, wall_orient = np.array([0., -2., 1.]), np.array([0, 0, 0, 1])
+        self.wall = p.createMultiBody(basePosition=wall_pos, baseOrientation=wall_orient,
+                                      baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,
+                                      physicsClientId=self.id)
+
         # self.unique_index = self.target_index
 
         """configure pybullet"""
@@ -165,11 +190,13 @@ class BottleEnv(AssistiveEnv):
         # Enable rendering
         # p.resetDebugVisualizerCamera(cameraDistance = .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
         p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=-30,
-                                     cameraTargetPosition=[0, -.4, 1.1], physicsClientId=self.id)
+                                     cameraTargetPosition=[0, -.3, 1.1], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
         self.task_success = 0
-        self.goal = np.concatenate([self.target_pos, ])
+        self.goal = np.array(self.target_pos)
+        self.curr_step = 0
+
         return self._get_obs([0])
 
     def init_start_pos(self):
@@ -216,8 +243,9 @@ class BottleEnv(AssistiveEnv):
         return False
 
     def calibrate_mode(self, calibrate, split):
+        self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
         self.table_offset = 0.1 if split else 0
-        if calibrate:
+        if split:
             self.target_indices = [0, 3]
         else:
             self.target_indices = list(range(self.num_targets))
@@ -248,6 +276,7 @@ class BottleEnv(AssistiveEnv):
                                           physicsClientId=self.id)
 
         sphere_collision = -1
+
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1],
                                             physicsClientId=self.id)
         self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
@@ -274,6 +303,12 @@ class BottleEnv(AssistiveEnv):
         location = p.getLinkState(self.shelf, 1, computeForwardKinematics=True, physicsClientId=self.id)[:2]
         door_pos = [.15, .17, 0] if self.target_index % 2 else [-.15, .17, 0]
         return np.array(p.multiplyTransforms(*location, door_pos, [0, 0, 0, 1])[0])
+
+    @property
+    def door_open(self):
+        final_door_pos = (np.array([-.15, .17, 0]) if self.target_index // 2 else np.array(
+            [.15, .17, 0])) + self.shelf_pos
+        return norm(self.door_pos - final_door_pos) < .02
 
 
 class BottleJacoEnv(BottleEnv):

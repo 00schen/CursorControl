@@ -69,7 +69,7 @@ def experiment(variant):
                   decoder_hidden_sizes=[64]
                   ).to(ptu.device)
     else:
-        file_name = os.path.join('util_models', variant['pretrain_path'])
+        file_name = os.path.join('image/util_models', variant['pretrain_path'])
         loaded = th.load(file_name)
         qf1 = loaded['trainer/qf1']
         qf2 = loaded['trainer/qf2']
@@ -84,7 +84,7 @@ def experiment(variant):
         vae=vae,
         incl_state=False,
         sample=False,
-        deterministic=False
+        deterministic=True
     )
 
     eval_policy = EncDecPolicy(
@@ -134,32 +134,32 @@ def experiment(variant):
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
-    path_loader = SimplePathLoader(
-        demo_path=variant['demo_paths'],
-        demo_path_proportion=variant['demo_path_proportions'],
-        replay_buffer=replay_buffer,
-    )
-    path_loader.load_demos()
-
-    if variant['pretrain_steps']:
-        awac_trainer = TorchEncDecAWACTrainer(
-            policy=policy,
-            policy_lr=variant['trainer_kwargs']['policy_lr'],
-            qf1=qf1,
-            qf2=qf2,
-            target_qf1=target_qf1,
-            target_qf2=target_qf2,
-            qf_lr=variant['trainer_kwargs']['qf_lr'],
-            vae=vae,
-            latent_size=variant['latent_size'],
-            beta=0.01,
-            sample=True,
-            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
-            target_update_period=variant['trainer_kwargs']['target_update_period'],
-        )
-        for _ in range(variant['pretrain_steps']):
-            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-            awac_trainer.train(train_data)
+    # path_loader = SimplePathLoader(
+    #     demo_path=variant['demo_paths'],
+    #     demo_path_proportion=variant['demo_path_proportions'],
+    #     replay_buffer=replay_buffer,
+    # )
+    # path_loader.load_demos()
+    #
+    # if variant['pretrain_steps']:
+    #     awac_trainer = TorchEncDecAWACTrainer(
+    #         policy=policy,
+    #         policy_lr=variant['trainer_kwargs']['policy_lr'],
+    #         qf1=qf1,
+    #         qf2=qf2,
+    #         target_qf1=target_qf1,
+    #         target_qf2=target_qf2,
+    #         qf_lr=variant['trainer_kwargs']['qf_lr'],
+    #         vae=vae,
+    #         latent_size=variant['latent_size'],
+    #         beta=0.01,
+    #         sample=True,
+    #         soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+    #         target_update_period=variant['trainer_kwargs']['target_update_period'],
+    #     )
+    #     for _ in range(variant['pretrain_steps']):
+    #         train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+    #         awac_trainer.train(train_data)
 
     if variant.get('render', False):
         env.render('human')
@@ -228,11 +228,11 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [False],
+        'from_pretrain': [True],
         'demo_path_proportions': [[5000]],
         'trainer_kwargs.beta': [.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'replay_buffer_size': [1000000],
+        'replay_buffer_size': [int(2e7)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
