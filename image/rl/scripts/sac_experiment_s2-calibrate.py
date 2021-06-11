@@ -274,7 +274,7 @@ if __name__ == "__main__":
                           'shift': {'calibrate_split': True,
                                     'calibration_indices': [0, 1, 2, 3]},
                           'no_door': {'calibrate_split': False,
-                                      'calibration_indices': [0, 3]}
+                                      'calibration_indices': [1, 2]}
 
 
                           }
@@ -282,8 +282,8 @@ if __name__ == "__main__":
 
         variant['algorithm_args'].update(mode_dict)
 
-        # if variant['real_user']:
-        #     variant['env_config']['adapts'].insert(1, 'real_gaze')
+        if variant['real_user']:
+            variant['env_config']['adapts'].insert(1, 'real_gaze')
 
         if variant['trainer_kwargs']['objective'] == 'awr':
             variant['algorithm_args']['relabel_failures'] = False
