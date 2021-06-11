@@ -43,6 +43,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.blocks = []
 
         self.metrics = {'success_episodes': [],
+                        'episode_lengths': [],
                         'success_blocks': [],
                         'block_lengths': []
                         }
@@ -169,6 +170,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 success = real_success
 
             self.metrics['success_episodes'].append(real_success)
+            self.metrics['episode_lengths'].append(len(path['observations']))
 
             if success:
                 successful_paths.append(path)
