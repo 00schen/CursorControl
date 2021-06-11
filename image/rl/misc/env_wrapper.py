@@ -406,6 +406,8 @@ class goal:
 
 		if self.goal_noise_std:
 			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
+			# obs['noisy_goal'] = info['sub_target'] + np.random.normal(scale=self.goal_noise_std, size=info['sub_target'].shape)
+
 		obs['hindsight_goal'] = hindsight_feat
 		return obs, r, done, info
 
@@ -415,6 +417,8 @@ class goal:
 			obs['goal'] = np.zeros(self.goal_size)
 		if self.goal_noise_std:
 			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
+			# obs['noisy_goal'] = np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
+
 		obs['hindsight_goal'] = np.zeros(self.goal_size)
 		return obs
 

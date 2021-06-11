@@ -29,8 +29,6 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 		self._next_obs_dict = {}
 		self._obs_dict_keys = set(env.feature_sizes.keys()) | set(['goal'])
 
-
-
 		iter_dict = {'goal': env.goal_size}
 		iter_dict.update(env.feature_sizes)
 
