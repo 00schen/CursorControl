@@ -176,6 +176,7 @@ if __name__ == "__main__":
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
+    target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     default_variant = dict(
         mode=args.mode,
         real_user=not args.sim,
@@ -204,20 +205,12 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0.05,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=None),
-
+            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
             action_type='joint',
             smooth_alpha=1,
-
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['goal'],
             gaze_dim=128,
-            state_type=0,
-            reward_max=0,
-            reward_min=-1,
-            reward_temp=1,
-            reward_offset=-0.1,
-            reward_type='sparse',
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
         )
@@ -235,6 +228,7 @@ if __name__ == "__main__":
         'algorithm_args.num_trains_per_train_loop': [100],
         'trainer_kwargs.objective': ['kl'],
         # 'mode': ['default', 'no_online', 'shift', 'no_right'],
+        'env_config.feature': ['goal'],
         'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
         'freeze_decoder': [True],
     }
@@ -282,8 +276,8 @@ if __name__ == "__main__":
 
         variant['algorithm_args'].update(mode_dict)
 
-        if variant['real_user']:
-            variant['env_config']['adapts'].insert(1, 'real_gaze')
+        target = 'real_gaze' if variant['real_user'] else 'sim_target'
+        variant['env_config']['adapts'].append(target)
 
         if variant['trainer_kwargs']['objective'] == 'awr':
             variant['algorithm_args']['relabel_failures'] = False

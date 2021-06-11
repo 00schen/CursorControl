@@ -217,7 +217,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['goal', 'sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,

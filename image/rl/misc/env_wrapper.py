@@ -39,6 +39,7 @@ def default_overhead(config):
 				'real_gaze': real_gaze,
 				'goal': goal,
 				'reward': reward,
+				'sim_target': sim_target,
 			}
 			self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
 			# self.adapts = [array_to_dict] + self.adapts
@@ -229,16 +230,10 @@ class oracle:
 				"Bottle": BottleOracle,
 				"Kitchen": StraightLineOracle,
 			}[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
-		# if 'sim_gaze' in self.oracle_type:
-		# 	self.oracle = master_env.oracle = SimGazeModelOracle(base_oracle=self.oracle,
-		# 														 **config['gaze_oracle_kwargs'])
-		# elif 'gaze' in self.oracle_type:
-		# 	self.oracle = master_env.oracle = RealGazeModelOracle(base_oracle=self.oracle)
 		else:
 			oracle_type = {
 				'keyboard': KeyboardOracle,
 				'gaze': RealGazeKeyboardOracle,
-				# 'sim_gaze': SimGazeKeyboardOracle,
 				'dummy_gaze': BottleOracle,
 				# }[config['oracle']](master_env)
 			}[config['oracle']]
@@ -267,12 +262,50 @@ class oracle:
 		info['noop'] = not self.oracle.status.curr_intervention
 
 
+class goal:
+	"""
+	Chooses what features from info to add to obs
+	"""
+
+	def __init__(self, master_env, config):
+		self.env_name = master_env.env_name
+		self.master_env = master_env
+		self.goal_feat_func = dict(
+			Kitchen=lambda info: [info['sub_target'], info['tasks']],
+			Bottle=None,
+			OneSwitch=None,
+			AnySwitch=lambda info: [info['switch_pos']]
+		)[self.env_name]
+		self.hindsight_feat = dict(
+			Kitchen={'tool_pos': 3, 'tasks': 6},
+			Bottle={'tool_pos': 3},
+			OneSwitch={'tool_pos': 3},
+			AnySwitch={'tool_pos': 3}
+		)[self.env_name]
+
+		master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
+
+	def _step(self, obs, r, done, info):
+		if self.goal_feat_func is not None:
+			obs['goal'] = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
+
+		hindsight_feat = np.concatenate(
+			[np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
+
+		obs['hindsight_goal'] = hindsight_feat
+		return obs, r, done, info
+
+	def _reset(self, obs, info=None):
+		if self.goal_feat_func is not None:
+			obs['goal'] = np.zeros(self.goal_size)
+
+		obs['hindsight_goal'] = np.zeros(self.goal_size)
+		return obs
+
+
 class static_gaze:
 	def __init__(self, master_env, config):
 		self.gaze_dim = config['gaze_dim']
-		for feature in ['goal', 'noisy_goal']:
-			if feature in master_env.feature_sizes.keys():
-				del master_env.feature_sizes[feature]
 		master_env.feature_sizes['gaze_features'] = self.gaze_dim
 		self.env_name = master_env.env_name
 		self.master_env = master_env
@@ -307,9 +340,6 @@ class static_gaze:
 class real_gaze:
 	def __init__(self, master_env, config):
 		self.gaze_dim = config['gaze_dim']
-		for feature in ['goal', 'noisy_goal']:
-			if feature in master_env.feature_sizes.keys():
-				del master_env.feature_sizes[feature]
 		master_env.feature_sizes['gaze_features'] = self.gaze_dim
 		self.env_name = master_env.env_name
 		self.master_env = master_env
@@ -368,59 +398,32 @@ class real_gaze:
 		return obs
 
 
-class goal:
-	"""
-	Chooses what features from info to add to obs
-	"""
-
+class sim_target:
 	def __init__(self, master_env, config):
 		self.env_name = master_env.env_name
 		self.master_env = master_env
-		self.goal_feat_func = dict(
-			# Bottle=lambda info: [info['target_pos'],info['target1_pos']],
-			Kitchen=lambda info: [info['sub_target'],info['tasks']],
-			Bottle=None,
-			OneSwitch=None,
-			AnySwitch=lambda info: [info['switch_pos'],]
-		)[self.env_name]
-		self.hindsight_feat = dict(
-			Kitchen={'tool_pos':3,'tasks':6},
-			Bottle={'tool_pos': 3},
-			OneSwitch={'tool_pos':3},
-			AnySwitch={'tool_pos':3}
-		)[self.env_name]
-		master_env.feature_sizes['goal'] = master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
+		self.feature = config['feature']
+		self.target_size = master_env.feature_sizes['target'] = 3  # ok for bottle and light switch, may not be true for other envs
 		self.goal_noise_std = config['goal_noise_std']
-		if self.goal_noise_std:
-			master_env.feature_sizes['noisy_goal'] = master_env.feature_sizes['goal']
-			del master_env.feature_sizes['goal']
 
 	def _step(self, obs, r, done, info):
-		if self.goal_feat_func is not None:
-			if self.goal is None or self.env_name != 'OneSwitch':
-				self.goal = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
-			obs['goal'] = self.goal.copy()
-
-		hindsight_feat = np.concatenate(
-			[np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
-
-		if self.goal_noise_std:
-			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
-			# obs['noisy_goal'] = info['sub_target'] + np.random.normal(scale=self.goal_noise_std, size=info['sub_target'].shape)
-
-		obs['hindsight_goal'] = hindsight_feat
+		self.add_target(obs, info)
 		return obs, r, done, info
 
 	def _reset(self, obs, info=None):
-		self.goal = None
-		if self.goal_feat_func is not None:
-			obs['goal'] = np.zeros(self.goal_size)
-		if self.goal_noise_std:
-			obs['noisy_goal'] = obs['goal'] + np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
-			# obs['noisy_goal'] = np.random.normal(scale=self.goal_noise_std, size=obs['goal'].shape)
-
-		obs['hindsight_goal'] = np.zeros(self.goal_size)
+		self.add_target(obs, info)
 		return obs
+
+	def add_target(self, obs, info):
+		if self.feature is None or 'goal':
+			target = obs['goal']
+		elif info is None:
+			target = np.zeros(self.target_size)
+		else:
+			target = info[self.feature]
+
+		noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
+		obs['target'] = target + noise
 
 
 class reward:
@@ -430,8 +433,6 @@ class reward:
 		self.range = (config['reward_min'], config['reward_max'])
 		self.master_env = master_env
 		self.reward_type = config['reward_type']
-		# if self.master_env.env_name == 'Bottle' and self.reward_type == 'sparse':
-		# 	self.reward_type = 'part_sparse'
 		self.reward_temp = config['reward_temp']
 		self.reward_offset = config['reward_offset']
 
@@ -493,8 +494,6 @@ class reward:
 				dist = np.linalg.norm(info['tool_pos'] - info['switch_pos'][info['target_index']])
 				r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset)) - 1
 
-				# because of reward clipping to -1, essentially makes reward always -1 when wrong switch is flipped
-				# r -= np.sum(info['target_string'] != info['current_string'])
 		elif self.reward_type == 'sparse':
 			r = -1 + info['task_success']
 		elif self.reward_type == 'part_sparse':
