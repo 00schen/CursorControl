@@ -229,7 +229,6 @@ class BottleEnv(AssistiveEnv):
         if index is None:
             self.target_index = self.np_random.choice(self.target_indices)
         else:
-            assert index in self.target_indices
             self.target_index = index
 
     # self.unique_index = self.target_index
@@ -245,10 +244,6 @@ class BottleEnv(AssistiveEnv):
     def calibrate_mode(self, calibrate, split):
         self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
         self.table_offset = 0.1 if split else 0
-        if split:
-            self.target_indices = [0, 3]
-        else:
-            self.target_indices = list(range(self.num_targets))
 
     def generate_target(self):
         self.shelf_pos = self.table_pos + np.array([0, .1, 1])

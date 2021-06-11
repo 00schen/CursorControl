@@ -128,7 +128,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 # automate reward if timeout. currently specific only to light switch and bottle.
                 if ('current_string' not in path['env_infos'][-1]) or all(path['env_infos'][-1]['current_string'] == 1):
                     time.sleep(1)
-                    success = False
+                    success = real_success
                     self.metrics['correct_rewards'].append(None)
 
                 else:
