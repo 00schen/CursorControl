@@ -204,8 +204,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0.05,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False,
-                            target_indices=None),
+            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=None),
 
             action_type='joint',
             smooth_alpha=1,
@@ -283,8 +282,8 @@ if __name__ == "__main__":
 
         variant['algorithm_args'].update(mode_dict)
 
-        if variant['real_user']:
-            variant['env_config']['adapts'].insert(1, 'real_gaze')
+        # if variant['real_user']:
+        #     variant['env_config']['adapts'].insert(1, 'real_gaze')
 
         if variant['trainer_kwargs']['objective'] == 'awr':
             variant['algorithm_args']['relabel_failures'] = False

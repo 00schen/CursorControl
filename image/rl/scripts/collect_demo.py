@@ -81,7 +81,7 @@ if __name__ == "__main__":
 		env_kwargs={'config':dict(
 			env_name='Kitchen',
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
+			env_kwargs=dict(frame_skip=5,stochastic=True),
 			oracle='keyboard',
 			oracle_kwargs=dict(
 				threshold=.5,

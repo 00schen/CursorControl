@@ -170,7 +170,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False, num_targets=5),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=5),
             action_type='disc_traj',
             smooth_alpha=1,
             factories=[],

@@ -13,7 +13,7 @@ default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 
 
 class BottleEnv(AssistiveEnv):
-    def __init__(self, robot_type='jaco', success_dist=.1, target_indices=None, session_goal=False, frame_skip=5,
+    def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
                  capture_frames=False, stochastic=True, debug=False, step_limit=200):
         super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                         action_robot_len=7, obs_robot_len=14)
@@ -55,14 +55,11 @@ class BottleEnv(AssistiveEnv):
         obs = self._get_obs([0])
 
         if self.task_success:
-            target_color = slide_color = [0, 1, 0, 1]
+            target_color = [0, 1, 0, 1]
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
-            p.changeVisualShape(self.slide, -1, rgbaColor=slide_color)
-        elif self.curr_step >= self.step_limit:
+        elif self.wrong_goal_reached() or self.curr_step >= self.step_limit:
             target_color = [1, 0, 0, 1]
-            slide_color = [1, 0, 0, 1] if self.door_open else [0, 1, 0, 0]
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
-            p.changeVisualShape(self.slide, -1, rgbaColor=slide_color)
 
         reward = self.task_success
 
@@ -114,14 +111,12 @@ class BottleEnv(AssistiveEnv):
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
         robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
-        final_door_pos = (np.array([-.15, .17, 0]) if self.target_index // 2 else np.array(
-            [.15, .17, 0])) + self.shelf_pos
-        if self.door_open:
-            self.unique_index = self.target_index // 2
-            self.sub_target_pos = self.target_pos
-        else:
-            self.unique_index = 2 + self.target_index % 2
-            self.sub_target_pos = final_door_pos
+        # if self.door_open:
+        #     self.unique_index = self.target_index // 2
+        # else:
+        #     self.unique_index = 2 + self.target_index % 2
+
+        # self.goal = self.target_pos
 
         # robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
         robot_obs = dict(
@@ -132,9 +127,6 @@ class BottleEnv(AssistiveEnv):
             goal=self.goal.copy(),
         )
         return robot_obs
-
-    def get_true_target(self):
-        return self.target_pos
 
     def reset(self):
         self.task_success = False
@@ -181,8 +173,6 @@ class BottleEnv(AssistiveEnv):
                                       baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,
                                       physicsClientId=self.id)
 
-        # self.unique_index = self.target_index
-
         """configure pybullet"""
         # p.setGravity(0, 0, -9.81, physicsClientId=self.id)
         p.setGravity(0, 0, 0, physicsClientId=self.id)
@@ -204,7 +194,7 @@ class BottleEnv(AssistiveEnv):
         self.init_pos = np.array([0, -.5, 1.1])
 
         if self.stochastic:
-            self.init_pos += self.init_pos_random.uniform([-0.4,-0.1,-0.1], [0.4,0.1,0.1], size=3)
+            self.init_pos += self.init_pos_random.uniform([-0.4, -0.1, -0.1], [0.4, 0.1, 0.1], size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -231,7 +221,7 @@ class BottleEnv(AssistiveEnv):
         else:
             self.target_index = index
 
-    # self.unique_index = self.target_index
+        self.unique_index = self.target_index // 2
 
     def reset_noise(self):
         offset = self.np_random.choice((0.1, 0)) if self.table_offset is None else self.table_offset
@@ -239,7 +229,7 @@ class BottleEnv(AssistiveEnv):
         self.table_noise[1] = self.table_noise[1] + offset
 
     def wrong_goal_reached(self):
-        return False
+        return norm(self.tool_pos - self.wrong_target_pos) < self.success_dist
 
     def calibrate_mode(self, calibrate, split):
         self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
@@ -252,8 +242,8 @@ class BottleEnv(AssistiveEnv):
         else:
             cabinet_urdf, self.slide_range = 'slide_cabinet_right.urdf', (0, .3)
         self.shelf = p.loadURDF(os.path.join(self.world_creation.directory, 'slide_cabinet', cabinet_urdf),
-                                basePosition=self.shelf_pos, baseOrientation=default_orientation, \
-                                globalScaling=1, physicsClientId=self.id, useFixedBase=True)
+                                basePosition=self.shelf_pos, baseOrientation=default_orientation, globalScaling=1,
+                                physicsClientId=self.id, useFixedBase=True)
 
         bottle_poses = []
         for increment in product(np.linspace(-.15, .15, num=2), [0], [-.15]):
@@ -263,22 +253,30 @@ class BottleEnv(AssistiveEnv):
         self.bottle_poses = np.array(bottle_poses)
 
         target_pos = self.target_pos = bottle_poses[self.target_index // 2]
+        wrong_target_pos = self.wrong_target_pos = bottle_poses[1 - (self.target_index // 2)]
 
         bottle_pos = target_pos + np.array([0, 0, -.05])
-        bottle = self.bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
-                                          basePosition=bottle_pos, useFixedBase=True,
-                                          baseOrientation=default_orientation, globalScaling=.01,
-                                          physicsClientId=self.id)
+        self.bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
+                                 basePosition=bottle_pos, useFixedBase=True,
+                                 baseOrientation=default_orientation, globalScaling=.01,
+                                 physicsClientId=self.id)
+
+        wrong_bottle_pos = wrong_target_pos + np.array([0, 0, -.05])
+        self.wrong_bottle = p.loadURDF(
+            os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
+            basePosition=wrong_bottle_pos, useFixedBase=True,
+            baseOrientation=default_orientation, globalScaling=.01,
+            physicsClientId=self.id)
 
         sphere_collision = -1
 
-        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 1, 1, 1],
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 0, 1, 1],
                                             physicsClientId=self.id)
         self.target = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
                                         baseVisualShapeIndex=sphere_visual, basePosition=target_pos,
                                         useMaximalCoordinates=False, physicsClientId=self.id)
         self.slide = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
-                                       baseVisualShapeIndex=sphere_visual, basePosition=self.door_pos,
+                                       basePosition=self.door_pos,
                                        useMaximalCoordinates=False, physicsClientId=self.id)
         self.update_targets()
 
@@ -304,6 +302,12 @@ class BottleEnv(AssistiveEnv):
         final_door_pos = (np.array([-.15, .17, 0]) if self.target_index // 2 else np.array(
             [.15, .17, 0])) + self.shelf_pos
         return norm(self.door_pos - final_door_pos) < .02
+
+    @property
+    def sub_target_pos(self):
+        final_door_pos = (np.array([-.15, .17, 0]) if self.target_index // 2 else np.array(
+            [.15, .17, 0])) + self.shelf_pos
+        return self.target_pos if self.door_open else final_door_pos
 
 
 class BottleJacoEnv(BottleEnv):

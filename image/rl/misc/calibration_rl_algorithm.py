@@ -123,10 +123,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             path = new_expl_paths[0]
             real_success = path['env_infos'][-1]['task_success']
             gt.stamp('exploration sampling', unique=False)
-
             if self.real_user:
-                # automate reward if timeout. currently specific only to light switch and bottle.
-                if ('current_string' not in path['env_infos'][-1]) or all(path['env_infos'][-1]['current_string'] == 1):
+                # automate reward if timeout
+                if len(path['observations']) == self.max_path_length and not path['env_infos'][-1]['task_success']:
                     time.sleep(1)
                     success = real_success
                     self.metrics['correct_rewards'].append(None)
@@ -139,11 +138,21 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             success = True
 
                             # relabel with wrong goals that were reached if not actual success.
-                            # currently specific only to light switch
+                            # currently specific only to light switch and bottle
                             if not real_success:
-                                wrong_reached_index = np.where(path['env_infos'][-1]['current_string'] == 0)[0][0]
-                                wrong_reached_goal = path['env_infos'][0]['switch_pos'][wrong_reached_index]
+                                if 'current_string' in path['env_infos'][-1]:
+                                    wrong_reached_index = np.where(path['env_infos'][-1]['current_string'] == 0)[0][0]
+                                    wrong_reached_goal = path['env_infos'][0]['switch_pos'][wrong_reached_index]
 
+                                # assumes only 2 targets in bottle, and version of bottle with only 1 goal
+                                elif 'unique_targets' in path['env_infos'][-1]:
+                                    wrong_reached_index = 1 - path['env_infos'][-1]['unique_index']
+                                    wrong_reached_goal = path['env_infos'][0]['unique_targets'][wrong_reached_index]
+
+                                else:
+                                    raise NotImplementedError()
+
+                                # assumes same goal each timestep
                                 for failed_path in failed_paths + [path]:
                                     for i in range(len(failed_path['observations'])):
                                         failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()

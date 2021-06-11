@@ -185,7 +185,7 @@ if __name__ == "__main__":
         layer_size=256,
         pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=5000,
+            num_epochs=3000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -213,7 +213,7 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            env_kwargs=dict(frame_skip=5, debug=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     )
     search_space = {
         'seedid': [2000],
-        'from_pretrain': [True],
+        'from_pretrain': [False],
         'demo_path_proportions': [[5000]],
         'trainer_kwargs.beta': [.01],
         'algorithm_args.num_trains_per_train_loop': [1000],

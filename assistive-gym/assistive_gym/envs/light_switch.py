@@ -11,7 +11,7 @@ HIGH_LIMIT = .2
 
 
 class LightSwitchEnv(AssistiveEnv):
-    def __init__(self, message_indices=None, success_dist=.05, session_goal=False, frame_skip=5, robot_type='jaco',
+    def __init__(self, message_indices=None, success_dist=.03, session_goal=False, frame_skip=5, robot_type='jaco',
                  capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
                  step_limit=200):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
@@ -206,9 +206,6 @@ class LightSwitchEnv(AssistiveEnv):
     # return if a switch other than the target switch was flipped, assumes all switches start not flipped
     def wrong_goal_reached(self):
         return np.sum(self.current_string != self.target_string) > 1
-
-    def get_true_target(self):
-        return self.target_pos[self.target_index]
 
     def reset(self):
         self.task_success = False
