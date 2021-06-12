@@ -19,19 +19,19 @@ def collect_demonstrations(variant):
 	env = default_overhead(variant['env_kwargs']['config'])
 	env.seed(variant['seedid']+100)
 
-	# file_name = os.path.join(variant['eval_path'])
-	# loaded = th.load(file_name,map_location='cpu')
-	# policy = EncDecPolicy(
-	#     policy=loaded['trainer/policy'],
-	#     features_keys=list(env.feature_sizes.keys()),
-	#     vae=loaded['trainer/vae'],
-	#     incl_state=False,
-	#     sample=False,
-	#     deterministic=False
-	# )
+	file_name = os.path.join(variant['eval_path'])
+	loaded = th.load(file_name,map_location='cpu')
+	policy = EncDecPolicy(
+	    policy=loaded['trainer/policy'],
+	    features_keys=list(env.feature_sizes.keys()),
+	    vae=loaded['trainer/vae'],
+	    incl_state=False,
+	    sample=False,
+	    deterministic=False
+	)
 
-	policy = FollowerPolicy(env)
-	policy = DemonstrationPolicy(policy,env,p=variant['p'])
+	# policy = FollowerPolicy(env)
+	# policy = DemonstrationPolicy(policy,env,p=variant['p'])
 
 	path_collector = FullPathCollector(
 		env,
@@ -77,20 +77,20 @@ if __name__ == "__main__":
 	path_length = 1200
 	variant = dict(
 		seedid=3000,
-		eval_path=os.path.join(main_dir,'util_models','Kitchen_params_s1_subtask.pkl'),
+		eval_path=os.path.join(main_dir,'util_models','kitchen_debug.pkl'),
 		env_kwargs={'config':dict(
 			env_name='Kitchen',
 			step_limit=path_length,
-			env_kwargs=dict(frame_skip=5,stochastic=True),
+			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True,pretrain_assistance=True),
 			oracle='keyboard',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
-			action_type='disc_traj',
+			action_type='joint',
 			smooth_alpha=1,
 
 			factories = [],
-			adapts = ['goal','oracle','reward'],
+			adapts = ['goal', 'reward'],
 			# adapts = ['high_dim_user','reward'],
 			state_type=0,
 			apply_projection=False,
@@ -107,9 +107,9 @@ if __name__ == "__main__":
 
 		on_policy=True,
 		p=1,
-		num_episodes=5000,
+		num_episodes=1,
 		path_length=path_length,
-		save_name_suffix="full",
+		save_name_suffix="full2",
 		
 	)
 	search_space = {

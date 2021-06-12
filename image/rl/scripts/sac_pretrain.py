@@ -186,7 +186,7 @@ if __name__ == "__main__":
         ),
         demo_paths=[
             # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
-            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
+            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full2.npy"),
         ]*100, # no latent
         # demo_paths=[
         #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
@@ -213,13 +213,16 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[50]*100, ],
+        'demo_path_proportions': [[50]*100,],
         # 'demo_path_proportions': [[50], ],
-        'trainer_kwargs.beta': [.01,.1],
+        'trainer_kwargs.beta': [.1],
         # 'trainer_kwargs.beta': [.01,],
-        'algorithm_args.num_trains_per_train_loop': [100,1000],
+        'algorithm_args.num_trains_per_train_loop': [1000],
+        'env_config.reward_temp': [10],
         # 'algorithm_args.num_trains_per_train_loop': [1000,],
         'replay_buffer_size': [int(2e7)],
+        'trainer_kwargs.policy_lr':[3e-4,1e-3],
+        'trainer_kwargs.qf_lr':[3e-4,1e-3],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

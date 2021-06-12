@@ -452,30 +452,42 @@ class reward:
 			# 	norm(info['tool_pos'] - info['target1_pos']),
 			# 	norm(info['tool_pos'] - info['target_pos'])
 			# 	)
-			if not info['tasks'][0]:
-				r += np.exp(-10*max(0,info['microwave_angle'] - -.7))/6
-			else:
+			if not info['tasks'][0] and (info['orders'][0] == 0 or info['tasks'][1]):
+				r += np.exp(-10*max(0,info['microwave_angle'] - -.7))/6*3/4
+				r += np.exp(-self.reward_temp*norm(info['tool_pos']-info['microwave_handle']))/6/4
+			elif info['tasks'][0]:
 				r += 1/6
-			if not info['tasks'][1]:
-				r += np.exp(-10*max(0,.7-info['fridge_angle']))/6
-			else:
+			if not info['tasks'][1] and (info['orders'][0] == 1 or info['tasks'][0]):
+				r += np.exp(-10*max(0,.7-info['fridge_angle']))/6*3/4
+				r += np.exp(-self.reward_temp*norm(info['tool_pos']-info['fridge_handle']))/6/4
+			elif info['tasks'][1]:
 				r += 1/6
 
 			if not info['tasks'][2] and info['tasks'][0] and info['tasks'][1]:
-				r += np.exp(-norm(info['tool_pos'] - info['target1_pos']))/6
+				r += np.exp(-self.reward_temp*norm(info['tool_pos'] - info['target1_pos']))/6
 			elif info['tasks'][2]:
 				r = -1/2
 			if not info['tasks'][3] and info['tasks'][2]:
-				r += np.exp(-norm(info['tool_pos'] - info['target_pos']))/6
+				r += np.exp(-self.reward_temp*norm(info['tool_pos'] - info['target_pos']))/6
 			elif info['tasks'][3]:
 				r = -1/3
 
-			if not info['tasks'][4] and info['tasks'][3]:
-				r += np.exp(-norm(info['microwave_angle'] - 0))/6
+			if not info['tasks'][4] and info['tasks'][3] and (info['orders'][1] == 0 or info['tasks'][5]):
+				r += np.exp(-norm(info['microwave_angle'] - 0))/6*3/4
+				dist = norm(info['tool_pos']-info['microwave_handle'])
+				if dist > .25:
+					r += np.exp(-self.reward_temp*dist)/6/4
+				else:
+					r += np.exp(-self.reward_temp*.25)/6/4
 			elif info['tasks'][4]:
 				r += 1/6
-			if not info['tasks'][5] and info['tasks'][3]:
-				r += np.exp(-norm(info['fridge_angle'] - 0))/6
+			if not info['tasks'][5] and info['tasks'][3] and (info['orders'][1] == 1 or info['tasks'][4]):
+				r += np.exp(-norm(info['fridge_angle'] - 0))/6*3/4
+				dist = norm(info['tool_pos']-info['fridge_handle'])
+				if dist > .25:
+					r += np.exp(-self.reward_temp*dist)/6/4
+				else:
+					r += np.exp(-self.reward_temp*.25)/6/4
 			elif info['tasks'][5]:
 				r += 1/6
 

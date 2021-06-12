@@ -56,15 +56,15 @@ class KitchenEnv(AssistiveEnv):
 			self.tasks[2] = 1
 		if norm(self.curr_bowl_pos - self.microwave_target_pos) < .05:
 			self.tasks[3] = 1
-		if self.tasks[0] and microwave_angle > -.05:
+		if self.tasks[3] and microwave_angle > -.05:
 			self.tasks[4] = 1
-		if self.tasks[1] and fridge_angle < .05:
+		if self.tasks[3] and fridge_angle < .05:
 			self.tasks[5] = 1		
 
 		
 		sub_target = microwave_pos if self.door_orders[0] == 0 else fridge_pos
 		if self.tasks[0] or self.tasks[1]:
-			sub_target = fridge_pos if self.door_orders[0] == 0 else microwave_pos
+			sub_target = fridge_pos if self.tasks[0] else microwave_pos
 		if self.tasks[0] and self.tasks[1]:
 			sub_target = self.bowl_pos
 		if self.tasks[2]:
@@ -72,7 +72,7 @@ class KitchenEnv(AssistiveEnv):
 		if self.tasks[3]:
 			sub_target = microwave_pos if self.door_orders[1] == 0 else fridge_pos
 		if self.tasks[4] or self.tasks[5]:
-			sub_target = fridge_pos if self.door_orders[1] == 0 else microwave_pos
+			sub_target = fridge_pos if self.tasks[4] else microwave_pos
 
 		obs = self._get_obs([0])
 		self.task_success = sum(self.tasks) == 6
@@ -91,6 +91,8 @@ class KitchenEnv(AssistiveEnv):
 			'tasks': self.tasks.copy(),
 			'fridge_pos': self.fridge_pos,
 			'microwave_pos': self.microwave_pos,
+			'fridge_handle': fridge_pos,
+			'microwave_handle': microwave_pos,
 			'tool_pos': self.tool_pos,
 			'target_poses': [item_pos.copy() for item_pos in self.food_poses],
 			'sub_target': sub_target,
@@ -248,12 +250,24 @@ class KitchenEnv(AssistiveEnv):
 		self._collision_off_hand(self.fridge, 1)
 		self._collision_off_hand(self.microwave, 1)
 
-		if self.pretrain_assistance:
-			assist_number = np.random.randint(5)
+		if self.pretrain_assistance and np.random.randint(2):
+			assist_number = np.random.randint(6)
 			if assist_number == 0 or assist_number > 1:
+				# if self.door_orders[0] == 0:
+				# 	p.resetJointState(self.microwave, jointIndex=0, targetValue=-1, physicsClientId=self.id)
+				# 	self.tasks[0] = 1
+				# else:
+				# 	p.resetJointState(self.fridge, jointIndex=0, targetValue=1.4, physicsClientId=self.id)
+				# 	self.tasks[1] = 1
 				p.resetJointState(self.microwave, jointIndex=0, targetValue=-1, physicsClientId=self.id)
 				self.tasks[0] = 1
 			if assist_number >= 1:
+				# if self.door_orders[0] == 0:
+				# 	p.resetJointState(self.fridge, jointIndex=0, targetValue=1.4, physicsClientId=self.id)
+				# 	self.tasks[1] = 1
+				# else:
+				# 	p.resetJointState(self.microwave, jointIndex=0, targetValue=-1, physicsClientId=self.id)
+				# 	self.tasks[0] = 1
 				p.resetJointState(self.fridge, jointIndex=0, targetValue=1.4, physicsClientId=self.id)
 				self.tasks[1] = 1
 			if assist_number >= 2:
@@ -262,9 +276,21 @@ class KitchenEnv(AssistiveEnv):
 				self.tasks[2] = 1
 				self.tasks[3] = 1
 			if assist_number == 4:
+				# if self.door_orders[1] == 0:
+				# 	p.resetJointState(self.microwave, jointIndex=0, targetValue=0, physicsClientId=self.id)
+				# 	self.tasks[4] = 1
+				# else:
+				# 	p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
+				# 	self.tasks[5] = 1
 				p.resetJointState(self.microwave, jointIndex=0, targetValue=0, physicsClientId=self.id)
 				self.tasks[4] = 1
 			if assist_number == 5:
+				# if self.door_orders[1] == 0:
+				# 	p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
+				# 	self.tasks[5] = 1
+				# else:
+				# 	p.resetJointState(self.microwave, jointIndex=0, targetValue=0, physicsClientId=self.id)
+				# 	self.tasks[4] = 1
 				p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
 				self.tasks[5] = 1
 
@@ -371,7 +397,7 @@ class KitchenEnv(AssistiveEnv):
 
 	@property
 	def curr_bowl_pos(self):
-		return np.array(p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[0])-np.array([0,0,.05])
+		return np.array(p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[0])
 
 class KitchenJacoEnv(KitchenEnv):
 	def __init__(self,**kwargs):
