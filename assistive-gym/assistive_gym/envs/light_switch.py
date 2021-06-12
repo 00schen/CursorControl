@@ -232,7 +232,7 @@ class LightSwitchEnv(AssistiveEnv):
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
         # Enable rendering
         p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=0,
-                                     cameraTargetPosition=[0, -0.3, 1.2], physicsClientId=self.id)
+                                     cameraTargetPosition=[0, -0.25, 1.3], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
         self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, 0, 1.2], .3, 180, -10, 0, 2)
         fov = 60
@@ -340,7 +340,7 @@ class LightSwitchEnv(AssistiveEnv):
                 p.resetJointState(switch, jointIndex=0, targetValue=HIGH_LIMIT, physicsClientId=self.id)
 
         sphere_collision = -1
-        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist,
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist * 1.5,
                                             rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
 
         self.targets = []
