@@ -229,7 +229,7 @@ if __name__ == "__main__":
         # 'algorithm_args.calibration_indices': [[1, 2, 3]],
         # 'mode': ['with_door'],
         # 'env_config.feature': ['sub_target'],
-        'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
+        'seedid': [0],
         'freeze_decoder': [True],
     }
 
