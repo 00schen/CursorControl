@@ -30,10 +30,9 @@ def experiment(variant):
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    feat_dim = env.observation_space.low.size
-    obs_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                      getattr(env.base_env, 'goal_set_shape', (0,)),
-                                                      1) + sum(env.feature_sizes.values())
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 

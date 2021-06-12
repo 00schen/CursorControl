@@ -6,11 +6,9 @@ from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 from rl.policies import EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
-from rl.trainers import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -33,6 +31,7 @@ def experiment(variant):
     feat_dim = env.observation_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
+
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -134,33 +133,6 @@ def experiment(variant):
     )
     algorithm.to(ptu.device)
 
-    path_loader = SimplePathLoader(
-        demo_path=variant['demo_paths'],
-        demo_path_proportion=variant['demo_path_proportions'],
-        replay_buffer=replay_buffer,
-    )
-    path_loader.load_demos()
-
-    if variant['pretrain_steps']:
-        awac_trainer = TorchEncDecAWACTrainer(
-            policy=policy,
-            policy_lr=variant['trainer_kwargs']['policy_lr'],
-            qf1=qf1,
-            qf2=qf2,
-            target_qf1=target_qf1,
-            target_qf2=target_qf2,
-            qf_lr=variant['trainer_kwargs']['qf_lr'],
-            vae=vae,
-            latent_size=variant['latent_size'],
-            beta=0.01,
-            sample=True,
-            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
-            target_update_period=variant['trainer_kwargs']['target_update_period'],
-        )
-        for _ in range(variant['pretrain_steps']):
-            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-            awac_trainer.train(train_data)
-
     if variant.get('render', False):
         env.render('human')
     algorithm.train()
@@ -169,7 +141,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='pretrain_sac_bottle')
+    parser.add_argument('--exp_name', default='pretrain_sac_oneswitch')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -182,9 +154,8 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
-        pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=3000,
+            num_epochs=1000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -204,9 +175,6 @@ if __name__ == "__main__":
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
-        demo_paths=[
-            os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
-        ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
@@ -221,7 +189,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='part_sparse',
+            reward_type='custom_switch',
             reward_temp=1,
             reward_offset=-0.2
         )
@@ -229,10 +197,9 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[5000]],
         'trainer_kwargs.beta': [.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'replay_buffer_size': [int(2e7)],
+        'replay_buffer_size': [int(5e5)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

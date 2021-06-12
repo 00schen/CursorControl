@@ -8,7 +8,18 @@ def run_exp(experiment, variants, args):
     if args.use_ray:
         import ray
         from ray.util import ActorPool
+        from itertools import count
         ray.init(_temp_dir='/tmp/ray_exp1', num_gpus=args.gpus)
+
+        @ray.remote
+        class Iterators:
+            def __init__(self):
+                self.run_id_counter = count(0)
+
+            def next(self):
+                return next(self.run_id_counter)
+
+        iterator = Iterators.options(name="global_iterator").remote()
 
         @ray.remote(num_cpus=1, num_gpus=1 / args.per_gpu if args.gpus else 0)
         class Runner:

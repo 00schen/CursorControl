@@ -35,11 +35,11 @@ def experiment(variant):
     file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
-    obs_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                      getattr(env.base_env, 'goal_set_shape', (0,)),
-                                                      1)
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
 
-    vae = VAE(input_size=sum(env.feature_sizes.values()) + obs_dim,
+    vae = VAE(input_size=obs_dim,
               latent_size=variant['latent_size'],
               encoder_hidden_sizes=[M] * variant['n_layers'],
               decoder_hidden_sizes=[M] * variant['n_layers']

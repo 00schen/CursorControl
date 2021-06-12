@@ -274,7 +274,6 @@ class goal:
             OneSwitch={'tool_pos': 3},
             AnySwitch={'tool_pos': 3}
         )[self.env_name]
-
         master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
 
     def _step(self, obs, r, done, info):
@@ -298,6 +297,7 @@ class goal:
 class static_gaze:
     def __init__(self, master_env, config):
         self.gaze_dim = config['gaze_dim']
+        del master_env.feature_sizes['goal']
         master_env.feature_sizes['gaze_features'] = self.gaze_dim
         self.env_name = master_env.env_name
         self.master_env = master_env
@@ -332,6 +332,7 @@ class static_gaze:
 class real_gaze:
     def __init__(self, master_env, config):
         self.gaze_dim = config['gaze_dim']
+        del master_env.feature_sizes['goal']
         master_env.feature_sizes['gaze_features'] = self.gaze_dim
         self.env_name = master_env.env_name
         self.master_env = master_env
@@ -395,6 +396,7 @@ class sim_target:
         self.env_name = master_env.env_name
         self.master_env = master_env
         self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
         self.target_size = master_env.feature_sizes[
             'target'] = 3  # ok for bottle and light switch, may not be true for other envs
         self.goal_noise_std = config['goal_noise_std']

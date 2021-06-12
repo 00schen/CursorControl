@@ -46,7 +46,6 @@ class EncDecPolicy(PyTorchModule):
             policy_input = [raw_obs, pred_features]
             if goal_set is not None:
                 policy_input.insert(1, goal_set.ravel())
-
             action = self.policy.get_action(*policy_input)
             return action
 
