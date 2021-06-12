@@ -5,7 +5,7 @@ from gym.utils import seeding
 import numpy as np
 import pybullet as p
 # import cv2
-from keras.models import load_model
+# from keras.models import load_model
 from screeninfo import get_monitors
 
 from .util import Util
@@ -62,7 +62,8 @@ class AssistiveEnv(gym.Env):
             # self.height = 2160
 
         if human_control:
-            self.human_limits_model = load_model(os.path.join(self.world_creation.directory, 'realistic_arm_limits_model.h5'))
+            pass
+            # self.human_limits_model = load_model(os.path.join(self.world_creation.directory, 'realistic_arm_limits_model.h5'))
         self.right_arm_previous_valid_pose = None
         self.left_arm_previous_valid_pose = None
         self.human_joint_lower_limits = None
