@@ -28,13 +28,6 @@ class BottleEnv(AssistiveEnv):
         self.target_indices = list(np.arange(self.num_targets))
         self.table_offset = None
 
-        # if target_indices is None:
-        # 	self.target_indices = list(np.arange(self.num_targets))
-        # else:
-        # 	for i in target_indices:
-        # 		assert 0 <= i < self.num_targets
-        # 	self.target_indices = target_indices
-
         self.wall_color = None
         self.step_limit = step_limit
         self.curr_step = 0
@@ -90,8 +83,6 @@ class BottleEnv(AssistiveEnv):
             return 0, 0
 
         normal = contacts[0][7]
-        # joint_pos,__ = p.multiplyTransforms(*p.getLinkState(self.shelf,0)[:2], p.getJointInfo(self.shelf,0,self.id)[14], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.id)
-        # radius = np.array(contacts[0][6]) - np.array(joint_pos)
         c_F = -normal[0]
         k = .002
         w = k * np.sign(c_F) * np.sqrt(abs(c_F))
@@ -104,13 +95,6 @@ class BottleEnv(AssistiveEnv):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
-
-        # if self.door_open:
-        #     self.unique_index = self.target_index // 2
-        # else:
-        #     self.unique_index = 2 + self.target_index % 2
-
-        # self.goal = self.sub_target_pos
 
         robot_obs = dict(
             raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses,
@@ -166,11 +150,9 @@ class BottleEnv(AssistiveEnv):
                                       physicsClientId=self.id)
 
         """configure pybullet"""
-        # p.setGravity(0, 0, -9.81, physicsClientId=self.id)
         p.setGravity(0, 0, 0, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
         # Enable rendering
-        # p.resetDebugVisualizerCamera(cameraDistance = .6, cameraYaw=150, cameraPitch=-60, cameraTargetPosition=[-.1, 0, .9], physicsClientId=self.id)
         p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=-30,
                                      cameraTargetPosition=[0, -.3, 1.1], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)

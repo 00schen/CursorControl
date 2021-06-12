@@ -10,7 +10,7 @@ from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
-from rl.trainers.bc_trainer import TorchEncDecAWACTrainer
+from rl.trainers import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path

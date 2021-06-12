@@ -1,19 +1,23 @@
 import numpy as np
 import torch as th
 from rlkit.torch.core import PyTorchModule
-import torch.nn.functional as F
 import rlkit.torch.pytorch_util as ptu
+from rlkit.torch.distributions import (
+    Delta
+)
+from rlkit.torch.networks.stochastic.distribution_generator import DistributionGenerator
 
 
-class EncDecQfPolicy(PyTorchModule):
-    def __init__(self, qf, features_keys, vae=None, logit_scale=-1, eps=0, incl_state=True, sample=False,
-                 latent_size=None):
+class EncDecPolicy(PyTorchModule):
+    def __init__(self, policy, features_keys, vae=None, incl_state=True, sample=False, latent_size=None,
+                 deterministic=False):
         super().__init__()
         self.vae = vae
-        self.qf = qf
+        self.policy = policy
+        if deterministic:
+            assert isinstance(policy, DistributionGenerator)
+            self.policy = EncDecMakeDeterministic(self.policy)
         self.features_keys = features_keys
-        self.logit_scale = logit_scale  # currently does nothing
-        self.eps = eps
         self.incl_state = incl_state
         self.sample = sample
         self.latent_size = latent_size
@@ -21,7 +25,7 @@ class EncDecQfPolicy(PyTorchModule):
             assert self.latent_size is not None
 
     def get_action(self, obs):
-        features = [obs[k].ravel() for k in self.features_keys]
+        features = [obs[k] for k in self.features_keys]
         with th.no_grad():
             raw_obs = obs['raw_obs']
             goal_set = obs.get('goal_set')
@@ -31,36 +35,42 @@ class EncDecQfPolicy(PyTorchModule):
                     features.append(raw_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())
-
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
-
-                pred_features = self.vae.sample(encoder_input, eps=eps).detach()
-                obs['latents'] = pred_features.cpu().numpy()
+                pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
             else:
                 pred_features = np.concatenate(features)
-                obs['latents'] = pred_features
 
-            qf_input = [raw_obs, pred_features]
+            obs['latents'] = pred_features
+
+            policy_input = [raw_obs, pred_features]
             if goal_set is not None:
-                qf_input.insert(1, goal_set.ravel())
+                policy_input.insert(1, goal_set.ravel())
 
-            q_values, ainfo = self.qf.get_action(*qf_input)
-            q_values = ptu.tensor(q_values)
-            if np.random.rand() > self.eps:
-                action = F.one_hot(q_values.argmax().long(), 6).flatten()
-
-            else:
-                action = ptu.zeros(6)
-                action[np.random.randint(6)] = 1
-
-        # if self.logit_scale != -1:
-        # 	action = TorchOneHot(logits=self.logit_scale * q_values).sample().flatten().detach()
-        # 	# action = TorchOneHot(logits=self.logit_scale*(q_values-q_values.mean())/(1e-8+q_values.std())).sample().flatten().detach()
-        # else:
-        # 	action = F.one_hot(q_values.argmax().long(),6).flatten()
-
-        return ptu.get_numpy(action), ainfo
+            action = self.policy.get_action(*policy_input)
+            return action
 
     def reset(self):
-        pass
+        self.policy.reset()
+
+
+class EncDecMakeDeterministic(PyTorchModule):
+    def __init__(
+            self,
+            policy,
+    ):
+        super().__init__()
+        self.policy = policy
+
+    def forward(self, *args, **kwargs):
+        dist = self.policy.forward(*args, **kwargs)
+        return Delta(dist.mle_estimate())
+
+    def get_action(self, *obs_np):
+        return self.policy.get_action(*obs_np)
+
+    def get_actions(self, *obs_np):
+        return self.policy.get_actions()
+
+    def reset(self):
+        self.policy.reset()

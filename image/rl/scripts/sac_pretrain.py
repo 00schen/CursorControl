@@ -166,7 +166,6 @@ if __name__ == "__main__":
             num_epochs=int(1e6),
             num_eval_steps_per_epoch=path_length,
             eval_paths=True,
-            # num_trains_per_train_loop=1000,
             num_expl_steps_per_train_loop=1000,
             min_num_steps_before_training=1000,
             max_path_length=path_length,
@@ -185,12 +184,8 @@ if __name__ == "__main__":
             sample=True,
         ),
         demo_paths=[
-            # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
-            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full2.npy"),
-        ]*100, # no latent
-        # demo_paths=[
-        #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
-        # ], # no latent
+                       os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full2.npy"),
+                   ] * 100,
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
@@ -213,16 +208,15 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[50]*100,],
-        # 'demo_path_proportions': [[50], ],
+        'demo_path_proportions': [[50] * 100, ],
         'trainer_kwargs.beta': [.1],
         # 'trainer_kwargs.beta': [.01,],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'env_config.reward_temp': [10],
         # 'algorithm_args.num_trains_per_train_loop': [1000,],
         'replay_buffer_size': [int(2e7)],
-        'trainer_kwargs.policy_lr':[3e-4,1e-3],
-        'trainer_kwargs.qf_lr':[3e-4,1e-3],
+        'trainer_kwargs.policy_lr': [3e-4, 1e-3],
+        'trainer_kwargs.qf_lr': [3e-4, 1e-3],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

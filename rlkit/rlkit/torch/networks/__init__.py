@@ -21,7 +21,6 @@ from rlkit.torch.networks.mlp import (
 from rlkit.torch.networks.rnn import (ConcatRNN,ConcatRNNPolicy)
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN
 from rlkit.torch.networks.two_headed_mlp import TwoHeadMlp
-from rlkit.torch.networks.encoder_policies import VQGazePolicy, VAEGazePolicy, TransferEncoderPolicy
 
 __all__ = [
     'Clamp',
@@ -47,8 +46,6 @@ __all__ = [
     'Split',
     'TwoHeadDCNN',
     'TwoHeadMlp',
-    'VQGazePolicy',
-    'VAEGazePolicy',
     'VAE'
 ]
 

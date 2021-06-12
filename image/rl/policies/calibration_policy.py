@@ -1,48 +1,7 @@
 import torch as th
-from .encdec_policy import EncDecQfPolicy
-from .encdec_sac_policy import EncDecPolicy
-import torch.nn.functional as F
+from .encdec_policy import EncDecPolicy
 import rlkit.torch.pytorch_util as ptu
 import numpy as np
-
-
-class CalibrationDQNPolicy(EncDecQfPolicy):
-    def __init__(self, *args, env, prev_vae=None, sample=False, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.env = env
-        self.prev_vae = prev_vae
-        self.sample = sample
-
-    def get_action(self, obs):
-        with th.no_grad():
-            raw_obs = obs['raw_obs']
-            goal_set = obs.get('goal_set')
-
-            features = [obs['goal']]
-
-            if self.prev_vae is not None:
-                if self.incl_state:
-                    features.append(raw_obs)
-                    if goal_set is not None:
-                        features.append(goal_set.ravel())
-                pred_features = self.prev_vae.sample(th.Tensor(np.concatenate(features)).to(ptu.device)).detach()
-            else:
-                pred_features = self.target
-
-            if th.is_tensor(pred_features):
-                obs['latents'] = pred_features.cpu().numpy()
-            else:
-                obs['latents'] = pred_features
-
-            qf_input = [raw_obs, pred_features]
-            if goal_set is not None:
-                qf_input.insert(1, goal_set.ravel())
-
-            q_values, ainfo = self.qf.get_action(*qf_input)
-            q_values = ptu.tensor(q_values)
-            action = F.one_hot(q_values.argmax().long(), 6).flatten()
-
-        return ptu.get_numpy(action), ainfo
 
 
 class CalibrationPolicy(EncDecPolicy):

@@ -1,163 +1,158 @@
-from rl.policies import DemonstrationPolicy, UserInputPolicy, FollowerPolicy, EncDecPolicy
+from rl.policies import DemonstrationPolicy, FollowerPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.misc.simple_path_loader import SimplePathLoader
 import rlkit.pythonplusplus as ppp
 
 import os
 from pathlib import Path
 import argparse
 import numpy as np
-import rlkit.torch.pytorch_util as ptu
 from copy import deepcopy
 
-import torch as th
 from types import MethodType
 
 
 def collect_demonstrations(variant):
-	env = default_overhead(variant['env_kwargs']['config'])
-	env.seed(variant['seedid']+100)
+    env = default_overhead(variant['env_kwargs']['config'])
+    env.seed(variant['seedid'] + 100)
 
-	# file_name = os.path.join(variant['eval_path'])
-	# loaded = th.load(file_name,map_location='cpu')
-	# policy = EncDecPolicy(
-	#     policy=loaded['trainer/policy'],
-	#     features_keys=list(env.feature_sizes.keys()),
-	#     vae=loaded['trainer/vae'],
-	#     incl_state=False,
-	#     sample=False,
-	#     deterministic=False
-	# )
+    policy = FollowerPolicy(env)
+    policy = DemonstrationPolicy(policy, env, p=variant['p'])
 
-	policy = FollowerPolicy(env)
-	policy = DemonstrationPolicy(policy,env,p=variant['p'])
+    path_collector = FullPathCollector(
+        env,
+        policy
+    )
 
-	path_collector = FullPathCollector(
-		env,
-		policy
-	)
+    if variant.get('render', False):
+        env.render('human')
+    paths = []
+    success_count = 0
+    while len(paths) < variant['num_episodes']:
+        target_index = 0
+        while target_index < env.base_env.num_targets:
+            def set_target_index(self):
+                self.target_index = target_index
 
-	if variant.get('render',False):
-		env.render('human')
-	paths = []
-	success_count = 0
-	while len(paths) < variant['num_episodes']:
-		target_index = 0
-		while target_index < env.base_env.num_targets:
-			def set_target_index(self):
-				self.target_index = target_index
-			env.base_env.set_target_index = MethodType(set_target_index,env.base_env)
-			collected_paths = path_collector.collect_new_paths(
-				variant['path_length'],
-				variant['path_length'],
-			)
-			success_found = False
-			for path in collected_paths:
-				# path['observations'] = [obs['raw_obs'] for obs in path['observations']]
-				# path['next_observations'] = [obs['raw_obs'] for obs in path['next_observations']]
-				if path['env_infos'][-1]['task_success']:
-					paths.append(path)
-					success_count += path['env_infos'][-1]['task_success']
-					success_found = True
-			if success_found:
-				target_index += 1
-			print("total paths collected: ", len(paths), "successes: ", success_count)
-	return paths
+            env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
+            collected_paths = path_collector.collect_new_paths(
+                variant['path_length'],
+                variant['path_length'],
+            )
+            success_found = False
+            for path in collected_paths:
+                if path['env_infos'][-1]['task_success']:
+                    paths.append(path)
+                    success_count += path['env_infos'][-1]['task_success']
+                    success_found = True
+            if success_found:
+                target_index += 1
+            print("total paths collected: ", len(paths), "successes: ", success_count)
+    return paths
+
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--env_name',)
-	parser.add_argument('--no_render', action='store_false')
-	parser.add_argument('--use_ray', action='store_true')
-	args, _ = parser.parse_known_args()
-	main_dir = str(Path(__file__).resolve().parents[2])
-	print(main_dir)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', )
+    parser.add_argument('--no_render', action='store_false')
+    parser.add_argument('--use_ray', action='store_true')
+    args, _ = parser.parse_known_args()
+    main_dir = str(Path(__file__).resolve().parents[2])
+    print(main_dir)
 
-	path_length = 200
-	variant = dict(
-		seedid=3000,
-		# eval_path=os.path.join(main_dir,'util_models','Kitchen_params_s1_subtask.pkl'),
-		env_kwargs={'config':dict(
-			env_name='Bottle',
-			step_limit=path_length,
-			env_kwargs=dict(frame_skip=5,stochastic=True),
-			oracle='model',
-			oracle_kwargs=dict(
-				threshold=.5,
-			),
-			action_type='disc_traj',
-			smooth_alpha=1,
+    path_length = 200
+    variant = dict(
+        seedid=3000,
+        env_kwargs={'config': dict(
+            env_name='Bottle',
+            step_limit=path_length,
+            env_kwargs=dict(frame_skip=5, stochastic=True),
+            oracle='model',
+            oracle_kwargs=dict(
+                threshold=.5,
+            ),
+            action_type='disc_traj',
+            smooth_alpha=1,
 
-			factories = [],
-			adapts = ['goal','oracle',],
-			# adapts = ['high_dim_user','reward'],
-			state_type=0,
-			apply_projection=False,
-			reward_max=0,
-			reward_min=-1,
-			input_penalty=1,
-			reward_type='part_sparse',
-			terminate_on_failure=False,
-			goal_noise_std = 0,
-			reward_temp=1,
-			reward_offset=-0.2
-		)},
-		render = args.no_render and (not args.use_ray),
+            factories=[],
+            adapts=['goal', 'oracle', ],
+            state_type=0,
+            apply_projection=False,
+            reward_max=0,
+            reward_min=-1,
+            input_penalty=1,
+            reward_type='part_sparse',
+            terminate_on_failure=False,
+            goal_noise_std=0,
+            reward_temp=1,
+            reward_offset=-0.2
+        )},
+        render=args.no_render and (not args.use_ray),
 
-		on_policy=True,
-		p=0.8,
-		num_episodes=5000,
-		path_length=path_length,
-		save_name_suffix="full",
-		
-	)
-	search_space = {
-		'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7, # higher epsilon = more noise
-	}
-	search_space = ppp.dot_map_dict_to_nested_dict(search_space)
-	variant = ppp.merge_recursive_dicts(variant,search_space)
+        on_policy=True,
+        p=0.8,
+        num_episodes=5000,
+        path_length=path_length,
+        save_name_suffix="full",
 
-	def process_args(variant):
-		variant['env_kwargs']['config']['seedid'] = variant['seedid']
-		variant['save_name'] = f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}"\
-								+ f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}"\
-								+ "_" + variant['save_name_suffix']
+    )
+    search_space = {
+        'env_kwargs.config.oracle_kwargs.epsilon': 0 if variant['on_policy'] else .7,  # higher epsilon = more noise
+    }
+    search_space = ppp.dot_map_dict_to_nested_dict(search_space)
+    variant = ppp.merge_recursive_dicts(variant, search_space)
 
-	if args.use_ray:
-		import ray
-		from ray.util import ActorPool
-		from itertools import cycle,count
-		ray.init(_temp_dir='/tmp/ray_exp1', num_gpus=0)
 
-		@ray.remote
-		class Iterators:
-			def __init__(self):
-				self.run_id_counter = count(0)
-			def next(self):
-				return next(self.run_id_counter)
-		iterator = Iterators.options(name="global_iterator").remote()
+    def process_args(variant):
+        variant['env_kwargs']['config']['seedid'] = variant['seedid']
+        variant[
+            'save_name'] = f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
+                           + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+                           + "_" + variant['save_name_suffix']
 
-		process_args(variant)
-		@ray.remote(num_cpus=1,num_gpus=0)
-		class Sampler:
-			def sample(self,variant):
-				variant = deepcopy(variant)
-				variant['seedid'] += ray.get(iterator.next.remote())
-				return collect_demonstrations(variant)
-		num_workers = 12
-		variant['num_episodes'] = variant['num_episodes']//num_workers
 
-		samplers = [Sampler.remote() for i in range(num_workers)]
-		samples = [samplers[i].sample.remote(variant) for i in range(num_workers)]
-		samples = [ray.get(sample) for sample in samples]
-		paths = list(sum(samples,[]))
-		np.save(os.path.join(main_dir,"demos",variant['save_name']), paths)
-	else:
-		import time
-		current_time = time.time_ns()
-		variant['seedid'] = current_time
-		process_args(variant)
-		paths = collect_demonstrations(variant)
-		# np.save(os.path.join(main_dir,"demos",variant['save_name']+f"_{variant['seedid']}"), paths)
-		np.save(os.path.join(main_dir,"demos",variant['save_name']), paths)
+    if args.use_ray:
+        import ray
+        from itertools import count
+
+        ray.init(_temp_dir='/tmp/ray_exp1', num_gpus=0)
+
+
+        @ray.remote
+        class Iterators:
+            def __init__(self):
+                self.run_id_counter = count(0)
+
+            def next(self):
+                return next(self.run_id_counter)
+
+
+        iterator = Iterators.options(name="global_iterator").remote()
+
+        process_args(variant)
+
+
+        @ray.remote(num_cpus=1, num_gpus=0)
+        class Sampler:
+            def sample(self, variant):
+                variant = deepcopy(variant)
+                variant['seedid'] += ray.get(iterator.next.remote())
+                return collect_demonstrations(variant)
+
+
+        num_workers = 12
+        variant['num_episodes'] = variant['num_episodes'] // num_workers
+
+        samplers = [Sampler.remote() for i in range(num_workers)]
+        samples = [samplers[i].sample.remote(variant) for i in range(num_workers)]
+        samples = [ray.get(sample) for sample in samples]
+        paths = list(sum(samples, []))
+        np.save(os.path.join(main_dir, "demos", variant['save_name']), paths)
+    else:
+        import time
+
+        current_time = time.time_ns()
+        variant['seedid'] = current_time
+        process_args(variant)
+        paths = collect_demonstrations(variant)
+        np.save(os.path.join(main_dir, "demos", variant['save_name']), paths)

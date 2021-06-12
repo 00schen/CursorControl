@@ -61,16 +61,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.training_mode(False)
 
     def _train(self):
-        # For some reason, pybullet crashes for me when pre-train path collect isn't used.
-        # So a token sample is taken
-        # self.expl_env.new_goal()
-        # self.expl_data_collector.collect_new_paths(
-        #     self.max_path_length,
-        #     10,
-        #     discard_incomplete_paths=False,
-        # )
-        # self.expl_data_collector.end_epoch(-1)
-
         # calibrate
         self.expl_env.seed(self.seedid)
         self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)

@@ -111,7 +111,7 @@ class LightSwitchEnv(AssistiveEnv):
             reward_dist = -norm(self.tool_pos - self.target_pos[target_indices[0]])
         else:
             reward_dist = 0
-        reward = reward_dist + reward_switch  # + (-30+10*np.count_nonzero(np.equal(self.target_string,self.current_string)))
+        reward = reward_dist + reward_switch
         _, switch_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
         info = {
             'task_success': self.task_success,
@@ -139,7 +139,6 @@ class LightSwitchEnv(AssistiveEnv):
         return obs, reward, done, info
 
     def move_lever(self, switch):
-        # print(switch)
         switch_pos, switch_orient = p.getLinkState(switch, 0)[:2]
         old_j_pos = robot_joint_position = p.getJointStates(switch, jointIndices=[0], physicsClientId=self.id)[0][0]
         contacts = p.getContactPoints(bodyA=self.robot, bodyB=switch, linkIndexB=0, physicsClientId=self.id)
@@ -217,7 +216,6 @@ class LightSwitchEnv(AssistiveEnv):
         p.resetBasePositionAndOrientation(self.robot, np.array(wheelchair_pos) + np.array([-0.35, -0.3, 0.3]),
                                           p.getQuaternionFromEuler([0, 0, -np.pi / 2.0], physicsClientId=self.id),
                                           physicsClientId=self.id)
-        base_pos, base_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
         self.human_controllable_joint_indices = []
         self.human_lower_limits = np.array([])
         self.human_upper_limits = np.array([])
@@ -282,7 +280,6 @@ class LightSwitchEnv(AssistiveEnv):
         if index is None:
             self.target_index = self.np_random.choice(self.target_indices)
         else:
-            # assert index in self.target_indices
             self.target_index = index
         self.unique_index = self.target_index
 
