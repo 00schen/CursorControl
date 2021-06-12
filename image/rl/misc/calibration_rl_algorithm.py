@@ -176,7 +176,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
 
             block_timeout = len(failed_paths) >= self.max_failures
-            if success or block_timeout:
+            if success or block_timeout or epoch == self.num_epochs - 1:
                 self.metrics['success_blocks'].append(real_success)
                 self.metrics['block_lengths'].append(len(failed_paths) + len(successful_paths))
                 if self.real_user:
