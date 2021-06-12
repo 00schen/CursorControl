@@ -421,7 +421,6 @@ class sim_target:
 			target = np.zeros(self.target_size)
 		else:
 			target = info[self.feature]
-
 		noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
 		obs['target'] = target + noise
 

@@ -227,8 +227,8 @@ if __name__ == "__main__":
         'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
         'trainer_kwargs.objective': ['kl'],
-        # 'mode': ['default', 'no_online', 'shift', 'no_right'],
-        'env_config.feature': ['goal'],
+        # 'mode': ['with_door'],
+        # 'env_config.feature': ['sub_target'],
         'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
         'freeze_decoder': [True],
     }
@@ -268,8 +268,9 @@ if __name__ == "__main__":
                           'shift': {'calibrate_split': True,
                                     'calibration_indices': [0, 1, 2, 3]},
                           'no_door': {'calibrate_split': False,
-                                      'calibration_indices': [1, 2]}
-
+                                      'calibration_indices': [1, 2]},
+                          'with_door': {'calibrate_split': False,
+                                        'calibration_indices': [0, 3]}
 
                           }
                      }[variant['env_config']['env_name']][variant['mode']]
