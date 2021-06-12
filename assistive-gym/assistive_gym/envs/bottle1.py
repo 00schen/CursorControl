@@ -105,7 +105,7 @@ class BottleEnv(AssistiveEnv):
 
         # robot_obs = np.concatenate([tool_pos, tool_orient]).ravel()
         robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses, [door_open]]),
+            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.shelf_pos, self.door_pos, *self.bottle_poses, [door_open]]),
             # raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.bottle_poses]),
             hindsight_goal=np.concatenate([self.tool_pos, [0]]),
             goal=self.goal,
