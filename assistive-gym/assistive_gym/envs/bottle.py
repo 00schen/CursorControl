@@ -62,7 +62,6 @@ class BottleEnv(AssistiveEnv):
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
 
         reward = self.task_success
-
         info = {
             'task_success': self.task_success,
             'old_tool_pos': old_tool_pos,

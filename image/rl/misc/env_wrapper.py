@@ -415,7 +415,9 @@ class sim_target:
 		return obs
 
 	def add_target(self, obs, info):
-		if self.feature is None or 'goal':
+		if info is not None:
+			breakpoint()
+		if self.feature is None or self.feature is 'goal':
 			target = obs['goal']
 		elif info is None:
 			target = np.zeros(self.target_size)
