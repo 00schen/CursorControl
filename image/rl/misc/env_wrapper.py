@@ -415,8 +415,6 @@ class sim_target:
 		return obs
 
 	def add_target(self, obs, info):
-		if info is not None:
-			breakpoint()
 		if self.feature is None or self.feature is 'goal':
 			target = obs['goal']
 		elif info is None:
