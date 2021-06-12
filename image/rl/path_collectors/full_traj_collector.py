@@ -5,7 +5,7 @@ from rl.misc.env_wrapper import real_gaze
 import time
 
 
-def _wait_for_key(env, agent, o, key=p.B3G_RETURN, update_obs_class=real_gaze):
+def _wait_for_key(env, agent, o, key=p.B3G_SPACE, update_obs_class=real_gaze):
     while True:
         keys = p.getKeyboardEvents()
         if key in keys and keys[key] & p.KEY_WAS_TRIGGERED:
