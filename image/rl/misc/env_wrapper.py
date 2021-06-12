@@ -402,7 +402,7 @@ class sim_target:
 	def __init__(self, master_env, config):
 		self.env_name = master_env.env_name
 		self.master_env = master_env
-		self.feature = config['feature']
+		self.feature = config.get('feature')
 		self.target_size = master_env.feature_sizes['target'] = 3  # ok for bottle and light switch, may not be true for other envs
 		self.goal_noise_std = config['goal_noise_std']
 

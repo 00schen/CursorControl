@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
     search_space = {
         'n_layers': [1],
-        'algorithm_args.trajs_per_index': [3],
+        'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
         'trainer_kwargs.sample': [True],
         'algorithm_args.calibrate_split': [False],
@@ -227,7 +227,6 @@ if __name__ == "__main__":
         'seedid': [2000, 2001, 2002],
         'layer_norm': [True],
         'freeze_decoder': [True],
-        'freeze_rf': [True],
         'trainer_kwargs.objective': ['kl'],
     }
     sweeper = hyp.DeterministicHyperparameterSweeper(
