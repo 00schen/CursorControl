@@ -10,6 +10,7 @@ from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.trainers.bc_trainer import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -68,7 +69,7 @@ def experiment(variant):
                   decoder_hidden_sizes=[64]
                   ).to(ptu.device)
     else:
-        file_name = os.path.join('util_models', variant['pretrain_path'])
+        file_name = os.path.join('image/util_models', variant['pretrain_path'])
         loaded = th.load(file_name)
         qf1 = loaded['trainer/qf1']
         qf2 = loaded['trainer/qf2']
@@ -117,10 +118,11 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         **variant['trainer_kwargs']
     )
-    replay_buffer = variant['buffer_type'](
+    replay_buffer = ModdedReplayBuffer(
         variant['replay_buffer_size'],
         env,
         sample_base=0,
+        store_latents=False
     )
     algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
@@ -132,12 +134,33 @@ def experiment(variant):
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
+
     path_loader = SimplePathLoader(
         demo_path=variant['demo_paths'],
         demo_path_proportion=variant['demo_path_proportions'],
         replay_buffer=replay_buffer,
     )
     path_loader.load_demos()
+
+    if variant['pretrain_steps']:
+        awac_trainer = TorchEncDecAWACTrainer(
+            policy=policy,
+            policy_lr=variant['trainer_kwargs']['policy_lr'],
+            qf1=qf1,
+            qf2=qf2,
+            target_qf1=target_qf1,
+            target_qf2=target_qf2,
+            qf_lr=variant['trainer_kwargs']['qf_lr'],
+            vae=vae,
+            latent_size=variant['latent_size'],
+            beta=0.01,
+            sample=True,
+            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+            target_update_period=variant['trainer_kwargs']['target_update_period'],
+        )
+        for _ in range(variant['pretrain_steps']):
+            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+            awac_trainer.train(train_data)
 
     if variant.get('render', False):
         env.render('human')
@@ -160,8 +183,9 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
+        pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=int(1e6),
+            num_epochs=3000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -181,23 +205,19 @@ if __name__ == "__main__":
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
-        # demo_paths=[
-        #     # os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_begin.npy"),
-        #     os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full1.npy"),
-        # ]*500, # no latent
         demo_paths=[
             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
-        ], # no latent
+        ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, debug=False),
+            env_kwargs=dict(frame_skip=5, debug=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['goal', 'sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,
@@ -210,13 +230,9 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        # 'demo_path_proportions': [[50]*500, ],
-        'demo_path_proportions': [[5000], ],
-        'trainer_kwargs.beta': [.01,.1],
-        # 'trainer_kwargs.beta': [.01,],
-        'algorithm_args.num_trains_per_train_loop': [100,1000],
-        # 'algorithm_args.num_trains_per_train_loop': [1000,],
-        'buffer_type': [ModdedReplayBuffer],
+        'demo_path_proportions': [[5000]],
+        'trainer_kwargs.beta': [.01],
+        'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(2e7)],
     }
 

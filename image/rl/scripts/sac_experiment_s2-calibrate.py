@@ -32,7 +32,7 @@ def experiment(variant):
 
     M = variant["layer_size"]
 
-    file_name = os.path.join('image','util_models', variant['pretrain_path'])
+    file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
     obs_dim = env.observation_space.low.size + reduce(operator.mul,
@@ -113,7 +113,8 @@ def experiment(variant):
         variant['replay_buffer_size'],
         env,
         sample_base=0,
-        latent_size=variant['latent_size']
+        latent_size=variant['latent_size'],
+        store_latents=True
     )
     trainer = LatentEncDecSACTrainer(
         vae=vae,
@@ -134,14 +135,13 @@ def experiment(variant):
             variant['replay_buffer_size'],
             env,
             sample_base=0,
-            latent_size=variant['latent_size']
+            latent_size=variant['latent_size'],
+            store_latents=True
         )
 
     if variant['real_user']:
         variant['algorithm_args']['eval_paths'] = False
 
-    if env.env_name == 'Bottle':
-        variant['algorithm_args']['calibration_indices'] = [0,3]
     algorithm = TorchCalibrationRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
+    target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     default_variant = dict(
         mode=args.mode,
         real_user=not args.sim,
@@ -204,21 +205,12 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=0.05,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, success_dist=.03, frame_skip=5, debug=False, num_targets=5,
-                            target_indices=[1, 2, 3]),
-
+            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
             action_type='joint',
             smooth_alpha=1,
-
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['goal'],
             gaze_dim=128,
-            state_type=0,
-            reward_max=0,
-            reward_min=-1,
-            reward_temp=1,
-            reward_offset=-0.1,
-            reward_type='sparse',
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
         )
@@ -236,7 +228,8 @@ if __name__ == "__main__":
         'algorithm_args.num_trains_per_train_loop': [100],
         'trainer_kwargs.objective': ['kl'],
         # 'mode': ['default', 'no_online', 'shift', 'no_right'],
-        'algorithm_args.seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
+        'env_config.feature': ['goal'],
+        'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
         'freeze_decoder': [True],
     }
 
@@ -246,51 +239,49 @@ if __name__ == "__main__":
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
 
-    if args.env_name == 'Bottle':
-        variants[0]['algorithm_args']['calibration_indices'] = [0, 3]
-
-    # search_space = {
-    #     'seedid': [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009],
-    #     'n_layers': [1],
-    #     'algorithm_args.trajs_per_index': [3],
-    #     'lr': [5e-4],
-    #     'trainer_kwargs.sample': [True],
-    #     'algorithm_args.calibrate_split': [False,],
-    #     'algorithm_args.calibration_indices': [[0], [4]],
-    #     'algorithm_args.max_path_length': [path_length, 5*path_length, 10*path_length],
-    #     'algorithm_args.max_failures': [1],
-    #     'freeze_decoder': [True],
-    #     'trainer_kwargs.use_supervised': ['calibrate_kl'],
-    # }
-    # sweeper = hyp.DeterministicHyperparameterSweeper(
-    #     search_space, default_parameters=default_variant,
-    # )
-    # for variant in sweeper.iterate_hyperparameters():
-    #     variants.append(variant)
-
     def process_args(variant):
+        variant['env_config']['seedid'] = variant['seedid']
+        variant['algorithm_args']['seedid'] = variant['seedid']
+
         if not args.use_ray:
             variant['render'] = args.no_render
 
-        mode_dict = {'default': {'calibrate_split': False,
-                                 'calibration_indices': [1, 2, 3]},
-                     'no_online': {'calibrate_split': False,
-                                   'calibration_indices': [1, 2, 3],
-                                   'num_trains_per_train_loop': 0},
-                     'shift': {'calibrate_split': True,
-                               'calibration_indices': [1, 2, 3]},
-                     'no_right': {'calibrate_split': False,
-                                  'calibration_indices': [2, 3]},
-                     'overcalibrate': {'calibrate_split': False,
-                                       'calibration_indices': [0, 1, 2, 3, 4]}}[variant['mode']]
+        mode_dict = {'OneSwitch':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': [1, 2, 3]},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': [1, 2, 3],
+                                        'num_trains_per_train_loop': 0},
+                          'shift': {'calibrate_split': True,
+                                    'calibration_indices': [1, 2, 3]},
+                          'no_right': {'calibrate_split': False,
+                                       'calibration_indices': [2, 3]},
+                          'overcalibrate': {'calibrate_split': False,
+                                            'calibration_indices': [0, 1, 2, 3, 4]}
+                          },
+                     'Bottle':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': [0, 1, 2, 3]},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': [0, 1, 2, 3],
+                                        'num_trains_per_train_loop': 0},
+                          'shift': {'calibrate_split': True,
+                                    'calibration_indices': [0, 1, 2, 3]},
+                          'no_door': {'calibrate_split': False,
+                                      'calibration_indices': [1, 2]}
+
+
+                          }
+                     }[variant['env_config']['env_name']][variant['mode']]
 
         variant['algorithm_args'].update(mode_dict)
 
-        if variant['real_user']:
-            variant['env_config']['adapts'].insert(1, 'real_gaze')
+        target = 'real_gaze' if variant['real_user'] else 'sim_target'
+        variant['env_config']['adapts'].append(target)
 
         if variant['trainer_kwargs']['objective'] == 'awr':
             variant['algorithm_args']['relabel_failures'] = False
+
 
     args.process_args = process_args
 

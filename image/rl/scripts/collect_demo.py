@@ -87,7 +87,7 @@ if __name__ == "__main__":
 				threshold=.5,
 			),
 			action_type='joint',
-			smooth_alpha=.8,
+			smooth_alpha=1,
 
 			factories = [],
 			adapts = ['goal', 'reward'],

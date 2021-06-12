@@ -81,13 +81,13 @@ if __name__ == "__main__":
 		env_kwargs={'config':dict(
 			env_name='Bottle',
 			step_limit=path_length,
-			env_kwargs=dict(success_dist=.03,frame_skip=5,stochastic=True),
+			env_kwargs=dict(frame_skip=5,stochastic=True),
 			oracle='model',
 			oracle_kwargs=dict(
 				threshold=.5,
 			),
 			action_type='disc_traj',
-			smooth_alpha=.8,
+			smooth_alpha=1,
 
 			factories = [],
 			adapts = ['goal','oracle',],
@@ -97,7 +97,7 @@ if __name__ == "__main__":
 			reward_max=0,
 			reward_min=-1,
 			input_penalty=1,
-			reward_type='custom_kitchen',
+			reward_type='part_sparse',
 			terminate_on_failure=False,
 			goal_noise_std = 0,
 			reward_temp=1,
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 		render = args.no_render and (not args.use_ray),
 
 		on_policy=True,
-		p=.8,
+		p=0.8,
 		num_episodes=5000,
 		path_length=path_length,
 		save_name_suffix="full",

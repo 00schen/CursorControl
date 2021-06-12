@@ -12,18 +12,13 @@ class CalibrationDQNPolicy(EncDecQfPolicy):
         self.env = env
         self.prev_vae = prev_vae
         self.sample = sample
-        self.target = None
 
     def get_action(self, obs):
         with th.no_grad():
             raw_obs = obs['raw_obs']
             goal_set = obs.get('goal_set')
 
-            # only use initial switch positions, keep constant for entire traj
-            if self.target is None:
-                self.target = self.env.base_env.get_true_target()
-
-            features = [self.target]
+            features = [obs['goal']]
 
             if self.prev_vae is not None:
                 if self.incl_state:
@@ -49,9 +44,6 @@ class CalibrationDQNPolicy(EncDecQfPolicy):
 
         return ptu.get_numpy(action), ainfo
 
-    def reset(self):
-        self.target = None
-
 
 class CalibrationPolicy(EncDecPolicy):
     def __init__(self, *args, env, prev_vae=None, sample=False, **kwargs):
@@ -59,18 +51,13 @@ class CalibrationPolicy(EncDecPolicy):
         self.env = env
         self.prev_vae = prev_vae
         self.sample = sample
-        self.target = None
 
     def get_action(self, obs):
         with th.no_grad():
             raw_obs = obs['raw_obs']
             goal_set = obs.get('goal_set')
 
-            # only use initial switch positions, keep constant for entire traj
-            if self.target is None:
-                self.target = self.env.base_env.get_true_target()
-
-            features = [self.target]
+            features = [obs['goal']]
 
             if self.prev_vae is not None:
                 if self.incl_state:
@@ -91,6 +78,3 @@ class CalibrationPolicy(EncDecPolicy):
                 policy_input.insert(1, goal_set.ravel())
 
             return self.policy.get_action(*policy_input)
-
-    def reset(self):
-        self.target = None

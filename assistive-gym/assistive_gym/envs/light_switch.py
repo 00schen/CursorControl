@@ -11,7 +11,7 @@ HIGH_LIMIT = .2
 
 
 class LightSwitchEnv(AssistiveEnv):
-    def __init__(self, message_indices=None, success_dist=.05, session_goal=False, frame_skip=5, robot_type='jaco',
+    def __init__(self, message_indices=None, success_dist=.03, session_goal=False, frame_skip=5, robot_type='jaco',
                  capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
                  step_limit=200):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
@@ -178,19 +178,12 @@ class LightSwitchEnv(AssistiveEnv):
         return tool_force, tool_force_at_target, target_contact_pos, bad_contact_count
 
     def _get_obs(self, forces):
-        torso_pos = np.array(
-            p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True,
-                           physicsClientId=self.id)[0])
         state = p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)
         tool_pos = np.array(state[0])
         tool_orient = np.array(state[1])  # Quaternions
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
-        robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
-
-        # switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
-        # robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 
         obs_features = [tool_orient, tool_pos, robot_joint_positions]
 
@@ -207,11 +200,8 @@ class LightSwitchEnv(AssistiveEnv):
     def wrong_goal_reached(self):
         return np.sum(self.current_string != self.target_string) > 1
 
-    def get_true_target(self):
-        return self.target_pos[self.target_index]
-
     def reset(self):
-        self.task_success = 0
+        self.task_success = False
 
         """set up standard environment"""
         self.setup_timing()
