@@ -14,13 +14,13 @@ class KitchenEnv(AssistiveEnv):
 	def __init__(self, robot_type='jaco',success_dist=.05, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False,
 					num_targets=4, joint_in_state=False, step_limit=1200, pretrain_assistance=False):
 		super(KitchenEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(7+12+6+2,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(7+12+6+2+6,), dtype=np.float32)
 		self.num_targets = 4*4
 		self.num_second_targets = 4
 		self.success_dist = success_dist
 		self.debug = debug
 		self.stochastic = stochastic
-		self.feature_sizes = OrderedDict({'goal': 3+2})
+		self.feature_sizes = OrderedDict({'goal': 3+2+6})
 		self.session_goal = session_goal
 		self.pretrain_assistance = pretrain_assistance
 
@@ -39,22 +39,22 @@ class KitchenEnv(AssistiveEnv):
 			if self.door_orders[1] == 1 or (self.door_orders[1] == 0 and self.tasks[4]):
 				self.pull_fridge()
 		handle_info = p.getLinkState(self.microwave, 0)[:2]
-		microwave_pos, _ = p.multiplyTransforms(*handle_info, np.array([.26,-.05,.12]),
+		self.microwave_handle,_ = microwave_handle, _ = p.multiplyTransforms(*handle_info, np.array([.34,-.05,.12]),
 											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
 		handle_info = p.getLinkState(self.fridge, 1)[:2]
-		fridge_pos, _ = p.multiplyTransforms(*handle_info, np.array([.4,.08,.05]),
+		self.fridge_handle,_ = fridge_handle, _ = p.multiplyTransforms(*handle_info, np.array([.4,.08,.03]),
 											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
 		microwave_angle = p.getJointStates(self.microwave, jointIndices=[0], physicsClientId=self.id)[0][0]
 		fridge_angle = p.getJointStates(self.fridge, jointIndices=[0], physicsClientId=self.id)[0][0]
 		# if food grabbed, cannot pull doors
 
-		if microwave_angle <= -.7:
+		if microwave_angle <= -1:
 			self.tasks[0] = 1
-		if fridge_angle >= 1:
+		if fridge_angle >= 1.3:
 			self.tasks[1] = 1
 		if (norm(self.bowl_pos - self.tool_pos) < .05 and self.tasks[0] and self.tasks[1]):
 			self.tasks[2] = 1
-		if norm(self.curr_bowl_pos - self.microwave_target_pos) < .05:
+		if norm(self.curr_bowl_pos - self.microwave_target_pos) < .1:
 			self.tasks[3] = 1
 		if self.tasks[3] and microwave_angle > -.05:
 			self.tasks[4] = 1
@@ -62,17 +62,17 @@ class KitchenEnv(AssistiveEnv):
 			self.tasks[5] = 1		
 
 		
-		sub_target = microwave_pos if self.door_orders[0] == 0 else fridge_pos
+		sub_target = microwave_handle if self.door_orders[0] == 0 else fridge_handle
 		if self.tasks[0] or self.tasks[1]:
-			sub_target = fridge_pos if self.tasks[0] else microwave_pos
+			sub_target = fridge_handle if self.tasks[0] else microwave_handle
 		if self.tasks[0] and self.tasks[1]:
 			sub_target = self.bowl_pos
 		if self.tasks[2]:
 			sub_target = self.microwave_target_pos
 		if self.tasks[3]:
-			sub_target = microwave_pos if self.door_orders[1] == 0 else fridge_pos
+			sub_target = microwave_handle if self.door_orders[1] == 0 else fridge_handle
 		if self.tasks[4] or self.tasks[5]:
-			sub_target = fridge_pos if self.tasks[4] else microwave_pos
+			sub_target = fridge_handle if self.tasks[4] else microwave_handle
 
 		obs = self._get_obs([0])
 		self.task_success = sum(self.tasks) == 6
@@ -85,20 +85,20 @@ class KitchenEnv(AssistiveEnv):
 			'task_success': self.task_success,
 			'old_tool_pos': old_tool_pos,
 			'target_index': self.target_index,
-			'microwave_handle_pos': microwave_pos,
-			'fridge_handle_pos': fridge_pos,
+			'microwave_handle_pos': microwave_handle,
+			'fridge_handle_pos': fridge_handle,
 
 			'tasks': self.tasks.copy(),
-			'fridge_pos': self.fridge_pos,
-			'microwave_pos': self.microwave_pos,
-			'fridge_handle': fridge_pos,
-			'microwave_handle': microwave_pos,
+			'fridge_pos': self.fridge_pos.copy(),
+			'microwave_pos': self.microwave_pos.copy(),
+			'fridge_handle': fridge_handle,
+			'microwave_handle': microwave_handle,
 			'tool_pos': self.tool_pos,
 			'target_poses': [item_pos.copy() for item_pos in self.food_poses],
 			'sub_target': sub_target,
-			'target1_pos': self.bowl_pos,
-			'target_pos': self.microwave_target_pos,
-			'orders': self.door_orders,
+			'target1_pos': self.bowl_pos.copy(),
+			'target_pos': self.microwave_target_pos.copy(),
+			'orders': self.door_orders.copy(),
 			'microwave_angle': microwave_angle,
 			'fridge_angle': fridge_angle,
 		}
@@ -108,7 +108,7 @@ class KitchenEnv(AssistiveEnv):
 
 	def pull_microwave(self,):
 		handle_info = p.getLinkState(self.microwave, 0)[:2]
-		handle_pos, _ = p.multiplyTransforms(*handle_info, np.array([.26,-.05,.12]),
+		handle_pos, _ = p.multiplyTransforms(*handle_info, np.array([.34,-.05,.12]),
 											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
 		if norm(self.tool_pos-handle_pos) > .04 or self.tasks[3] == 1:
 			return self.push_microwave()
@@ -125,8 +125,9 @@ class KitchenEnv(AssistiveEnv):
 
 	def push_microwave(self):
 		old_j_pos = robot_joint_position = p.getJointStates(self.microwave, jointIndices=[0], physicsClientId=self.id)[0][0]
-		contacts = p.getContactPoints(bodyA=self.robot, bodyB=self.microwave, linkIndexB=0, physicsClientId=self.id)
-		contacts += p.getContactPoints(bodyA=self.tool, bodyB=self.microwave, linkIndexB=0, physicsClientId=self.id)
+		contacts = p.getContactPoints(bodyA=self.tool, bodyB=self.microwave, linkIndexB=0, physicsClientId=self.id)
+		for i in range(7,20):
+			contacts += p.getContactPoints(bodyA=self.robot, bodyB=self.microwave, linkIndexA=i, linkIndexB=0, physicsClientId=self.id)
 		if len(contacts) == 0:
 			return 0, 0
 
@@ -137,7 +138,7 @@ class KitchenEnv(AssistiveEnv):
 		centripedal = np.cross(axis,radius)
 		c_F = np.dot(normal,centripedal)/norm(centripedal)
 		c_F = -normal[0]
-		k = .007
+		k = .005
 		# k = .007 if robot_joint_position < -.1 else .02
 		w = k*np.sign(c_F)*norm(normal)
 		if self.tasks[3] == 0:
@@ -152,7 +153,7 @@ class KitchenEnv(AssistiveEnv):
 
 	def pull_fridge(self,):
 		handle_info = p.getLinkState(self.fridge, 1)[:2]
-		handle_pos, _ = p.multiplyTransforms(*handle_info, np.array([.4,.08,.05]),
+		handle_pos, _ = p.multiplyTransforms(*handle_info, np.array([.4,.08,.03]),
 											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
 		if norm(self.tool_pos-handle_pos) > .04 or self.tasks[3] == 1:
 			return self.push_fridge()
@@ -170,8 +171,9 @@ class KitchenEnv(AssistiveEnv):
 
 	def push_fridge(self):
 		old_j_pos = robot_joint_position = p.getJointStates(self.fridge, jointIndices=[0], physicsClientId=self.id)[0][0]
-		contacts = p.getContactPoints(bodyA=self.robot, bodyB=self.fridge, linkIndexB=0, physicsClientId=self.id)
-		contacts += p.getContactPoints(bodyA=self.tool, bodyB=self.fridge, linkIndexB=0, physicsClientId=self.id)
+		contacts = p.getContactPoints(bodyA=self.tool, bodyB=self.fridge, linkIndexB=0, physicsClientId=self.id)
+		for i in range(7,20):
+			contacts += p.getContactPoints(bodyA=self.robot, bodyB=self.fridge, linkIndexA=i, linkIndexB=0, physicsClientId=self.id)
 		if len(contacts) == 0:
 			return 0, 0
 
@@ -207,7 +209,7 @@ class KitchenEnv(AssistiveEnv):
 
 		# robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.food_poses, self.tasks, [microwave_angle, fridge_angle]]),
+			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.food_poses, self.tasks, [microwave_angle, fridge_angle], self.microwave_handle, self.fridge_handle]),
 			hindsight_goal = np.concatenate([self.tool_pos,]),
 			goal = self.goal,
 			joint=robot_joint_positions
@@ -240,6 +242,13 @@ class KitchenEnv(AssistiveEnv):
 			 physicsClientId=self.id, globalScaling=.8, useFixedBase=True)
 		# for i in range(p.getNumJoints(self.fridge)):
 		# 	print(p.getJointInfo(self.fridge,i))
+		handle_info = p.getLinkState(self.microwave, 0)[:2]
+		self.microwave_handle,_ = microwave_handle, _ = p.multiplyTransforms(*handle_info, np.array([.26,-.05,.12]),
+											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
+		handle_info = p.getLinkState(self.fridge, 1)[:2]
+		self.fridge_handle,_ = fridge_handle, _ = p.multiplyTransforms(*handle_info, np.array([.4,.08,.05]),
+											 p.getQuaternionFromEuler([0, 0, 0]), physicsClientId=self.id)
+
 
 		"""set up target and initial robot position"""
 		if not self.session_goal:
@@ -303,7 +312,7 @@ class KitchenEnv(AssistiveEnv):
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
 		self.task_success = 0
-		self.goal = np.concatenate((self.bowl_pos,self.door_orders))
+		self.goal = np.concatenate((self.bowl_pos,self.door_orders,[1]*6))
 		return self._get_obs([0])
 
 	def _collision_off_hand(self,obj,ind):

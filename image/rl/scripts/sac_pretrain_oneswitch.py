@@ -197,7 +197,7 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'trainer_kwargs.beta': [.01],
+        'trainer_kwargs.beta': [.01,0],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(5e5)],
     }

@@ -66,7 +66,7 @@ class BottleEnv(AssistiveEnv):
             'tool_pos': self.tool_pos,
             'sub_target': self.sub_target_pos.copy(),
             'target_pos': self.target_pos,
-            'unique_index': self.unique_index,
+            # 'unique_index': self.unique_index,
             'unique_targets': self.bottle_poses,
         }
         done = False

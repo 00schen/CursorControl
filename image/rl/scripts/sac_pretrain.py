@@ -10,6 +10,7 @@ from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.trainers import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -133,12 +134,33 @@ def experiment(variant):
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
+
     path_loader = SimplePathLoader(
         demo_path=variant['demo_paths'],
         demo_path_proportion=variant['demo_path_proportions'],
         replay_buffer=replay_buffer,
     )
     path_loader.load_demos()
+
+    if variant['pretrain_steps']:
+        awac_trainer = TorchEncDecAWACTrainer(
+            policy=policy,
+            policy_lr=variant['trainer_kwargs']['policy_lr'],
+            qf1=qf1,
+            qf2=qf2,
+            target_qf1=target_qf1,
+            target_qf2=target_qf2,
+            qf_lr=variant['trainer_kwargs']['qf_lr'],
+            vae=vae,
+            latent_size=variant['latent_size'],
+            beta=0.01,
+            sample=True,
+            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+            target_update_period=variant['trainer_kwargs']['target_update_period'],
+        )
+        for _ in range(variant['pretrain_steps']):
+            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+            awac_trainer.train(train_data)
 
     if variant.get('render', False):
         env.render('human')
@@ -156,7 +178,7 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
-    path_length = 1200
+    path_length = 800
     variant = dict(
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
@@ -165,8 +187,9 @@ if __name__ == "__main__":
             num_epochs=int(1e6),
             num_eval_steps_per_epoch=path_length,
             eval_paths=True,
-            num_expl_steps_per_train_loop=1000,
-            min_num_steps_before_training=1000,
+            num_expl_steps_per_train_loop=path_length,
+            min_num_steps_before_training=path_length,
+            num_train_loops_per_epoch=100,
             max_path_length=path_length,
             batch_size=256,
             collect_new_paths=True,
@@ -175,31 +198,38 @@ if __name__ == "__main__":
             discount=0.99,
             soft_target_tau=5e-3,
             target_update_period=1,
-            policy_lr=3e-4,
-            qf_lr=3e-4,
-            encoder_lr=3e-4,
+            # policy_lr=3e-4,
+            # qf_lr=3e-4,
+            # encoder_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
             sample=True,
         ),
         demo_paths=[
-                       os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_1_full2.npy"),
-                   ] * 100,
+                    os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_1000_debug_{i}.npy")
+                    for i in range(5)
+                   ]
+                   +[
+                    os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_250_debug_{i}.npy")
+                    for i in range(1,16)
+                   ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=5, pretrain_assistance=True),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=5,),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'sim_target', 'reward'],
+            # adapts=['goal', 'sim_target', 'reward'],
+            adapts=['goal','joint','reward'],
+            # goal_func_ind=0,
             gaze_dim=128,
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='custom_kitchen',
+            reward_type='part_sparse_kitchen',
             reward_temp=1,
             reward_offset=-0.2
         )
@@ -207,15 +237,16 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[50] * 100, ],
-        'trainer_kwargs.beta': [.1],
-        # 'trainer_kwargs.beta': [.01,],
+        'pretrain_steps': [int(1e5)],
+        'demo_path_proportions': [[500]*20, ],
+        'trainer_kwargs.beta': [.1,.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'env_config.reward_temp': [10],
-        # 'algorithm_args.num_trains_per_train_loop': [1000,],
         'replay_buffer_size': [int(2e7)],
-        'trainer_kwargs.policy_lr': [3e-4, 1e-3],
+        'trainer_kwargs.policy_lr': [1e-3],
         'trainer_kwargs.qf_lr': [3e-4, 1e-3],
+        'trainer_kwargs.encoder_lr': [3e-4],
+        # 'env_config.goal_func_ind': [0,1],
+        'env_config.env_kwargs.pretrain_assistance': [True, False],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

@@ -230,7 +230,7 @@ if __name__ == "__main__":
         'seedid': [2000],
         'from_pretrain': [False],
         'demo_path_proportions': [[5000]],
-        'trainer_kwargs.beta': [.01],
+        'trainer_kwargs.beta': [.01,0],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(2e7)],
     }

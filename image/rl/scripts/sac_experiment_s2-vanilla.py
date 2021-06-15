@@ -1,11 +1,11 @@
 import rlkit.torch.pytorch_util as ptu
-from rlkit.torch.networks import VAE
-from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationPolicy, EncDecPolicy
+from rlkit.torch.sac.sac import SACTrainer
+from rlkit.torch.networks import ConcatMlp
+from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
+from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.trainers import LatentEncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
 
@@ -32,56 +32,37 @@ def experiment(variant):
 
     M = variant["layer_size"]
 
-    file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
-    loaded = th.load(file_name, map_location=ptu.device)
-
     feat_dim = env.observation_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
+    action_dim = 7
 
-    vae = VAE(input_size=obs_dim,
-              latent_size=variant['latent_size'],
-              encoder_hidden_sizes=[M] * variant['n_layers'],
-              decoder_hidden_sizes=[M] * variant['n_layers']
-              ).to(ptu.device)
-    policy = loaded['trainer/policy']
-
-    qf1 = loaded['trainer/qf1']
-    qf2 = loaded['trainer/qf2']
-
-    if 'trainer/vae' in loaded.keys():
-        prev_vae = loaded['trainer/vae'].to(ptu.device)
-    else:
-        prev_vae = None
-
-    optim_params = list(vae.encoder.parameters())
-    if not variant['freeze_decoder']:
-        optim_params += list(policy.parameters())
-
-    optimizer = optim.Adam(
-        optim_params,
-        lr=variant['lr'],
+    qf1 = ConcatMlp(
+        input_size=obs_dim + action_dim,
+        output_size=1,
+        hidden_sizes=[M, M, M],
     )
-
-    expl_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
-        incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
+    qf2 = ConcatMlp(
+        input_size=obs_dim + action_dim,
+        output_size=1,
+        hidden_sizes=[M, M, M],
     )
-
-    eval_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
-        incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
+    target_qf1 = ConcatMlp(
+        input_size=obs_dim + action_dim,
+        output_size=1,
+        hidden_sizes=[M, M, M],
     )
+    target_qf2 = ConcatMlp(
+        input_size=obs_dim + action_dim,
+        output_size=1,
+        hidden_sizes=[M, M, M],
+    )
+    expl_policy = TanhGaussianPolicy(
+        obs_dim=obs_dim,
+        action_dim=action_dim,
+        hidden_sizes=[M, M, M],
+    )
+    eval_policy = MakeDeterministic(expl_policy)
 
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -89,23 +70,9 @@ def experiment(variant):
         save_env_in_snapshot=False
     )
 
-    calibration_policy = CalibrationPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        env=env,
-        vae=vae,
-        prev_vae=prev_vae,
-        incl_state=False
-    )
     expl_path_collector = FullPathCollector(
         env,
         expl_policy,
-        save_env_in_snapshot=False,
-        real_user=variant['real_user']
-    )
-    calibration_path_collector = FullPathCollector(
-        env,
-        calibration_policy,
         save_env_in_snapshot=False,
         real_user=variant['real_user']
     )
@@ -116,42 +83,22 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         store_latents=True
     )
-    trainer = LatentEncDecSACTrainer(
-        vae=vae,
-        prev_vae=prev_vae,
-        policy=policy,
+    trainer = SACTrainer(
+        env=eval_env,
+        policy=expl_policy,
         qf1=qf1,
         qf2=qf2,
-        optimizer=optimizer,
-        latent_size=variant['latent_size'],
-        feature_keys=list(env.feature_sizes.keys()),
+        target_qf1=target_qf1,
+        target_qf2=target_qf2,
         **variant['trainer_kwargs']
     )
-
-    if variant['keep_calibration_data']:
-        calibration_buffer = replay_buffer
-    else:
-        calibration_buffer = ModdedReplayBuffer(
-            variant['replay_buffer_size'],
-            env,
-            sample_base=0,
-            latent_size=variant['latent_size'],
-            store_latents=True
-        )
-
-    if variant['real_user']:
-        variant['algorithm_args']['eval_paths'] = False
-
-    algorithm = TorchCalibrationRLAlgorithm(
+    algorithm = TorchBatchRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
         replay_buffer=replay_buffer,
-        calibration_data_collector=calibration_path_collector,
-        calibration_buffer=calibration_buffer,
-        real_user=variant['real_user'],
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
@@ -187,17 +134,17 @@ if __name__ == "__main__":
         keep_calibration_data=True,
         trainer_kwargs=dict(
             # beta=0.01,
-            grad_norm_clip=None
+            # grad_norm_clip=None
         ),
         algorithm_args=dict(
             batch_size=256,
             max_path_length=path_length,
             num_epochs=args.epochs,
             num_eval_steps_per_epoch=1000,
+            num_expl_steps_per_train_loop=200,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
-            pretrain_steps=1000,
-            max_failures=5,
+            # pretrain_steps=1000,
             eval_paths=False,
         ),
 
@@ -218,20 +165,10 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
-        'n_layers': [1],
-        'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
-        'trainer_kwargs.sample': [True],
-        'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'trainer_kwargs.objective': ['kl'],
-        # 'algorithm_args.calibrate_split': [False],
-        # 'algorithm_args.calibration_indices': [[1, 2, 3]],
-        # 'mode': ['with_door'],
-        # 'env_config.feature': ['sub_target'],
         'seedid': [0],
         'freeze_decoder': [True],
-        'trainer_kwargs.beta': [0,.01],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -242,7 +179,7 @@ if __name__ == "__main__":
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
-        variant['algorithm_args']['seedid'] = variant['seedid']
+        # variant['algorithm_args']['seedid'] = variant['seedid']
 
         if not args.use_ray:
             variant['render'] = args.no_render
@@ -276,13 +213,13 @@ if __name__ == "__main__":
                           }
                      }[variant['env_config']['env_name']][variant['mode']]
 
-        variant['algorithm_args'].update(mode_dict)
+        # variant['algorithm_args'].update(mode_dict)
 
         target = 'real_gaze' if variant['real_user'] else 'sim_target'
         variant['env_config']['adapts'].append(target)
 
-        if variant['trainer_kwargs']['objective'] == 'awr':
-            variant['algorithm_args']['relabel_failures'] = False
+        # if variant['trainer_kwargs']['objective'] == 'awr':
+            # variant['algorithm_args']['relabel_failures'] = False
 
 
     args.process_args = process_args
