@@ -441,7 +441,8 @@ class joint:
 
 class dict_to_array:
     def __init__(self, master_env, config):
-        master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+3,))
+        pass
+        # master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+3,))
     def _step(self, obs, r, done, info):
         obs = np.concatenate((obs['raw_obs'],obs['target']))
         return obs, r, done, info

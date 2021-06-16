@@ -156,7 +156,11 @@ if __name__ == "__main__":
             smooth_alpha=1,
             factories=[],
             adapts=['goal','dict_to_array','reward'],
-            
+            reward_type='sparse',
+            reward_max=0,
+            reward_min=-1,
+            reward_temp=1,
+            reward_offset=-0.2,
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
@@ -216,7 +220,7 @@ if __name__ == "__main__":
         # variant['algorithm_args'].update(mode_dict)
 
         target = 'real_gaze' if variant['real_user'] else 'sim_target'
-        variant['env_config']['adapts'].append(target)
+        variant['env_config']['adapts'].insert(1,target)
 
         # if variant['trainer_kwargs']['objective'] == 'awr':
             # variant['algorithm_args']['relabel_failures'] = False
