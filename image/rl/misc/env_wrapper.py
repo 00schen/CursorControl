@@ -41,6 +41,7 @@ def default_overhead(config):
                 'goal': goal,
                 'reward': reward,
                 'sim_target': sim_target,
+                'dict_to_array': dict_to_array,
             }
             self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
             self.adapts = [adapt(self, config) for adapt in self.adapts]
@@ -436,6 +437,17 @@ class joint:
     
     def _reset(self, obs, info=None):
         obs['raw_obs'] = np.concatenate((obs['raw_obs'],obs['joint']))
+        return obs
+
+class dict_to_array:
+    def __init__(self, master_env, config):
+        master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+3,))
+    def _step(self, obs, r, done, info):
+        obs = np.concatenate((obs['raw_obs'],obs['target']))
+        return obs, r, done, info
+    
+    def _reset(self, obs, info=None):
+        obs = np.concatenate((obs['raw_obs'],obs['target']))
         return obs
 
 class reward:

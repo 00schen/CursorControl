@@ -6,7 +6,7 @@ from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
 from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.replay_buffers import ModdedReplayBuffer
+from rlkit.data_management.simple_replay_buffer import SimpleReplayBuffer
 from rl.scripts.run_util import run_exp
 
 import os
@@ -23,7 +23,7 @@ def experiment(variant):
     import torch as th
 
     expl_config = deepcopy(variant['env_config'])
-    expl_config['factories'] += ['session']
+    # expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
 
     eval_config = deepcopy(variant['env_config'])
@@ -76,12 +76,11 @@ def experiment(variant):
         save_env_in_snapshot=False,
         real_user=variant['real_user']
     )
-    replay_buffer = ModdedReplayBuffer(
+    replay_buffer = SimpleReplayBuffer(
         variant['replay_buffer_size'],
-        env,
-        sample_base=0,
-        latent_size=variant['latent_size'],
-        store_latents=True
+        obs_dim,
+        action_dim,
+        env_info_sizes={}
     )
     trainer = SACTrainer(
         env=eval_env,
@@ -140,7 +139,7 @@ if __name__ == "__main__":
             batch_size=256,
             max_path_length=path_length,
             num_epochs=args.epochs,
-            num_eval_steps_per_epoch=1000,
+            num_eval_steps_per_epoch=0,
             num_expl_steps_per_train_loop=200,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
@@ -156,7 +155,8 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal'],
+            adapts=['goal','dict_to_array','reward'],
+            
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
