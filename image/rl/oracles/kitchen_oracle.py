@@ -51,8 +51,8 @@ class KitchenOracle(UserModelOracle):
 				target_pos += np.array([.1,.1,0])
 				if norm(tool_pos-target_pos) < .05:
 					self.aux_reached += 1
-			else:
-				target_pos += np.array([-.05,-.1,0])
+			# else:
+			# 	target_pos += np.array([-.05,-.1,0])
 		if tasks[3] and ((orders[1] == 1 and not tasks[5]) or tasks[4]):
 			target_pos = info['fridge_handle']
 			if self.aux_reached < 4 + 2*(1-orders[1]):
@@ -65,6 +65,8 @@ class KitchenOracle(UserModelOracle):
 					self.aux_reached += 1
 			else:
 				target_pos += np.array([.05,-.1,0])
+
+		gen_target(target_pos)
 		
 		old_traj = target_pos - info['old_tool_pos']
 		new_traj = info['tool_pos'] - info['old_tool_pos']

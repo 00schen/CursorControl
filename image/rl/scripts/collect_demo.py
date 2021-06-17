@@ -82,9 +82,9 @@ if __name__ == "__main__":
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
-            env_name='OneSwitch',
+            env_name='Kitchen',
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, ),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, pretrain_assistance=True),
             oracle='keyboard',
             oracle_kwargs=dict(
                 threshold=.5,
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         render=args.no_render and (not args.use_ray),
 
         on_policy=True,
-        p=.7,
+        p=1,
         num_episodes=250,
         path_length=path_length,
         save_name_suffix=args.suffix,
