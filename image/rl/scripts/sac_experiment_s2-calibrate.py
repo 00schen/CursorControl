@@ -35,9 +35,8 @@ def experiment(variant):
     file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
-    obs_dim = feat_dim + sum(env.feature_sizes.values())
+    feat_dim = env.observation_space.low.size
+    obs_dim = feat_dim + env.goal_space.low.size
 
     vae = VAE(input_size=obs_dim,
               latent_size=variant['latent_size'],
@@ -209,7 +208,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal'],
+            adapts=[],
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'

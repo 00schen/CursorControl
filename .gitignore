@@ -10,6 +10,10 @@
 */logs
 */*/logs
 */*/*/logs
+*logs1
+*/logs1
+*/*/logs1
+*/*/*/logs1
 *.ipynb_checkpoints
 */.ipynb_checkpoints
 */*/.ipynb_checkpoints
@@ -41,3 +45,5 @@ legacy_code
 */*/*/*demos
 */exp_notes.txt
 image/util_models1
+image/surveys
+image/bad_surveys

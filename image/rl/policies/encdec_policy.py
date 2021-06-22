@@ -25,16 +25,13 @@ class EncDecPolicy(PyTorchModule):
             assert self.latent_size is not None
 
     def get_action(self, obs):
-        features = [obs[k] for k in self.features_keys]
+        features = [obs['goal_obs']]
         with th.no_grad():
-            raw_obs = obs['raw_obs']
-            goal_set = obs.get('goal_set')
+            base_obs = obs['base_obs']
 
             if self.vae != None:
                 if self.incl_state:
-                    features.append(raw_obs)
-                    if goal_set is not None:
-                        features.append(goal_set.ravel())
+                    features.append(base_obs)
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
                 pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
@@ -43,9 +40,7 @@ class EncDecPolicy(PyTorchModule):
 
             obs['latents'] = pred_features
 
-            policy_input = [raw_obs, pred_features]
-            if goal_set is not None:
-                policy_input.insert(1, goal_set.ravel())
+            policy_input = [base_obs, pred_features]
             action = self.policy.get_action(*policy_input)
             return action
 

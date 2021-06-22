@@ -7,8 +7,8 @@ from .base_oracles import UserModelOracle
 class BottleOracle(UserModelOracle):
 	def _query(self,obs,info):
 		target = info['target_pos']
-		tool_pos = obs['raw_obs'][:3]
-		door_pos = obs['raw_obs'][7:10]
+		tool_pos = obs['base_obs'][:3]
+		door_pos = obs['base_obs'][7:10]
 		shelf_pos = info['shelf_pos']
 		final_door_pos = (np.array([-.15,.17,0]) if info['target_index']//2 else np.array([.15,.17,0])) + shelf_pos
 		door_offset = np.array([.02,0,0]) if info['target_index']%2 else np.array([-.02,0,0])

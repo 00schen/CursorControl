@@ -30,7 +30,7 @@ class LightSwitchEnv(AssistiveEnv):
         obs_size = 4 + 3 + 7
         self.observation_space = spaces.Box(-np.inf, np.inf, (obs_size,), dtype=np.float32)
 
-        self.feature_sizes = {'goal': 3}
+        self.goal_feat_sizes = {'original_switch_pos': 3}
         if target_indices is None:
             self.target_indices = list(np.arange(self.num_targets))
         else:
@@ -103,7 +103,6 @@ class LightSwitchEnv(AssistiveEnv):
             color = [0, 0, 1, 1]
         p.changeVisualShape(self.targets1[self.target_index], -1, rgbaColor=color)
 
-        obs = self._get_obs([0])
 
         _, _, _, bad_contact_count = self.get_total_force()
         target_indices = np.nonzero(np.not_equal(self.target_string, self.current_string))[0]
@@ -112,26 +111,8 @@ class LightSwitchEnv(AssistiveEnv):
         else:
             reward_dist = 0
         reward = reward_dist + reward_switch
-        _, switch_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
-        info = {
-            'task_success': self.task_success,
-            'num_correct': np.count_nonzero(np.equal(self.target_string, self.current_string)),
-            'angle_dir': angle_dirs,
-            'angle_diff': angle_diffs,
-            'tool_pos': self.tool_pos,
-            'tool_orient': self.tool_orient,
-            'old_tool_pos': old_tool_pos,
-            'ineff_contact': bad_contact_count,
-
-            'target_index': self.target_index,
-            'unique_index': self.target_index,
-            'lever_angle': self.lever_angles.copy(),
-            'target_string': self.target_string.copy(),
-            'current_string': self.current_string.copy(),
-            'switch_pos': np.array(self.target_pos).copy(),
-            'aux_switch_pos': np.array(self.target_pos1).copy(),
-            'switch_orient': switch_orient,
-        }
+        obs = self._get_obs([0])
+        info = obs
         if self.capture_frames:
             frame = self.get_frame()
             info['frame'] = frame
@@ -177,23 +158,32 @@ class LightSwitchEnv(AssistiveEnv):
         return tool_force, tool_force_at_target, target_contact_pos, bad_contact_count
 
     def _get_obs(self, forces):
-        state = p.getLinkState(self.tool, 1, computeForwardKinematics=True, physicsClientId=self.id)
-        tool_pos = np.array(state[0])
-        tool_orient = np.array(state[1])  # Quaternions
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
+        _, switch_orient = p.getBasePositionAndOrientation(self.wall, physicsClientId=self.id)
 
-        obs_features = [tool_orient, tool_pos, robot_joint_positions]
+        obs = {
+            'task_success': self.task_success,
+            'num_correct': np.count_nonzero(np.equal(self.target_string, self.current_string)),
+            'tool_pos': self.tool_pos,
+            'tool_orient': self.tool_orient,
 
-        robot_obs = dict(
-            raw_obs=np.concatenate(obs_features),
-            hindsight_goal=np.zeros(3),
-            goal=self.goal.copy(),
-            goal_set=np.concatenate((self.goal_positions, np.array(self.lever_angles)[:, None]),
-                                    axis=1)
-        )
-        return robot_obs
+            'target_index': self.target_index,
+            'unique_index': self.target_index,
+            'lever_angle': self.lever_angles.copy(),
+            'target_string': self.target_string.copy(),
+            'current_string': self.current_string.copy(),
+            'switch_pos': np.array(self.target_pos).copy(),
+            'aux_switch_pos': np.array(self.target_pos1).copy(),
+            'switch_orient': switch_orient,
+
+            'goal':self.goal.copy(),
+            'goal_set':np.concatenate((self.goal_positions, np.array(self.lever_angles)[:, None]),
+                                    axis=1),
+            'joints': robot_joint_positions,
+        }
+        return obs
 
     # return if a switch other than the target switch was flipped, assumes all switches start not flipped
     def wrong_goal_reached(self):

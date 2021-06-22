@@ -28,9 +28,9 @@ def experiment(variant):
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
-    obs_dim = feat_dim + sum(env.feature_sizes.values())
+    feat_dim = env.observation_space.low.size
+    goal_dim = env.goal_space.low.size
+    obs_dim = feat_dim + goal_dim
 
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
@@ -61,7 +61,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=goal_dim,
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -184,7 +184,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'sim_target', 'reward'],
+            adapts=['sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,
@@ -197,7 +197,7 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'trainer_kwargs.beta': [0],
+        'trainer_kwargs.beta': [0,.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(5e5)],
     }

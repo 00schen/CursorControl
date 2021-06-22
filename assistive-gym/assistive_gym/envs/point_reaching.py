@@ -161,7 +161,7 @@ class LightSwitchEnv(AssistiveEnv):
 		# switch_pos = np.array(p.getBasePositionAndOrientation(self.switch, physicsClientId=self.id)[0])
 		# robot_obs = np.concatenate([tool_pos-torso_pos, tool_orient, robot_joint_positions, switch_pos, forces]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([tool_pos,tool_orient,self.lever_angles]),
+			base_obs = np.concatenate([tool_pos,tool_orient,self.lever_angles]),
 			hindsight_goal = np.concatenate([np.array(self.current_string).copy(),np.array(self.target_pos).ravel().copy()]),
 			goal = self.goal,
 		)

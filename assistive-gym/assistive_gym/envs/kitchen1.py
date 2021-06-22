@@ -94,7 +94,7 @@ class KitchenEnv(AssistiveEnv):
 
 		# robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
 		robot_obs = dict(
-			raw_obs = np.concatenate([self.tool_pos, self.tool_orient,]),
+			base_obs = np.concatenate([self.tool_pos, self.tool_orient,]),
 			hindsight_goal = np.concatenate([self.tool_pos,]),
 			goal = self.goal,
 		)

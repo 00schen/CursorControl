@@ -32,9 +32,8 @@ def experiment(variant):
 
     M = variant["layer_size"]
 
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
-    obs_dim = feat_dim + sum(env.feature_sizes.values())
+    feat_dim = env.observation_space.low.size
+    obs_dim = feat_dim + env.goal_space.low.size
     action_dim = 7
 
     qf1 = ConcatMlp(

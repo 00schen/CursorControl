@@ -20,19 +20,22 @@ def collect_demonstrations(variant):
     env = default_overhead(variant['env_kwargs']['config'])
     env.seed(variant['seedid'] + 100 + current_time)
 
-    # file_name = os.path.join(variant['eval_path'])
-    # loaded = th.load(file_name, map_location='cpu')
-    # policy = EncDecPolicy(
-    #     policy=loaded['trainer/policy'],
-    #     features_keys=list(env.feature_sizes.keys()),
-    #     vae=loaded['trainer/vae'],
-    #     incl_state=False,
-    #     sample=False,
-    #     deterministic=False
-    # )
+    file_name = os.path.join(variant['eval_path'])
+    loaded = th.load(file_name, map_location='cpu')
+    policy = EncDecPolicy(
+        policy=loaded['trainer/policy'],
+        features_keys=list(env.feature_sizes.keys()),
+        vae=loaded['trainer/vae'],
+        incl_state=False,
+        sample=False,
+        deterministic=False
+    )
 
-    policy = FollowerPolicy(env)
-    policy = DemonstrationPolicy(policy, env, p=variant['p'])
+    # policy = FollowerPolicy(env)
+    # policy = DemonstrationPolicy(policy, env, p=variant['p'])
+
+    print(loaded['trainer/policy'])
+    print(loaded['trainer/vae'].encoder)
 
     path_collector = FullPathCollector(
         env,
@@ -56,8 +59,8 @@ def collect_demonstrations(variant):
             )
             success_found = False
             for path in collected_paths:
-                # if path['env_infos'][-1]['task_success']:
-                if sum(path['env_infos'][-1]['tasks']) > 2:
+                if path['env_infos'][-1]['task_success']:
+                # if sum(path['env_infos'][-1]['tasks']) > 2:
                     paths.append(path)
                     success_count += path['env_infos'][-1]['task_success']
                     success_found = True
@@ -70,30 +73,30 @@ def collect_demonstrations(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--suffix', )
+    parser.add_argument('--suffix', default='test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 2000
+    path_length = 200
     variant = dict(
         seedid=3000,
-        eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
+        eval_path=os.path.join(main_dir, 'util_models', 'kitchen-debug.pkl'),
         env_kwargs={'config': dict(
             env_name='Kitchen',
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, pretrain_assistance=True),
-            oracle='keyboard',
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, pretrain_assistance=True, debug=True, target_indices=[0]),
+            oracle='model',
             oracle_kwargs=dict(
                 threshold=.5,
             ),
-            action_type='disc_traj',
+            action_type='joint',
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal', 'oracle',],
+            adapts=['goal', 'joint',],
             state_type=0,
             apply_projection=False,
             reward_max=0,
@@ -108,8 +111,8 @@ if __name__ == "__main__":
         render=args.no_render and (not args.use_ray),
 
         on_policy=True,
-        p=1,
-        num_episodes=250,
+        p=.6,
+        num_episodes=5000,
         path_length=path_length,
         save_name_suffix=args.suffix,
 
@@ -158,7 +161,7 @@ if __name__ == "__main__":
                 return collect_demonstrations(variant)
 
 
-        num_workers = 16
+        num_workers = 10
         variant['num_episodes'] = variant['num_episodes'] // num_workers
 
         samplers = [Sampler.remote() for i in range(num_workers)]

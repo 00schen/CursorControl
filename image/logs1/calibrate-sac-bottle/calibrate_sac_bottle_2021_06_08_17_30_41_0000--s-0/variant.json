@@ -1,0 +1,73 @@
+{
+  "algorithm_args": {
+    "batch_size": 256,
+    "calibrate_split": false,
+    "calibration_indices": [
+      0,
+      3
+    ],
+    "collect_new_paths": true,
+    "eval_paths": false,
+    "max_failures": 5,
+    "max_path_length": 200,
+    "num_epochs": 50,
+    "num_eval_steps_per_epoch": 1000,
+    "num_train_loops_per_epoch": 1,
+    "num_trains_per_train_loop": 5,
+    "pretrain_steps": 1000,
+    "trajs_per_index": 3
+  },
+  "env_config": {
+    "action_type": "joint",
+    "adapts": [
+      "goal",
+      "reward"
+    ],
+    "env_kwargs": {
+      "debug": false,
+      "frame_skip": 5,
+      "joint_in_state": true,
+      "num_targets": 5,
+      "step_limit": 200,
+      "success_dist": 0.03,
+      "target_indices": [
+        1,
+        2,
+        3
+      ]
+    },
+    "env_name": "Bottle",
+    "eval_gaze_path": "Bottle_gaze_data_eval.h5",
+    "factories": [],
+    "gaze_dim": 128,
+    "gaze_path": "Bottle_gaze_data_train.h5",
+    "goal_noise_std": 0.1,
+    "reward_max": 0,
+    "reward_min": -1,
+    "reward_offset": -0.1,
+    "reward_temp": 1,
+    "reward_type": "sparse",
+    "seedid": 2000,
+    "smooth_alpha": 1,
+    "state_type": 0,
+    "terminate_on_failure": true
+  },
+  "freeze_decoder": true,
+  "keep_calibration_data": true,
+  "latent_size": 3,
+  "layer_size": 64,
+  "lr": 0.0005,
+  "mode": "default",
+  "n_layers": 1,
+  "pretrain_path": "Bottle_params_s1_sac.pkl",
+  "real_user": true,
+  "render": true,
+  "replay_buffer_size": 2000000,
+  "seedid": 2000,
+  "trainer_kwargs": {
+    "beta": 0.01,
+    "grad_norm_clip": null,
+    "sample": true,
+    "use_supervised": "calibrate_kl"
+  }
+}

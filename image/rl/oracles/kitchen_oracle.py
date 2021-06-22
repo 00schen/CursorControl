@@ -6,7 +6,7 @@ from .base_oracles import UserModelOracle
 
 class KitchenOracle(UserModelOracle):
 	def _query(self,obs,info):
-		tool_pos = obs['raw_obs'][:3]
+		tool_pos = obs['base_obs'][:3]
 		tasks = info['tasks']
 		orders = info['orders']
 
@@ -51,8 +51,8 @@ class KitchenOracle(UserModelOracle):
 				target_pos += np.array([.1,.1,0])
 				if norm(tool_pos-target_pos) < .05:
 					self.aux_reached += 1
-			# else:
-			# 	target_pos += np.array([-.05,-.1,0])
+			else:
+				target_pos += np.array([-.05,-.1,0])
 		if tasks[3] and ((orders[1] == 1 and not tasks[5]) or tasks[4]):
 			target_pos = info['fridge_handle']
 			if self.aux_reached < 4 + 2*(1-orders[1]):

@@ -30,9 +30,8 @@ def experiment(variant):
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
-    obs_dim = feat_dim + sum(env.feature_sizes.values())
+    feat_dim = env.observation_space.low.size
+    obs_dim = feat_dim + env.goal_space.low.size
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -216,7 +215,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'sim_target', 'reward'],
+            adapts=['sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,

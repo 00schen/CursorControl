@@ -12,17 +12,26 @@ reach_arena = (np.array([-.25,-.5,1]),np.array([.6,.4,.2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 class KitchenEnv(AssistiveEnv):
 	def __init__(self, robot_type='jaco',success_dist=.05, session_goal=False, frame_skip=5, capture_frames=False, stochastic=True, debug=False,
-					num_targets=4, joint_in_state=False, step_limit=1200, pretrain_assistance=False):
+					num_targets=4, joint_in_state=False, step_limit=1200, pretrain_assistance=False, target_indices=None):
 		super(KitchenEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02, action_robot_len=7, obs_robot_len=14)
-		self.observation_space = spaces.Box(-np.inf,np.inf,(7+12+6+2+6,), dtype=np.float32)
+		self.observation_space = spaces.Box(-np.inf,np.inf,(7+6+6+2+6,), dtype=np.float32)
 		self.num_targets = 2*2*2
 		self.num_second_targets = 2
 		self.success_dist = success_dist
 		self.debug = debug
 		self.stochastic = stochastic
-		self.feature_sizes = OrderedDict({'goal': 3+2+6})
+		self.goal_feat_sizes = OrderedDict({'bowl_pos': 3, 'door_orders': 2, 'tasks': 6})
 		self.session_goal = session_goal
 		self.pretrain_assistance = pretrain_assistance
+
+		if target_indices is None:
+			self.target_indices = list(np.arange(self.num_targets))
+		else:
+			for i in target_indices:
+				assert 0 <= i < self.num_targets
+			self.target_indices = target_indices
+
+		self.goal_set_shape = (2, 3)
 
 	def step(self, action):
 		old_tool_pos = self.tool_pos
@@ -45,7 +54,7 @@ class KitchenEnv(AssistiveEnv):
 		fridge_angle = p.getJointStates(self.fridge, jointIndices=[0], physicsClientId=self.id)[0][0]
 		# if food grabbed, cannot pull doors
 
-		if microwave_angle <= -1.7:
+		if microwave_angle <= -1.3:
 			self.tasks[0] = 1
 		if fridge_angle >= 1.3:
 			self.tasks[1] = 1
@@ -57,47 +66,16 @@ class KitchenEnv(AssistiveEnv):
 			self.tasks[4] = 1
 		if self.tasks[3] and fridge_angle < .05:
 			self.tasks[5] = 1		
-		
-		sub_target = microwave_handle if self.door_orders[0] == 0 else fridge_handle
-		if self.tasks[0] or self.tasks[1]:
-			sub_target = fridge_handle if self.tasks[0] else microwave_handle
-		if self.tasks[0] and self.tasks[1]:
-			sub_target = self.bowl_pos
-		if self.tasks[2]:
-			sub_target = self.microwave_target_pos
-		if self.tasks[3]:
-			sub_target = microwave_handle if self.door_orders[1] == 0 else fridge_handle
-		if self.tasks[4] or self.tasks[5]:
-			sub_target = fridge_handle if self.tasks[4] else microwave_handle
-
-		obs = self._get_obs([0])
+	
 		self.task_success = sum(self.tasks) == 6
-		# if self.debug:
-		# 	self.task_success = task_success = self.item_reached
+		if self.assist_number != None:
+			self.task_success = sum(self.tasks) >= self.assist_number+1
 
 		reward = 0
 
-		info = {
-			'task_success': self.task_success,
-			'old_tool_pos': old_tool_pos,
-			'target_index': self.target_index,
-			'microwave_handle_pos': microwave_handle,
-			'fridge_handle_pos': fridge_handle,
+		obs = self._get_obs([0])
+		info = obs
 
-			'tasks': self.tasks.copy(),
-			'fridge_pos': self.fridge_pos.copy(),
-			'microwave_pos': self.microwave_pos.copy(),
-			'fridge_handle': fridge_handle,
-			'microwave_handle': microwave_handle,
-			'tool_pos': self.tool_pos,
-			'target_poses': [item_pos.copy() for item_pos in self.food_poses],
-			'sub_target': sub_target,
-			'target1_pos': self.bowl_pos.copy(),
-			'target_pos': self.microwave_target_pos.copy(),
-			'orders': self.door_orders.copy(),
-			'microwave_angle': microwave_angle,
-			'fridge_angle': fridge_angle,
-		}
 		done = False
 
 		return obs, reward, done, info
@@ -108,11 +86,11 @@ class KitchenEnv(AssistiveEnv):
 			return self.push_microwave()
 
 		old_j_pos = robot_joint_position = p.getJointStates(self.microwave, jointIndices=[0], physicsClientId=self.id)[0][0]
-		k = -.01 if not self.tasks[3] else .01
+		k = -.01
 		for _ in range(self.frame_skip):
 			robot_joint_position += k
 
-		robot_joint_position = np.clip(robot_joint_position, -2.5,0)
+		robot_joint_position = np.clip(robot_joint_position, -1.7,0)
 		p.resetJointState(self.microwave, jointIndex=0, targetValue=robot_joint_position, physicsClientId=self.id)
 
 		return k, robot_joint_position - old_j_pos
@@ -141,7 +119,7 @@ class KitchenEnv(AssistiveEnv):
 			w = np.clip(w, -10, 0)
 		for _ in range(self.frame_skip):
 			robot_joint_position -= w
-		robot_joint_position = np.clip(robot_joint_position,-2.5,0)
+		robot_joint_position = np.clip(robot_joint_position,-1.7,0)
 		p.resetJointState(self.microwave, jointIndex=0, targetValue=robot_joint_position, physicsClientId=self.id)
 		return k, robot_joint_position - old_j_pos
 
@@ -190,23 +168,49 @@ class KitchenEnv(AssistiveEnv):
 
 
 	def _get_obs(self, forces):
-		torso_pos = np.array(p.getLinkState(self.robot, 15 if self.robot_type == 'pr2' else 0, computeForwardKinematics=True, physicsClientId=self.id)[0])
-		state = p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)
 		robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices, physicsClientId=self.id)
 		robot_joint_positions = np.array([x[0] for x in robot_joint_states])
-		robot_pos, robot_orient = p.getBasePositionAndOrientation(self.robot, physicsClientId=self.id)
 
 		microwave_angle = p.getJointStates(self.microwave, jointIndices=[0], physicsClientId=self.id)[0][0]
 		fridge_angle = p.getJointStates(self.fridge, jointIndices=[0], physicsClientId=self.id)[0][0]
 
-		# robot_obs = np.concatenate([tool_pos, tool_orient, robot_joint_positions, forces]).ravel()
-		robot_obs = dict(
-			raw_obs = np.concatenate([self.tool_pos, self.tool_orient, *self.food_poses, self.tasks, [microwave_angle, fridge_angle], self.microwave_handle, self.fridge_handle]),
-			hindsight_goal = np.concatenate([self.tool_pos,]),
-			goal = self.goal,
-			joint=robot_joint_positions
-		)
-		return robot_obs
+		sub_target = microwave_handle if self.door_orders[0] == 0 else fridge_handle
+		if self.tasks[0] or self.tasks[1]:
+			sub_target = fridge_handle if self.tasks[0] else microwave_handle
+		if self.tasks[0] and self.tasks[1]:
+			sub_target = self.bowl_pos
+		if self.tasks[2]:
+			sub_target = self.microwave_target_pos
+		if self.tasks[3]:
+			sub_target = microwave_handle if self.door_orders[1] == 0 else fridge_handle
+		if self.tasks[4] or self.tasks[5]:
+			sub_target = fridge_handle if self.tasks[4] else microwave_handle
+
+		self.goal = np.concatenate((self.bowl_pos.copy(),self.door_orders.copy(),self.tasks.copy()))
+
+		obs = {
+			'task_success': self.task_success,
+			# 'old_tool_pos': old_tool_pos,
+			'target_index': self.target_index,
+			'goal': self.goal,
+
+			'tasks': self.tasks.copy(),
+			'fridge_pos': self.fridge_pos.copy(),
+			'microwave_pos': self.microwave_pos.copy(),
+			'fridge_handle': self.fridge_handle,
+			'microwave_handle': self.microwave_handle,
+			'tool_pos': self.tool_pos,
+			'goal_set': [item_pos.copy() for item_pos in self.food_poses],
+			'sub_target': sub_target,
+			'bowl_pos': self.bowl_pos.copy(),
+			'microwave_target_pos': self.microwave_target_pos.copy(),
+			'door_orders': self.door_orders.copy(),
+			'microwave_angle': microwave_angle,
+			'fridge_angle': fridge_angle,
+
+			'joints': robot_joint_positions,
+		}
+		return obs
 
 	def reset(self):
 		"""set up standard environment"""
@@ -224,14 +228,14 @@ class KitchenEnv(AssistiveEnv):
 		self.human_upper_limits = np.array([])
 
 		"""set up environment objects"""
-		table_pos = np.array([1,-.9,0])
-		table_orient = p.getQuaternionFromEuler([0,0,np.pi/4])
+		table_pos = np.array([.6,-1.25,0])
+		table_orient = p.getQuaternionFromEuler([0,0,0])
 		self.table = p.loadURDF(os.path.join(self.world_creation.directory, 'table', 'table_tall.urdf'), basePosition=table_pos, baseOrientation=table_orient, physicsClientId=self.id)
-		self.fridge_pos = table_pos+np.array([-1,-.5,.1])
+		self.fridge_pos = table_pos+np.array([-.8,0,.1])
 		self.fridge = p.loadURDF(os.path.join(self.world_creation.directory, 'fridge', 'fridge.urdf'), basePosition=self.fridge_pos, baseOrientation=default_orientation,\
 			 physicsClientId=self.id, globalScaling=.7, useFixedBase=True)
 		table_info = p.getBasePositionAndOrientation(self.table, physicsClientId=self.id)
-		microwave_pos, microwave_orient = p.multiplyTransforms(*table_info, np.array([-.45, .4, .75]), p.getQuaternionFromEuler([0,0,np.pi]))
+		microwave_pos, microwave_orient = p.multiplyTransforms(*table_info, np.array([-.45, .3, .75]), p.getQuaternionFromEuler([0,0,np.pi]))
 		self.microwave_pos = np.array(microwave_pos)
 		print(microwave_pos)
 		self.microwave = p.loadURDF(os.path.join(self.world_creation.directory, 'microwave', 'microwave.urdf'), basePosition=microwave_pos, baseOrientation=microwave_orient,\
@@ -248,46 +252,41 @@ class KitchenEnv(AssistiveEnv):
 		self._collision_off_hand(self.fridge, 1)
 		self._collision_off_hand(self.microwave, 1)
 
-		if self.pretrain_assistance and np.random.randint(2):
-			assist_number = np.random.randint(6)
-			assistive_number = 2
-			if assist_number == 0 or assist_number > 1:
+		self.assist_number = None
+		if self.pretrain_assistance:
+			self.assist_number = assist_number = np.random.randint(6)
+			if self.debug:
+				self.assist_number = assist_number = 0
+			if assist_number == 1 or assist_number > 2:
 				if self.door_orders[0] == 0:
-					p.resetJointState(self.microwave, jointIndex=0, targetValue=-1, physicsClientId=self.id)
+					p.resetJointState(self.microwave, jointIndex=0, targetValue=-1.31, physicsClientId=self.id)
 					self.tasks[0] = 1
 				else:
-					p.resetJointState(self.fridge, jointIndex=0, targetValue=1.4, physicsClientId=self.id)
+					p.resetJointState(self.fridge, jointIndex=0, targetValue=1.31, physicsClientId=self.id)
 					self.tasks[1] = 1
-			if assist_number >= 1:
+			if assist_number >= 2:
 				if self.door_orders[0] == 0:
-					p.resetJointState(self.fridge, jointIndex=0, targetValue=1.4, physicsClientId=self.id)
+					p.resetJointState(self.fridge, jointIndex=0, targetValue=1.31, physicsClientId=self.id)
 					self.tasks[1] = 1
 				else:
-					p.resetJointState(self.microwave, jointIndex=0, targetValue=-1, physicsClientId=self.id)
+					p.resetJointState(self.microwave, jointIndex=0, targetValue=-1.31, physicsClientId=self.id)
 					self.tasks[0] = 1
-			if assist_number == 2:
+			if assist_number == 3:
 				bowl_orient = p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[1]
 				p.resetBasePositionAndOrientation(self.bowl, self.tool_pos-np.array([0,0,.05]), bowl_orient, physicsClientId=self.id)
 				self.tasks[2] = 1
-			if assist_number >= 3:
+			if assist_number >= 4:
 				bowl_orient = p.getBasePositionAndOrientation(self.bowl, physicsClientId=self.id)[1]
 				p.resetBasePositionAndOrientation(self.bowl, self.microwave_target_pos-np.array([0,0,.05]), bowl_orient, physicsClientId=self.id)
 				self.tasks[2] = 1
 				self.tasks[3] = 1
-			if assist_number == 4:
-				if self.door_orders[1] == 0:
-					p.resetJointState(self.microwave, jointIndex=0, targetValue=0, physicsClientId=self.id)
-					self.tasks[4] = 1
-				else:
-					p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
-					self.tasks[5] = 1
 			if assist_number == 5:
 				if self.door_orders[1] == 0:
-					p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
-					self.tasks[5] = 1
-				else:
 					p.resetJointState(self.microwave, jointIndex=0, targetValue=0, physicsClientId=self.id)
 					self.tasks[4] = 1
+				else:
+					p.resetJointState(self.fridge, jointIndex=0, targetValue=0, physicsClientId=self.id)
+					self.tasks[5] = 1
 
 
 		"""configure pybullet"""
@@ -299,7 +298,6 @@ class KitchenEnv(AssistiveEnv):
 		p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
 		self.task_success = 0
-		self.goal = np.concatenate((self.bowl_pos,self.door_orders,[1]*6))
 		return self._get_obs([0])
 
 	def _collision_off_hand(self,obj,ind):
@@ -327,7 +325,7 @@ class KitchenEnv(AssistiveEnv):
 		return np.concatenate((self.food_poses[np.random.choice(2,)],np.random.randint(2,size=(2,))))
 
 	def set_target_index(self):
-		self.target_index = self.np_random.choice(self.num_targets)
+		self.target_index = self.np_random.choice(self.target_indices)
 
 	def generate_target(self):
 		self.door_orders = [(self.target_index%4)//2,self.target_index%2]
