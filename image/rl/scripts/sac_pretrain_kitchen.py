@@ -32,7 +32,8 @@ def experiment(variant):
 
     # qf takes in goal directly instead of latent, but same dim
     feat_dim = env.observation_space.low.size
-    obs_dim = feat_dim + env.goal_space.low.size
+    goal_dim = env.goal_space.low.size
+    obs_dim = feat_dim + goal_dim
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -62,7 +63,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=goal_dim,
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]

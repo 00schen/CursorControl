@@ -36,7 +36,8 @@ def experiment(variant):
     loaded = th.load(file_name, map_location=ptu.device)
 
     feat_dim = env.observation_space.low.size
-    obs_dim = feat_dim + env.goal_space.low.size
+    goal_dim = env.goal_space.low.size
+    obs_dim = feat_dim + goal_dim
 
     vae = VAE(input_size=obs_dim,
               latent_size=variant['latent_size'],
