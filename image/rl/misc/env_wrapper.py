@@ -78,7 +78,7 @@ class LibraryWrapper(Env):
         self.base_env = {
             "Laptop": ag.LaptopJacoEnv,
             "OneSwitch": ag.OneSwitchJacoEnv,
-            "ThreeSwitch": ag.ThreeSwitchJacoEnv,
+            # "ThreeSwitch": ag.ThreeSwitchJacoEnv,
             "AnySwitch": ag.AnySwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
             "Kitchen": ag.KitchenJacoEnv,
@@ -367,7 +367,7 @@ class sim_target(Adapter):
 class joint(Adapter):
     def __init__(self, master_env, config):
         super().__init__(master_env,config)
-        master_env.feature_sizes['joint'] = 7
+        master_env.feature_sizes['joints'] = 7
 
 
 class goal_set(Adapter):

@@ -2,10 +2,10 @@ import pybullet as p
 import numpy as np
 from collections import deque
 from numpy.linalg import norm
-from .base_oracles import UserModelOracle
+from .base_oracles import Oracle
 
-class BottleOracle(UserModelOracle):
-	def _query(self,obs,info):
+class BottleOracle(Oracle):
+	def _query(self,obs):
 		target = obs['goal'][:3]
 		# target1 = obs['goal'][3:]
 		target1 = obs['goal'][:3]
@@ -29,11 +29,11 @@ class BottleOracle(UserModelOracle):
 			else:
 				target_pos = target
 
-		old_traj = target_pos - info['old_tool_pos']
-		new_traj = info['tool_pos'] - info['old_tool_pos']
+		old_traj = target_pos - obs['old_tool_pos']
+		new_traj = obs['tool_pos'] - obs['old_tool_pos']
 		cos_error = np.dot(old_traj,new_traj)/(norm(old_traj)*norm(new_traj))
 		criterion = cos_error < self.threshold
-		# info['distance_to_target'] = norm(info['tool_pos']-target_pos)
+		# obs['distance_to_target'] = norm(obs['tool_pos']-target_pos)
 		return criterion, target_pos
 	def reset(self):
 		self.checkpoint = False

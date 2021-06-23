@@ -54,7 +54,7 @@ class BottleEnv(AssistiveEnv):
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
 
         reward = self.task_success
-        obs = self._get_obs([0])
+        obs = self._get_obs(old_tool_pos)
         info = obs
         done = False
 
@@ -72,13 +72,13 @@ class BottleEnv(AssistiveEnv):
         normal = contacts[0][7]
         c_F = -normal[0]
         k = .002
-        w = k * np.sign(c_F) * np.sqrt(abs(c_F))
+        w = k * c_F
         for _ in range(self.frame_skip):
             robot_joint_position += w
         robot_joint_position = np.clip(robot_joint_position, *self.slide_range)
         p.resetJointState(self.shelf, jointIndex=0, targetValue=robot_joint_position, physicsClientId=self.id)
 
-    def _get_obs(self, forces):
+    def _get_obs(self, old_tool_pos):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
@@ -86,6 +86,7 @@ class BottleEnv(AssistiveEnv):
         obs = {
             'task_success': self.task_success,
             'target_index': self.target_index,
+            'old_tool_pos': old_tool_pos,
 
             'door_open': self.door_open,
             'door_pos': self.door_pos,
@@ -93,6 +94,7 @@ class BottleEnv(AssistiveEnv):
             'tool_pos': self.tool_pos,
             'sub_target': self.sub_target_pos.copy(),
             'target_pos': self.target_pos,
+            'tool_orient': self.tool_orient,
             'goal_set': self.bottle_poses,
 
             'joints': robot_joint_positions,
@@ -157,7 +159,8 @@ class BottleEnv(AssistiveEnv):
         self.goal = np.array(self.target_pos)
         self.curr_step = 0
 
-        return self._get_obs([0])
+        self.old_tool_pos = self.tool_pos
+        return self._get_obs(self.tool_pos)
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
