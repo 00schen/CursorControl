@@ -23,6 +23,8 @@ class EncDecPolicy(PyTorchModule):
         self.latent_size = latent_size
         if self.sample:
             assert self.latent_size is not None
+        self.random_latent = random_latent
+        self.episode_latent = None
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
