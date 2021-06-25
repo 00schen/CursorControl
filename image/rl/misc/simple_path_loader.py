@@ -29,7 +29,7 @@ class SimplePathLoader:
         env = replay_buffer.env
         processed_trans = []
         obs = path['observations'][0]
-        obs = env.adapt_reset(obs, path['env_infos'][0])
+        obs = env.adapt_reset(obs)
 
         for next_obs, action, r, done, info, ainfo in tran_iter:
             info.update(ainfo)

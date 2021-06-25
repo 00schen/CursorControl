@@ -394,6 +394,7 @@ class reward(Adapter):
 
     def __init__(self, master_env, config):
         super().__init__(master_env,config)
+        self.range = (config['reward_min'], config['reward_max'])
 
         self.reward_type = config['reward_type']
         self.reward_temp = config['reward_temp']
@@ -478,5 +479,6 @@ class reward(Adapter):
         else:
             raise Exception
 
+        r = np.clip(r, *self.range)
         return obs, r, done, info
 

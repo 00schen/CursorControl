@@ -181,7 +181,7 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
-        pretrain_steps=0,
+        # pretrain_steps=0,
         algorithm_args=dict(
             num_epochs=3000,
             num_eval_steps_per_epoch=0,
@@ -205,7 +205,7 @@ if __name__ == "__main__":
             beta=0 if args.det else 0.01
         ),
         demo_paths=[
-            os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
+            os.path.join(main_dir, "demos", f"{args.env_name}_scripted_5000_debug.npy"),
         ],
         env_config=dict(
             terminate_on_failure=False,
@@ -232,6 +232,7 @@ if __name__ == "__main__":
         'demo_path_proportions': [[5000]],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(2e7)],
+        'pretrain_steps': [0,int(1e6)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
