@@ -2,12 +2,14 @@
 1. Create a separate conda environment, and install the required packages using `pip install -r requirements.txt`. You 
    may need to install additional dependencies to install the `dlib` package correctly, which is necessary for using
    real webcam gaze inputs.
-2. Run the following commands to install local packages:
+2. To use real gaze inputs, download the file from `http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2`
+   and extract it to `image/gaze_capture/model_files/`.
+3. Run the following commands to install local packages:
     - `pip install -e rlkit/`
     - `pip install -e image/`
     - `pip install -e assistive-gym/`
-3. Pretrained models from phase 1 (as described in the paper) are located in `image/util_models`. 
-4. To train your own versions of these models:
+4. Pretrained models from phase 1 (as described in the paper) are located in `image/util_models`. 
+5. To train your own versions of these models:
    - Run`python image/rl/scripts/sac_pretrain_(oneswitch/bottle).py --no_render` to pretrain a model, choosing between
      `oneswitch` or `bottle` for the desired environment. 
    - To use GPUs for training, add the flags `--use_ray --gpus N_GPUS`, where `N_GPUS` is the number of GPUs used for 
@@ -24,7 +26,7 @@
    - To pretrain a model for the Bottle environment, you should first collect some demonstrations to bootstrap RL using
      `python image/rl/scripts/collect_demo.py --no_render`. The demonstrations will be saved to `image/demos`,
      and will be loaded from here automatically by the pretraining script for Bottle. 
-5. To run experiments with real webcam gaze input, using the full ASHA method in the default experimental setup
+6. To run experiments with real webcam gaze input, using the full ASHA method in the default experimental setup
    described in the paper, run `python image/rl/scripts/sac_experiment_s2-calibrate.py --env_name (OneSwitch/Bottle)
    --exp_name SAVE_DIR`.
    - To change the number of episodes (default 50), add the flag `--epochs N_EPISODES`, where `N_EPISODES` is the
@@ -33,7 +35,7 @@
    - In the Switch environment, to avoid calibrating on the second to the right switch, add the flag `--mode no_right`.
    - In the Bottle environment, to avoid calibrating on episodes where the sliding door needs to be opened first,
      add the flag `--mode no_door`.
-6. To run simulated ablation experiments, run:
+7. To run simulated ablation experiments, run:
    - `python image/rl/scripts/sac_experiment_s2-calibrate.py --env_name (OneSwitch/Bottle) --epochs 100 --sim
      --no_render --exp_name SAVE_DIR` to use the full ASHA method.
    - To use the random latent baseline, add the flag `--rand_latent`.
@@ -49,7 +51,7 @@
      for each seed, and change the `seedid` list param in the `search_space` dict of each script so that the first 
      element of the list is the desired seed.
    
-7. For both real gaze and simulated experiments, - The experiment results will be saved to
+8. For both real gaze and simulated experiments, - The experiment results will be saved to
    `image/logs/SAVE_DIR/EXPERIMENT_NAME`, where `EXPERIMENT_NAME` will be a folder name specific to the experiment ran,
    containing the date and time of when the experiment was started. When multiple seeds are ran at once, they are saved
    to different folders. In the save folder, metrics are logged to `metrics.pkl`, and the episodes are logged to 
