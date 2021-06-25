@@ -10,7 +10,7 @@ from rlkit.torch.networks.stochastic.distribution_generator import DistributionG
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vae=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False):
+                 deterministic=False, random_latent=False):
         super().__init__()
         self.vae = vae
         self.policy = policy
@@ -30,7 +30,9 @@ class EncDecPolicy(PyTorchModule):
             raw_obs = obs['raw_obs']
             goal_set = obs.get('goal_set')
 
-            if self.vae != None:
+            if self.random_latent:
+                pred_features = self.episode_latent.detach().cpu().numpy()
+            elif self.vae != None:
                 if self.incl_state:
                     features.append(raw_obs)
                     if goal_set is not None:
@@ -50,6 +52,8 @@ class EncDecPolicy(PyTorchModule):
             return action
 
     def reset(self):
+        if self.random_latent:
+            self.episode_latent = th.normal(ptu.zeros(self.latent_size), 1).to(ptu.device)
         self.policy.reset()
 
 

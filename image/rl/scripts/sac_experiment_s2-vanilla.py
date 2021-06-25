@@ -2,7 +2,7 @@ import rlkit.torch.pytorch_util as ptu
 
 from rlkit.torch.sac.sac import SACTrainer
 from rlkit.torch.networks import ConcatMlp
-from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
+from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 from rlkit.torch.sac.policies import TanhGaussianPolicy, MakeDeterministic
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
@@ -23,7 +23,7 @@ def experiment(variant):
     import torch as th
 
     expl_config = deepcopy(variant['env_config'])
-    # expl_config['factories'] += ['session']
+    expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
 
     eval_config = deepcopy(variant['env_config'])
@@ -40,27 +40,27 @@ def experiment(variant):
     qf1 = ConcatMlp(
         input_size=obs_dim + action_dim,
         output_size=1,
-        hidden_sizes=[M, M, M],
+        hidden_sizes=[M, M],
     )
     qf2 = ConcatMlp(
         input_size=obs_dim + action_dim,
         output_size=1,
-        hidden_sizes=[M, M, M],
+        hidden_sizes=[M, M],
     )
     target_qf1 = ConcatMlp(
         input_size=obs_dim + action_dim,
         output_size=1,
-        hidden_sizes=[M, M, M],
+        hidden_sizes=[M, M],
     )
     target_qf2 = ConcatMlp(
         input_size=obs_dim + action_dim,
         output_size=1,
-        hidden_sizes=[M, M, M],
+        hidden_sizes=[M, M],
     )
     expl_policy = TanhGaussianPolicy(
         obs_dim=obs_dim,
         action_dim=action_dim,
-        hidden_sizes=[M, M, M],
+        hidden_sizes=[M, M],
     )
     eval_policy = MakeDeterministic(expl_policy)
 
@@ -91,13 +91,16 @@ def experiment(variant):
         target_qf2=target_qf2,
         **variant['trainer_kwargs']
     )
-    algorithm = TorchBatchRLAlgorithm(
+    algorithm = TorchCalibrationRLAlgorithm(
         trainer=trainer,
         exploration_env=env,
         evaluation_env=eval_env,
         exploration_data_collector=expl_path_collector,
         evaluation_data_collector=eval_path_collector,
         replay_buffer=replay_buffer,
+        calibration_data_collector=None,
+        calibration_buffer=replay_buffer,
+        real_user=variant['real_user'],
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
@@ -110,28 +113,36 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac')
+    parser.add_argument('--exp_name', default='sac_scratch')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
+    goal_noise_std = 0.1 if args.env_name == 'OneSwitch' else 0.15
     default_variant = dict(
-        mode=args.mode,
+        # mode=args.mode,
         real_user=not args.sim,
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
-        layer_size=64,
+        layer_size=256,
         replay_buffer_size=int(1e4 * path_length),
         keep_calibration_data=True,
         trainer_kwargs=dict(
+            discount=0.99,
+            soft_target_tau=5e-3,
+            target_update_period=1,
+            policy_lr=3e-4,
+            qf_lr=3e-4,
+            reward_scale=1,
+            use_automatic_entropy_tuning=True,
             # beta=0.01,
             # grad_norm_clip=None
         ),
@@ -139,17 +150,17 @@ if __name__ == "__main__":
             batch_size=256,
             max_path_length=path_length,
             num_epochs=args.epochs,
-            num_eval_steps_per_epoch=0,
-            num_expl_steps_per_train_loop=200,
+            num_eval_steps_per_epoch=1000,
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
-            # pretrain_steps=1000,
+            pretrain_steps=0,
+            max_failures=5,
             eval_paths=False,
         ),
 
         env_config=dict(
             env_name=args.env_name,
-            goal_noise_std=0.05,
+            goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
             action_type='joint',
@@ -169,10 +180,13 @@ if __name__ == "__main__":
     variants = []
 
     search_space = {
+        'algorithm_args.trajs_per_index': [0],
         'lr': [5e-4],
+        'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'seedid': [0],
+        'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'freeze_decoder': [True],
+        'mode': ['default'],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -217,7 +231,7 @@ if __name__ == "__main__":
                           }
                      }[variant['env_config']['env_name']][variant['mode']]
 
-        # variant['algorithm_args'].update(mode_dict)
+        variant['algorithm_args'].update(mode_dict)
 
         target = 'real_gaze' if variant['real_user'] else 'sim_target'
         variant['env_config']['adapts'].insert(1,target)

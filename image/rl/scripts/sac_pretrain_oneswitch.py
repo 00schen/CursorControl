@@ -140,12 +140,12 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
     parser.add_argument('--exp_name', default='pretrain_sac_oneswitch')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
+    parser.add_argument('--det', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -155,7 +155,7 @@ if __name__ == "__main__":
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
-            num_epochs=1000,
+            num_epochs=int(1e6),
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -173,7 +173,8 @@ if __name__ == "__main__":
             encoder_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            sample=True,
+            sample=not args.det,
+            beta=0 if args.det else 0.01
         ),
         env_config=dict(
             terminate_on_failure=False,
@@ -197,7 +198,6 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'trainer_kwargs.beta': [0],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(5e5)],
     }

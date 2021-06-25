@@ -1,3 +1,6 @@
+# Modified from the Eye Tracking for Everyone code found at
+# https://github.com/CSAILVision/GazeCapture/tree/master/pytorch
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
