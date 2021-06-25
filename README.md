@@ -53,7 +53,7 @@
    `image/logs/SAVE_DIR/EXPERIMENT_NAME`, where `EXPERIMENT_NAME` will be a folder name specific to the experiment ran,
    containing the date and time of when the experiment was started. When multiple seeds are ran at once, they are saved
    to different folders. In the save folder, metrics are logged to `metrics.pkl`, and the episodes are logged to 
-   `blocks.pkl`. 
+   `data.pkl`. 
 
 ## Acknowledgements
 Contains code, models, and data from the PyTorch implementation of "Eye Tracking for Everyone,"
