@@ -45,6 +45,6 @@ legacy_code
 */*/*/*demos
 */exp_notes.txt
 image/util_models1
-image/surveys
+# image/surveys
 image/bad_surveys
-*.ipynb
+image/*.ipynb
