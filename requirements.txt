@@ -122,8 +122,8 @@ tensorflow-metadata==0.21.1
 tensorflow-probability==0.11.1
 termcolor==1.1.0
 threadpoolctl==2.1.0
-# torch==1.7.0
-# torchvision==0.8.1
+torch==1.7.0
+torchvision==0.8.1
 tqdm==4.54.0
 traitlets
 typing-extensions==3.7.4.3

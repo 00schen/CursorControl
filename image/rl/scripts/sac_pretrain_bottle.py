@@ -16,8 +16,6 @@ import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
-from functools import reduce
-import operator
 
 
 def experiment(variant):
@@ -168,12 +166,13 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
+    parser.add_argument('--env_name', default='Bottle')
     parser.add_argument('--exp_name', default='pretrain_sac_bottle')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
+    parser.add_argument('--det', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -182,7 +181,7 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
-        pretrain_steps=25000,
+        pretrain_steps=0,
         algorithm_args=dict(
             num_epochs=3000,
             num_eval_steps_per_epoch=0,
@@ -202,7 +201,8 @@ if __name__ == "__main__":
             encoder_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            sample=True,
+            sample=not args.det,
+            beta=0 if args.det else 0.01
         ),
         demo_paths=[
             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
@@ -230,7 +230,6 @@ if __name__ == "__main__":
         'seedid': [2000],
         'from_pretrain': [False],
         'demo_path_proportions': [[5000]],
-        'trainer_kwargs.beta': [0],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(2e7)],
     }

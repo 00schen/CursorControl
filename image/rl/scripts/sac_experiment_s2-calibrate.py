@@ -15,8 +15,6 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from torch import optim
 from copy import deepcopy
-from functools import reduce
-import operator
 
 
 def experiment(variant):
@@ -62,7 +60,6 @@ def experiment(variant):
         optim_params,
         lr=variant['lr'],
     )
-
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
@@ -71,6 +68,7 @@ def experiment(variant):
         sample=variant['trainer_kwargs']['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
+        random_latent=variant.get('random_latent', False)
     )
 
     eval_policy = EncDecPolicy(
@@ -164,7 +162,7 @@ def experiment(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac')
+    parser.add_argument('--exp_name', default='experiments')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
@@ -172,21 +170,34 @@ if __name__ == "__main__":
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
     parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--det', action='store_true')
+    parser.add_argument('--pre_det', action='store_true')
+    parser.add_argument('--no_failures', action='store_true')
+    parser.add_argument('--latent_reg', action='store_true')
+    parser.add_argument('--rand_latent', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
+    goal_noise_std = 0.1 if args.env_name == 'OneSwitch' else 0.15
+    pretrain_path = f'{args.env_name}_params_s1_sac'
+    if args.pre_det:
+        pretrain_path += '_det_enc'
+    pretrain_path += '.pkl'
     default_variant = dict(
         mode=args.mode,
+        random_latent=args.rand_latent,
         real_user=not args.sim,
-        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
+        pretrain_path=pretrain_path,
         latent_size=3,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         keep_calibration_data=True,
         trainer_kwargs=dict(
-            # beta=0.01,
+            sample=not args.det,
+            beta=0 if args.det else 0.01,
+            objective='awr' if args.latent_reg else 'kl',
             grad_norm_clip=None
         ),
         algorithm_args=dict(
@@ -199,11 +210,12 @@ if __name__ == "__main__":
             pretrain_steps=1000,
             max_failures=5,
             eval_paths=False,
+            relabel_failures=not args.no_failures
         ),
 
         env_config=dict(
             env_name=args.env_name,
-            goal_noise_std=0.05,
+            goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
             action_type='joint',
@@ -222,16 +234,11 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
         'trainer_kwargs.sample': [True],
-        'algorithm_args.relabel_failures': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
         'trainer_kwargs.objective': ['kl'],
-        # 'algorithm_args.calibrate_split': [False],
-        # 'algorithm_args.calibration_indices': [[1, 2, 3]],
-        # 'mode': ['with_door'],
-        # 'env_config.feature': ['sub_target'],
-        'seedid': [0],
+        'env_config.feature': [None],
+        'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'freeze_decoder': [True],
-        'trainer_kwargs.beta': [0,.01],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

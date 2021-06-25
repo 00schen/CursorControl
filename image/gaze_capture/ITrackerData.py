@@ -1,3 +1,5 @@
+# From the Eye Tracking for Everyone code found at https://github.com/CSAILVision/GazeCapture/tree/master/pytorch
+
 import torch.utils.data as data
 import scipy.io as sio
 from PIL import Image
