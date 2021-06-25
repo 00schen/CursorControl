@@ -47,4 +47,4 @@ legacy_code
 image/util_models1
 image/surveys
 image/bad_surveys
-*.ipynb
+image/*.ipynb
