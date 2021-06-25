@@ -62,7 +62,7 @@ found at https://github.com/CSAILVision/GazeCapture/tree/master/pytorch.
 > “Eye Tracking for Everyone”. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016.
 
 Contains code and models from "Assistive Gym: A Physics Simulation Framework for Assistive Robotics," found at
-https://github.com/Healthcare-Robotics/assistive-gym.
+https://github.com/Healthcare-Robotics/assistive-gym. The original environments and corresponding models are not used, but underlying environment set up is borrowed.
 > Z. Erickson, V. Gangaram, A. Kapusta, C. K. Liu, and C. C. Kemp, “Assistive Gym: A Physics Simulation Framework for
 > Assistive Robotics”, IEEE International Conference on Robotics and Automation (ICRA), 2020.
 

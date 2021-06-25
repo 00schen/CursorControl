@@ -1,3 +1,5 @@
+# Environment is not present in original assistive_gym library at https://github.com/Healthcare-Robotics/assistive-gym
+
 import os
 from gym import spaces
 import numpy as np
