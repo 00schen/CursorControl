@@ -194,6 +194,7 @@ if __name__ == "__main__":
     pretrain_path += '.pkl'
     default_variant = dict(
         mode=args.mode,
+        random_latent=args.rand_latent,
         real_user=not args.sim,
         pretrain_path=pretrain_path,
         latent_size=3,
