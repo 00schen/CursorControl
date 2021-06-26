@@ -164,7 +164,7 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
+    parser.add_argument('--env_name')
     parser.add_argument('--exp_name', default='experiments')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
