@@ -27,15 +27,18 @@ class EncDecPolicy(PyTorchModule):
         self.episode_latent = None
 
     def get_action(self, obs):
-        features = [obs['goal_obs']]
+        features = [obs[k] for k in self.features_keys]
         with th.no_grad():
-            base_obs = obs['base_obs']
+            raw_obs = obs['raw_obs']
+            goal_set = obs.get('goal_set')
 
             if self.random_latent:
                 pred_features = self.episode_latent.detach().cpu().numpy()
             elif self.vae != None:
                 if self.incl_state:
-                    features.append(base_obs)
+                    features.append(raw_obs)
+                    if goal_set is not None:
+                        features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
                 pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
@@ -44,7 +47,9 @@ class EncDecPolicy(PyTorchModule):
 
             obs['latents'] = pred_features
 
-            policy_input = [base_obs, pred_features]
+            policy_input = [raw_obs, pred_features]
+            if goal_set is not None:
+                policy_input.insert(1, goal_set.ravel())
             action = self.policy.get_action(*policy_input)
             return action
 

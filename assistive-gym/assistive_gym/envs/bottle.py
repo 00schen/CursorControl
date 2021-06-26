@@ -8,6 +8,7 @@ from itertools import product
 from numpy.linalg import norm
 from .env import AssistiveEnv
 from gym.utils import seeding
+from collections import OrderedDict
 
 reach_arena = (np.array([-.25, -.5, 1]), np.array([.6, .4, .2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
@@ -23,7 +24,8 @@ class BottleEnv(AssistiveEnv):
         self.success_dist = success_dist
         self.debug = debug
         self.stochastic = stochastic
-        self.goal_feat_sizes = {'target_pos': 3}
+        self.goal_feat = ['target_pos', ]  # Just an FYI
+        self.feature_sizes = OrderedDict({'goal': 3})
         self.session_goal = session_goal
         self.target_indices = list(np.arange(self.num_targets))
         self.table_offset = None
@@ -31,8 +33,6 @@ class BottleEnv(AssistiveEnv):
         self.wall_color = None
         self.step_limit = step_limit
         self.curr_step = 0
-
-        self.goal_set_shape = (2, 3)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -47,6 +47,7 @@ class BottleEnv(AssistiveEnv):
         self.move_slide_cabinet()
 
         self.task_success = norm(self.tool_pos - self.target_pos) < self.success_dist
+        obs = self._get_obs([0])
 
         if self.task_success:
             target_color = [0, 1, 0, 1]
@@ -56,8 +57,20 @@ class BottleEnv(AssistiveEnv):
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
 
         reward = self.task_success
-        obs = self._get_obs(old_tool_pos)
-        info = obs
+        info = {
+            'task_success': self.task_success,
+            'old_tool_pos': old_tool_pos,
+            'target_index': self.target_index,
+
+            'door_open': self.door_open,
+            'door_pos': self.door_pos,
+            'shelf_pos': self.shelf_pos,
+            'tool_pos': self.tool_pos,
+            'sub_target': self.sub_target_pos.copy(),
+            'target_pos': self.target_pos,
+            # 'unique_index': self.unique_index,
+            'unique_targets': self.bottle_poses,
+        }
         done = False
 
         return obs, reward, done, info
@@ -74,35 +87,24 @@ class BottleEnv(AssistiveEnv):
         normal = contacts[0][7]
         c_F = -normal[0]
         k = .002
-        w = k * c_F
+        w = k * np.sign(c_F) * np.sqrt(abs(c_F))
         for _ in range(self.frame_skip):
             robot_joint_position += w
         robot_joint_position = np.clip(robot_joint_position, *self.slide_range)
         p.resetJointState(self.shelf, jointIndex=0, targetValue=robot_joint_position, physicsClientId=self.id)
 
-    def _get_obs(self, old_tool_pos):
+    def _get_obs(self, forces):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 
-        obs = {
-            'task_success': self.task_success,
-            'target_index': self.target_index,
-            'old_tool_pos': old_tool_pos,
-
-            'door_open': self.door_open,
-            'door_pos': self.door_pos,
-            'shelf_pos': self.shelf_pos,
-            'tool_pos': self.tool_pos,
-            'sub_target': self.sub_target_pos.copy(),
-            'target_pos': self.target_pos,
-            'tool_orient': self.tool_orient,
-            'goal_set': self.bottle_poses,
-
-            'joints': robot_joint_positions,
-            'goal': self.goal.copy(),
-        }
-        return obs
+        robot_obs = dict(
+            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.door_pos, *self.bottle_poses,
+                                    robot_joint_positions]),
+            hindsight_goal=np.concatenate([self.tool_pos, [0]]),
+            goal=self.goal.copy(),
+        )
+        return robot_obs
 
     def reset(self):
         self.task_success = False
@@ -161,8 +163,7 @@ class BottleEnv(AssistiveEnv):
         self.goal = np.array(self.target_pos)
         self.curr_step = 0
 
-        self.old_tool_pos = self.tool_pos
-        return self._get_obs(self.tool_pos)
+        return self._get_obs([0])
 
     def init_start_pos(self):
         """exchange this function for curriculum"""

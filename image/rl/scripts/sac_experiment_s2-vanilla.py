@@ -9,15 +9,19 @@ from rl.misc.env_wrapper import default_overhead
 from rlkit.data_management.simple_replay_buffer import SimpleReplayBuffer
 from rl.scripts.run_util import run_exp
 
+import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
+from torch import optim
 from copy import deepcopy
 from functools import reduce
 import operator
 
 
 def experiment(variant):
+    import torch as th
+
     expl_config = deepcopy(variant['env_config'])
     expl_config['factories'] += ['session']
     env = default_overhead(expl_config)
@@ -28,9 +32,9 @@ def experiment(variant):
 
     M = variant["layer_size"]
 
-    feat_dim = env.observation_space.low.size
-    goal_dim = env.goal_space.low.size
-    obs_dim = feat_dim + goal_dim
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
     action_dim = 7
 
     qf1 = ConcatMlp(
