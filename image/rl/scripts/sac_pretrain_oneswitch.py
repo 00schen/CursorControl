@@ -155,7 +155,7 @@ if __name__ == "__main__":
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
-            num_epochs=int(1e6),
+            num_epochs=1000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,

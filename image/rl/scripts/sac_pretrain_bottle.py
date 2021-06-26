@@ -183,7 +183,7 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
-        pretrain_steps=25000,
+        pretrain_steps=0,
         algorithm_args=dict(
             num_epochs=3000,
             num_eval_steps_per_epoch=0,
