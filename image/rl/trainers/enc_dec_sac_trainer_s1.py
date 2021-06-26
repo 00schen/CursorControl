@@ -126,10 +126,13 @@ class EncDecSACTrainer(SACTrainer):
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
-        curr_goal = batch['curr_goal_obs']
-        next_goal = batch['next_goal_obs']
+        curr_goal = batch['curr_goal']
+        next_goal = batch['next_goal']
+        curr_goal_set = batch.get('curr_goal_set')
+        next_goal_set = batch.get('next_goal_set')
 
         batch_size = obs.shape[0]
+        has_goal_set = curr_goal_set is not None
 
         eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
 
@@ -147,9 +150,14 @@ class EncDecSACTrainer(SACTrainer):
         Policy and Alpha Loss
         """
 
-        curr_policy_features = [obs, curr_latent]
+        if has_goal_set:
+            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+            curr_policy_features = [obs, curr_goal_set_flat, curr_latent]
+        else:
+            curr_policy_features = [obs, curr_latent]
 
         dist = self.policy(*curr_policy_features)
+
         new_obs_actions, log_pi = dist.rsample_and_logprob()
         log_pi = log_pi.unsqueeze(-1)
 
@@ -160,7 +168,10 @@ class EncDecSACTrainer(SACTrainer):
             alpha_loss = 0
             alpha = 1
 
-        new_qf_features = [obs, curr_goal, new_obs_actions]
+        if has_goal_set:
+            new_qf_features = [obs, curr_goal_set_flat, curr_goal, new_obs_actions]
+        else:
+            new_qf_features = [obs, curr_goal, new_obs_actions]
 
         q_new_actions = torch.min(
             self.qf1(*new_qf_features),
@@ -173,8 +184,13 @@ class EncDecSACTrainer(SACTrainer):
         QF Loss
         """
 
-        curr_qf_features = [obs, curr_goal, actions]
-        next_policy_features = [next_obs, next_latent]
+        if has_goal_set:
+            curr_qf_features = [obs, curr_goal_set_flat, curr_goal, actions]
+            next_goal_set_flat = next_goal_set.reshape((batch_size, -1))
+            next_policy_features = [next_obs, next_goal_set_flat, next_latent]
+        else:
+            curr_qf_features = [obs, curr_goal, actions]
+            next_policy_features = [next_obs, next_latent]
 
         q1_pred = self.qf1(*curr_qf_features)
         q2_pred = self.qf2(*curr_qf_features)
@@ -183,7 +199,11 @@ class EncDecSACTrainer(SACTrainer):
         new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
         new_log_pi = new_log_pi.unsqueeze(-1)
 
-        next_qf_features = [next_obs, next_goal, new_next_actions]
+        if has_goal_set:
+            next_qf_features = [next_obs, next_goal_set_flat, next_goal, new_next_actions]
+        else:
+            next_qf_features = [next_obs, next_goal, new_next_actions]
+
         target_q_values = torch.min(
             self.target_qf1(*next_qf_features),
             self.target_qf2(*next_qf_features),

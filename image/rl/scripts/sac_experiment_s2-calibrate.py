@@ -15,6 +15,8 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from torch import optim
 from copy import deepcopy
+from functools import reduce
+import operator
 
 
 def experiment(variant):
@@ -33,9 +35,9 @@ def experiment(variant):
     file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
-    feat_dim = env.observation_space.low.size
-    goal_dim = env.goal_space.low.size
-    obs_dim = feat_dim + goal_dim
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
 
     vae = VAE(input_size=obs_dim,
               latent_size=variant['latent_size'],
@@ -60,6 +62,7 @@ def experiment(variant):
         optim_params,
         lr=variant['lr'],
     )
+
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
@@ -187,7 +190,6 @@ if __name__ == "__main__":
     pretrain_path += '.pkl'
     default_variant = dict(
         mode=args.mode,
-        random_latent=args.rand_latent,
         real_user=not args.sim,
         pretrain_path=pretrain_path,
         latent_size=3,
@@ -221,7 +223,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=[],
+            adapts=['goal'],
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
@@ -233,9 +235,7 @@ if __name__ == "__main__":
         'n_layers': [1],
         'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
-        'trainer_kwargs.sample': [True],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'trainer_kwargs.objective': ['kl'],
         'env_config.feature': [None],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'freeze_decoder': [True],
