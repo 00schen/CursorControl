@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
+from functools import reduce
+import operator
 
 
 def experiment(variant):
@@ -28,9 +30,9 @@ def experiment(variant):
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    feat_dim = env.observation_space.low.size
-    goal_dim = env.goal_space.low.size
-    obs_dim = feat_dim + goal_dim
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -60,7 +62,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=goal_dim,
+        vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -181,7 +183,7 @@ if __name__ == "__main__":
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
         layer_size=256,
-        pretrain_steps=0,
+        pretrain_steps=25000,
         algorithm_args=dict(
             num_epochs=3000,
             num_eval_steps_per_epoch=0,
@@ -216,7 +218,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['sim_target', 'reward'],
+            adapts=['goal', 'sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_max=0,

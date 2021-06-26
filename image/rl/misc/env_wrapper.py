@@ -67,13 +67,8 @@ class LibraryWrapper(Env):
     def __init__(self, config):
         self.env_name = config['env_name']
         self.base_env = {
-            "Feeding": ag.FeedingJacoEnv,
-            "Laptop": ag.LaptopJacoEnv,
             "OneSwitch": ag.OneSwitchJacoEnv,
-            "ThreeSwitch": ag.ThreeSwitchJacoEnv,
-            "AnySwitch": ag.AnySwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
-            "Kitchen": ag.KitchenJacoEnv,
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
@@ -224,12 +219,10 @@ class oracle:
         if 'model' in self.oracle_type:
             self.oracle = master_env.oracle = {
                 "Bottle": BottleOracle,
-                "Kitchen": KitchenOracle,
             }[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
         else:
             oracle_type = {
                 'dummy_gaze': BottleOracle,
-                'keyboard': KeyboardOracle,
                 # }[config['oracle']](master_env)
             }[config['oracle']]
             if config['oracle'] == 'sim_gaze':  # TODO: look at how oracke works (why oracle_type)
