@@ -140,6 +140,7 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', default='OneSwitch')
     parser.add_argument('--exp_name', default='pretrain_sac_oneswitch')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
