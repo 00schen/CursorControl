@@ -69,6 +69,7 @@ class LibraryWrapper(Env):
         self.base_env = {
             "OneSwitch": ag.OneSwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
+            "Valve": ag.ValveJacoEnv,
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
@@ -264,6 +265,7 @@ class goal:
             # Kitchen=None,
             Bottle=None,
             OneSwitch=None,
+            Valve=None,
             AnySwitch=lambda info: [info['switch_pos']]
         )[self.env_name]
         self.hindsight_feat = dict(
@@ -271,6 +273,7 @@ class goal:
             Kitchen={'tool_pos': 3, 'orders': 2, 'tasks': 6},
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
+            Valve={'tool_pos': 3},
             AnySwitch={'tool_pos': 3}
         )[self.env_name]
         # if isinstance(self.goal_feat_func,tuple):
@@ -399,8 +402,8 @@ class sim_target:
         self.master_env = master_env
         self.feature = config.get('feature')
         del master_env.feature_sizes['goal']
-        self.target_size = master_env.feature_sizes[
-            'target'] = 3  # ok for bottle and light switch, may not be true for other envs
+        self.target_size = master_env.feature_sizes['target'] = 1 if self.env_name == 'Valve' else 3  # ok for bottle
+        # and light switch, may not be true for other envs
         self.goal_noise_std = config['goal_noise_std']
 
     def _step(self, obs, r, done, info):
