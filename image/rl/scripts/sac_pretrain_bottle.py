@@ -80,7 +80,7 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=False
@@ -89,7 +89,7 @@ def experiment(variant):
     eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=True

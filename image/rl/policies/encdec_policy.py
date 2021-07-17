@@ -6,13 +6,15 @@ from rlkit.torch.distributions import (
     Delta
 )
 from rlkit.torch.networks.stochastic.distribution_generator import DistributionGenerator
+import random
 
 
 class EncDecPolicy(PyTorchModule):
-    def __init__(self, policy, features_keys, vae=None, incl_state=True, sample=False, latent_size=None,
+    def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
                  deterministic=False, random_latent=False):
         super().__init__()
-        self.vae = vae
+
+        self.vaes = vaes if vaes is not None else []
         self.policy = policy
         if deterministic:
             assert isinstance(policy, DistributionGenerator)
@@ -25,6 +27,7 @@ class EncDecPolicy(PyTorchModule):
             assert self.latent_size is not None
         self.random_latent = random_latent
         self.episode_latent = None
+        self.curr_vae = None
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -34,14 +37,14 @@ class EncDecPolicy(PyTorchModule):
 
             if self.random_latent:
                 pred_features = self.episode_latent.detach().cpu().numpy()
-            elif self.vae != None:
+            elif len(self.vaes):
                 if self.incl_state:
                     features.append(raw_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
-                pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
+                pred_features = self.curr_vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
             else:
                 pred_features = np.concatenate(features)
 
@@ -57,6 +60,8 @@ class EncDecPolicy(PyTorchModule):
         if self.random_latent:
             self.episode_latent = th.normal(ptu.zeros(self.latent_size), 1).to(ptu.device)
         self.policy.reset()
+        if len(self.vaes):
+            self.curr_vae = random.choice(self.vaes)
 
 
 class EncDecMakeDeterministic(PyTorchModule):

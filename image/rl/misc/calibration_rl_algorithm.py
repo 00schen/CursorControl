@@ -55,8 +55,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
     def _sample_and_train(self, steps, buffer):
         self.training_mode(True)
         for _ in range(steps):
-            train_data = buffer.random_batch(self.batch_size)
-            self.trainer.train(train_data)
+            for _ in range(len(self.trainer.vaes)):
+                train_data = buffer.random_batch(self.batch_size)
+                self.trainer.train(train_data)
         gt.stamp('training', unique=False)
         self.training_mode(False)
 

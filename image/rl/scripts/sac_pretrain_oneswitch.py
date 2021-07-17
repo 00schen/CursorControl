@@ -79,7 +79,7 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=False
@@ -88,7 +88,7 @@ def experiment(variant):
     eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=True
@@ -191,7 +191,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='custom_switch',
+            reward_type='sparse',
             reward_temp=1,
             reward_offset=-0.2
         )

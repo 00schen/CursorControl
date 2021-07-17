@@ -6,11 +6,9 @@ from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 from rl.policies import EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
-from rl.trainers import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -26,14 +24,14 @@ def experiment(variant):
     env = default_overhead(variant['env_config'])
     env.seed(variant['seedid'])
     eval_config = variant['env_config'].copy()
-    eval_config['env_kwargs']['pretrain_assistance'] = False
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
     # qf takes in goal directly instead of latent, but same dim
-    feat_dim = env.observation_space.low.size
-    goal_dim = env.goal_space.low.size
-    obs_dim = feat_dim + goal_dim
+    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+    obs_dim = feat_dim + sum(env.feature_sizes.values())
+
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -63,13 +61,13 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=goal_dim,
+        vae = VAE(input_size=sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
                   ).to(ptu.device)
     else:
-        file_name = os.path.join('util_models', variant['pretrain_path'])
+        file_name = os.path.join('image/util_models', variant['pretrain_path'])
         loaded = th.load(file_name)
         qf1 = loaded['trainer/qf1']
         qf2 = loaded['trainer/qf2']
@@ -135,33 +133,6 @@ def experiment(variant):
     )
     algorithm.to(ptu.device)
 
-    path_loader = SimplePathLoader(
-        demo_path=variant['demo_paths'],
-        demo_path_proportion=variant['demo_path_proportions'],
-        replay_buffer=replay_buffer,
-    )
-    path_loader.load_demos()
-
-    if variant['pretrain_steps']:
-        awac_trainer = TorchEncDecAWACTrainer(
-            policy=policy,
-            policy_lr=variant['trainer_kwargs']['policy_lr'],
-            qf1=qf1,
-            qf2=qf2,
-            target_qf1=target_qf1,
-            target_qf2=target_qf2,
-            qf_lr=variant['trainer_kwargs']['qf_lr'],
-            vae=vae,
-            latent_size=variant['latent_size'],
-            beta=0.01,
-            sample=True,
-            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
-            target_update_period=variant['trainer_kwargs']['target_update_period'],
-        )
-        for _ in range(variant['pretrain_steps']):
-            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
-            awac_trainer.train(train_data)
-
     if variant.get('render', False):
         env.render('human')
     algorithm.train()
@@ -169,12 +140,13 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='pretrain_sac')
+    parser.add_argument('--env_name', default='Valve')
+    parser.add_argument('--exp_name', default='pretrain_sac_valve')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
+    parser.add_argument('--det', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -184,12 +156,11 @@ if __name__ == "__main__":
         latent_size=3,
         layer_size=256,
         algorithm_args=dict(
-            num_epochs=int(1e6),
-            num_eval_steps_per_epoch=path_length,
+            num_epochs=3000,
+            num_eval_steps_per_epoch=0,
             eval_paths=False,
-            num_expl_steps_per_train_loop=path_length,
-            min_num_steps_before_training=path_length,
-            # num_train_loops_per_epoch=100,
+            num_expl_steps_per_train_loop=1000,
+            min_num_steps_before_training=1000,
             max_path_length=path_length,
             batch_size=256,
             collect_new_paths=True,
@@ -198,63 +169,33 @@ if __name__ == "__main__":
             discount=0.99,
             soft_target_tau=5e-3,
             target_update_period=1,
-            # policy_lr=3e-4,
-            # qf_lr=3e-4,
-            # encoder_lr=3e-4,
+            policy_lr=3e-4,
+            qf_lr=3e-4,
+            encoder_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            sample=True,
+            sample=not args.det,
+            beta=0 if args.det else 0.01
         ),
-        # demo_paths=[
-        #             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_1000_debug_{i}.npy")
-        #             for i in range(5)
-        #            ]
-        #            +[
-        #             os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_250_debug_{i}.npy")
-        #             for i in range(1,16)
-        #            ],
-        demo_paths=[
-                    # os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_debug.npy")
-                   ],
-                #   +[
-                #     os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_250_debug_{i}.npy")
-                #     for i in range(1,16)
-                #    ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=True, num_targets=5,target_indices=[0]),
+            env_kwargs=dict(frame_skip=5, debug=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            # adapts=['goal', 'sim_target', 'reward'],
-            adapts=['goal','joint','reward'],
-            # goal_func_ind=0,
+            adapts=['goal', 'sim_target'],
             gaze_dim=128,
             state_type=0,
-            reward_max=0,
-            reward_min=-1,
-            reward_type='kitchen_debug',
-            reward_temp=10,
-            reward_offset=-0.2
         )
     )
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        # 'pretrain_steps': [int(1e5)],
-        'pretrain_steps': [0],
-        'demo_path_proportions': [[5000], ],
-        'trainer_kwargs.beta': [.1,.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'replay_buffer_size': [int(2e7)],
-        'trainer_kwargs.policy_lr': [1e-3],
-        'trainer_kwargs.qf_lr': [3e-4, 1e-3],
-        'trainer_kwargs.encoder_lr': [3e-4],
-        # 'env_config.goal_func_ind': [0,1],
-        'env_config.env_kwargs.pretrain_assistance': [True],
+        'replay_buffer_size': [int(5e5)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

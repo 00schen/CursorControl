@@ -8,7 +8,7 @@ from rlkit.torch.torch_rl_algorithm import TorchTrainer
 
 class EncDecSACTrainer(TorchTrainer):
     def __init__(self,
-                 vae,
+                 vaes,
                  prev_vae,
                  policy,
                  qf1,
@@ -26,7 +26,7 @@ class EncDecSACTrainer(TorchTrainer):
         self.qf1 = qf1
         self.qf2 = qf2
         self.optimizer = optimizer
-        self.vae = vae
+        self.vaes = vaes
         self.prev_vae = prev_vae
         self.beta = beta
         self.sample = sample
@@ -46,6 +46,8 @@ class EncDecSACTrainer(TorchTrainer):
         self._need_to_update_eval_statistics = True
 
     def train_from_torch(self, batch):
+        vae = self.vaes[self._num_train_steps % len(self.vaes)]
+
         episode_success = batch['episode_success']
         obs = batch['observations']
         features = th.cat([batch['curr_' + key] for key in self.feature_keys], dim=1)
@@ -65,7 +67,7 @@ class EncDecSACTrainer(TorchTrainer):
             encoder_features = [features, obs]
 
         eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
-        pred_latent, kl_loss = self.vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
+        pred_latent, kl_loss = vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
 
         if self.prev_vae is not None:
             target_latent = self.prev_vae.sample(goals, eps=None)
@@ -87,8 +89,8 @@ class EncDecSACTrainer(TorchTrainer):
             pred_mean = self.policy(*pred_policy_features).mean
             supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
         elif self.objective == 'awr':
-            pred_mean, pred_logvar = self.vae.encode(th.cat(encoder_features, dim=1))
-            kl_loss = self.vae.kl_loss(pred_mean, pred_logvar)
+            pred_mean, pred_logvar = vae.encode(th.cat(encoder_features, dim=1))
+            kl_loss = vae.kl_loss(pred_mean, pred_logvar)
             supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
         elif self.objective == 'joint':
             dist = self.policy(*pred_policy_features)
@@ -118,12 +120,12 @@ class EncDecSACTrainer(TorchTrainer):
         self.optimizer.zero_grad()
         loss.backward()
         total_norm = 0
-        for p in self.vae.encoder.parameters():
+        for p in vae.encoder.parameters():
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
         total_norm = total_norm ** (1. / 2)
         if self.grad_norm_clip is not None:
-            th.nn.utils.clip_grad_norm_(self.vae.encoder.parameters(), self.grad_norm_clip)
+            th.nn.utils.clip_grad_norm_(vae.encoder.parameters(), self.grad_norm_clip)
         self.optimizer.step()
 
 
@@ -140,14 +142,11 @@ class EncDecSACTrainer(TorchTrainer):
 
     @property
     def networks(self):
-        nets = [
-            self.vae,
-            self.policy
-        ]
+        nets = self.vaes + [self.policy]
         return nets
 
     def get_snapshot(self):
         return dict(
-            vae=self.vae,
+            vaes=tuple(self.vaes),
             policy=self.policy
         )

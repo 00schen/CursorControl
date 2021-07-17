@@ -46,10 +46,10 @@ def collect_demonstrations(variant):
     while len(paths) < variant['num_episodes']:
         target_index = 0
         while target_index < env.base_env.num_targets:
-            def set_target_index(self):
-                self.target_index = target_index
-
-            env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
+            # def set_target_index(self):
+            #     self.target_index = target_index
+            #
+            # env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
             collected_paths = path_collector.collect_new_paths(
                 variant['path_length'],
                 variant['path_length'],
@@ -82,9 +82,9 @@ if __name__ == "__main__":
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
-            env_name='Kitchen',
+            env_name='Valve',
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, pretrain_assistance=True),
+            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
             oracle='keyboard',
             oracle_kwargs=dict(
                 threshold=.5,
@@ -99,7 +99,7 @@ if __name__ == "__main__":
             reward_max=0,
             reward_min=-1,
             input_penalty=1,
-            reward_type='custom_kitchen',
+            reward_type='sparse',
             terminate_on_failure=False,
             goal_noise_std=0,
             reward_temp=1,
@@ -123,10 +123,10 @@ if __name__ == "__main__":
 
     def process_args(variant):
         variant['env_kwargs']['config']['seedid'] = variant['seedid']
-        variant[
-            'save_name'] = f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
-                           + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
-                           + "_" + variant['save_name_suffix']
+        variant['save_name'] = \
+            f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
+            + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+            + "_" + variant['save_name_suffix']
 
 
     if args.use_ray:

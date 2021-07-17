@@ -39,11 +39,13 @@ def experiment(variant):
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
 
-    vae = VAE(input_size=obs_dim,
-              latent_size=variant['latent_size'],
-              encoder_hidden_sizes=[M] * variant['n_layers'],
-              decoder_hidden_sizes=[M] * variant['n_layers']
-              ).to(ptu.device)
+    vaes = []
+    for _ in range(variant['n_encoders']):
+        vaes.append(VAE(input_size=obs_dim,
+                        latent_size=variant['latent_size'],
+                        encoder_hidden_sizes=[M] * variant['n_layers'],
+                        decoder_hidden_sizes=[M] * variant['n_layers']
+                        ).to(ptu.device))
     policy = loaded['trainer/policy']
 
     qf1 = loaded['trainer/qf1']
@@ -54,7 +56,9 @@ def experiment(variant):
     else:
         prev_vae = None
 
-    optim_params = list(vae.encoder.parameters())
+    optim_params = []
+    for vae in vaes:
+        optim_params += list(vae.encoder.parameters())
     if not variant['freeze_decoder']:
         optim_params += list(policy.parameters())
 
@@ -66,9 +70,9 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=vaes,
         incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
+        sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
         random_latent=variant.get('random_latent', False)
@@ -77,9 +81,9 @@ def experiment(variant):
     eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=vaes,
         incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
+        sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
     )
@@ -94,7 +98,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         env=env,
-        vae=vae,
+        vaes=vaes,
         prev_vae=prev_vae,
         incl_state=False
     )
@@ -118,7 +122,7 @@ def experiment(variant):
         store_latents=True
     )
     trainer = LatentEncDecSACTrainer(
-        vae=vae,
+        vaes=vaes,
         prev_vae=prev_vae,
         policy=policy,
         qf1=qf1,
@@ -172,7 +176,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -233,6 +237,8 @@ if __name__ == "__main__":
 
     search_space = {
         'n_layers': [1],
+        'n_encoders': [5],
+        'sample': [False],
         'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
         'algorithm_args.num_trains_per_train_loop': [100],
@@ -246,6 +252,7 @@ if __name__ == "__main__":
     )
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
+
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']

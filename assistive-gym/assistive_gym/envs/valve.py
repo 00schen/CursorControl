@@ -6,6 +6,7 @@ import pybullet as p
 from .env import AssistiveEnv
 from gym.utils import seeding
 from collections import OrderedDict
+import os
 
 reach_arena = (np.array([-.25, -.5, 1]), np.array([.6, .4, .2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
@@ -13,23 +14,29 @@ default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 
 class ValveEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
-                 capture_frames=False, stochastic=True, debug=False, step_limit=200):
+                 capture_frames=False, stochastic=True, debug=False, step_limit=200, error_threshold=np.pi / 16,
+                 success_threshold=10):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
-        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 7,), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7,), dtype=np.float32)
         self.num_targets = 8
         self.success_dist = success_dist
         self.debug = debug
         self.stochastic = stochastic
         self.goal_feat = ['target_angle']  # Just an FYI
-        self.feature_sizes = OrderedDict({'goal': 3})
+        self.feature_sizes = OrderedDict({'goal': 2})
         self.session_goal = session_goal
         self.target_indices = list(np.arange(self.num_targets))
         self.target_angles = np.linspace(-np.pi, np.pi, self.num_targets, endpoint=False)
+        self.error_threshold = error_threshold
+        self.success_threshold = success_threshold
 
         self.wall_color = None
         self.step_limit = step_limit
         self.curr_step = 0
+        self.last_angle = None
+        self.last_moved = 0
+        self.has_moved = False
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -42,30 +49,50 @@ class ValveEnv(AssistiveEnv):
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
-        # TODO: success when current angle of valve close enough to target angle and valve has not moved for a certain
-        # TODO: number of steps. failure when valve has moved, then hasn't moved for a certain number of steps, and not
-        # TODO: close enough to target angle
-        self.task_success = False
         obs = self._get_obs([0])
+
+        if self.last_angle == self.valve_angle:
+            self.last_moved += 1
+        else:
+            self.last_moved = 0
+            self.has_moved = True
+        self.last_angle = self.valve_angle
+
+        self.task_success = self.is_success and self.last_moved >= self.success_threshold
+
+        if self.task_success:
+            color = [0, 1, 0, 1]
+        elif self.is_success:
+            color = [0, 0.5, 0, 1]
+        elif self.curr_step >= self.step_limit:
+            color = [1, 0, 0, 1]
+        else:
+            color = [0, 0, 1, 1]
+        p.changeVisualShape(self.target_indicator, -1, rgbaColor=color)
 
         # if self.task_success:
         #     target_color = [0, 1, 0, 1]
         #     p.changeVisualShape(self.target, -1, rgbaColor=target_color)
-        # elif self.wrong_goal_reached() or self.curr_step >= self.step_limit:
+        # elif self.curr_step >= self.step_limit:
         #     target_color = [1, 0, 0, 1]
         #     p.changeVisualShape(self.target, -1, rgbaColor=target_color)
 
-        reward = self.task_success
+        if self.task_success:
+            reward = 0
+        else:
+            reward = -self.angle_diff(self.valve_angle, self.target_angle) / (np.pi * 2)
+            if not (self.is_success or self.has_moved):
+                reward += (np.exp(-np.linalg.norm(self.valve_pos - self.tool_pos)) - 1) / 2
+
         info = {
             'task_success': self.task_success,
             'old_tool_pos': old_tool_pos,
-            'target_index': self.target_index,
             'tool_pos': self.tool_pos,
             'valve_pos': self.valve_pos,
-            'target_angle': self.target_angle,
+            'valve_angle': [self.valve_angle],
+            'target_angle': [self.target_angle],
         }
-        done = False
-
+        done = self.task_success
         return obs, reward, done, info
 
     def _get_obs(self, forces):
@@ -74,8 +101,9 @@ class ValveEnv(AssistiveEnv):
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 
         robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.valve_pos, robot_joint_positions]),
-            hindsight_goal=np.concatenate([self.tool_pos, [0]]),
+            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.valve_pos,
+                                    [np.sin(self.valve_angle), np.cos(self.valve_angle)], robot_joint_positions]),
+            hindsight_goal=np.array([np.sin(self.valve_angle), np.cos(self.valve_angle)]),
             goal=self.goal.copy(),
         )
         return robot_obs
@@ -108,27 +136,50 @@ class ValveEnv(AssistiveEnv):
             self.reset_noise()
 
         self.init_robot_arm()
-        self.generate_target()
 
         wall_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[4, .1, 1])
         wall_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[4, .1, 1], rgbaColor=self.wall_color)
 
-        wall_pos, wall_orient = np.array([0., -2., 1.]), np.array([0, 0, 0, 1])
+        wall_pos, wall_orient = np.array([0., -1., 1.]) + self.wall_noise, np.array([0, 0, 0, 1])
         self.wall = p.createMultiBody(basePosition=wall_pos, baseOrientation=wall_orient,
                                       baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,
                                       physicsClientId=self.id)
+
+        valve_pos, valve_orient = p.multiplyTransforms(wall_pos, wall_orient, [0, 0.1, 0],
+                                                       p.getQuaternionFromEuler([0, 0, 0]),
+                                                       physicsClientId=self.id)
+        valve_pos = np.array(valve_pos) + self.valve_pos_noise
+
+        self.valve = p.loadURDF(os.path.join(self.world_creation.directory, 'valve', 'valve.urdf'),
+                                basePosition=valve_pos, useFixedBase=True,
+                                baseOrientation=valve_orient, globalScaling=1,
+                                physicsClientId=self.id)
 
         """configure pybullet"""
         p.setGravity(0, 0, 0, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
         # Enable rendering
-        p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=-30,
-                                     cameraTargetPosition=[0, -.25, 1.0], physicsClientId=self.id)
+        p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=-10,
+                                     cameraTargetPosition=[0, 0, 1.1], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
         self.task_success = 0
-        self.goal = np.array(self.target_angle)
+        self.goal = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
         self.curr_step = 0
+
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05,
+                                            rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
+
+        target_coord = 0.4 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
+                       [0, 0.105, 0]
+
+        self.target_indicator = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1,
+                                                  baseVisualShapeIndex=sphere_visual, basePosition=target_coord,
+                                                  useMaximalCoordinates=False, physicsClientId=self.id)
+
+        self.last_angle = self.valve_angle
+        self.last_moved = 0
+        self.has_moved = False
 
         return self._get_obs([0])
 
@@ -137,7 +188,7 @@ class ValveEnv(AssistiveEnv):
         self.init_pos = np.array([0, -.5, 1.1])
 
         if self.stochastic:
-            self.init_pos += self.init_pos_random.uniform([-0.4, -0.1, -0.1], [0.4, 0.1, 0.1], size=3)
+            self.init_pos += self.init_pos_random.uniform([-0.5, -0.1, -0.1], [0.5, 0.1, 0.1], size=3)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -154,14 +205,13 @@ class ValveEnv(AssistiveEnv):
                                                   maximal=False)
 
     def set_target_index(self, index=None):
-        if index is None:
-            self.target_index = self.np_random.choice(self.target_indices)
-        else:
-            self.target_index = index
+        self.target_index = index
 
     def reset_noise(self):
         # TODO: noise should be offset for center of valve
-        pass
+        self.rand_angle = (np.random.rand() - 0.5) * 2 * np.pi
+        self.valve_pos_noise = np.array([self.np_random.uniform(-.25, .25), 0, 0])
+        self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
 
     # TODO
     def wrong_goal_reached(self):
@@ -169,12 +219,6 @@ class ValveEnv(AssistiveEnv):
 
     def calibrate_mode(self, calibrate, split):
         self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
-
-    def generate_target(self):
-        pass
-
-    def update_targets(self):
-        pass
 
     @property
     def tool_pos(self):
@@ -186,11 +230,31 @@ class ValveEnv(AssistiveEnv):
 
     @property
     def valve_pos(self):
-        return [0, 0, 0]  # TODO
+        return p.getLinkState(self.valve, 0, computeForwardKinematics=True, physicsClientId=self.id)[0]
+
+    @property
+    def valve_angle(self):
+        return self.wrap_angle(p.getJointStates(self.valve, jointIndices=[0], physicsClientId=self.id)[0][0])
 
     @property
     def target_angle(self):
-        return [self.target_angles[self.target_index]]
+        return self.wrap_angle(self.target_angles[self.target_index]) if self.target_index is not None \
+            else self.rand_angle
+
+    def wrap_angle(self, angle):
+        return angle - 2 * np.pi * np.floor((angle + np.pi) / (2 * np.pi))
+
+    def angle_diff(self, angle1, angle2):
+        a = angle1 - angle2
+        if a > np.pi:
+            a -= 2 * np.pi
+        elif a < -np.pi:
+            a += 2 * np.pi
+        return np.abs(a)
+
+    @property
+    def is_success(self):
+        return self.angle_diff(self.valve_angle, self.target_angle) < self.error_threshold
 
 
 class ValveJacoEnv(ValveEnv):

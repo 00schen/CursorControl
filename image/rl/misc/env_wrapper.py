@@ -223,8 +223,8 @@ class oracle:
             }[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
         else:
             oracle_type = {
+                'keyboard': KeyboardOracle,
                 'dummy_gaze': BottleOracle,
-                # }[config['oracle']](master_env)
             }[config['oracle']]
             if config['oracle'] == 'sim_gaze':  # TODO: look at how oracke works (why oracle_type)
                 self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
@@ -261,7 +261,7 @@ class goal:
         self.master_env = master_env
         self.goal_feat_func = dict(
             # Kitchen=(lambda info: [info['target1_pos'], info['orders']],lambda info: [info['target1_pos'], info['orders'],info['tasks']]),
-            Kitchen=lambda info: [info['target1_pos'], info['orders'],info['tasks']],
+            Kitchen=lambda info: [info['target1_pos'], info['orders'], info['tasks']],
             # Kitchen=None,
             Bottle=None,
             OneSwitch=None,
@@ -273,7 +273,7 @@ class goal:
             Kitchen={'tool_pos': 3, 'orders': 2, 'tasks': 6},
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
-            Valve={'tool_pos': 3},
+            Valve={'valve_angle': 2},
             AnySwitch={'tool_pos': 3}
         )[self.env_name]
         # if isinstance(self.goal_feat_func,tuple):
@@ -284,7 +284,7 @@ class goal:
     def _step(self, obs, r, done, info):
         if self.goal_feat_func is not None:
             obs['goal'] = np.concatenate([np.ravel(state_component) for state_component in self.goal_feat_func(info)])
-        
+
         hindsight_feat = np.concatenate(
             [np.ravel(info[state_component]) for state_component in self.hindsight_feat.keys()])
 
@@ -402,7 +402,7 @@ class sim_target:
         self.master_env = master_env
         self.feature = config.get('feature')
         del master_env.feature_sizes['goal']
-        self.target_size = master_env.feature_sizes['target'] = 1 if self.env_name == 'Valve' else 3  # ok for bottle
+        self.target_size = master_env.feature_sizes['target'] = 2 if self.env_name == 'Valve' else 3  # ok for bottle
         # and light switch, may not be true for other envs
         self.goal_noise_std = config['goal_noise_std']
 
@@ -424,28 +424,33 @@ class sim_target:
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['target'] = target + noise
 
+
 class joint:
     def __init__(self, master_env, config):
-        master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+7,))
+        master_env.observation_space = spaces.Box(-np.inf, np.inf, (master_env.observation_space.low.size + 7,))
+
     def _step(self, obs, r, done, info):
-        obs['raw_obs'] = np.concatenate((obs['raw_obs'],obs['joint']))
+        obs['raw_obs'] = np.concatenate((obs['raw_obs'], obs['joint']))
         return obs, r, done, info
-    
+
     def _reset(self, obs, info=None):
-        obs['raw_obs'] = np.concatenate((obs['raw_obs'],obs['joint']))
+        obs['raw_obs'] = np.concatenate((obs['raw_obs'], obs['joint']))
         return obs
+
 
 class dict_to_array:
     def __init__(self, master_env, config):
         pass
         # master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+3,))
+
     def _step(self, obs, r, done, info):
-        obs = np.concatenate((obs['raw_obs'],obs['target']))
+        obs = np.concatenate((obs['raw_obs'], obs['target']))
         return obs, r, done, info
-    
+
     def _reset(self, obs, info=None):
-        obs = np.concatenate((obs['raw_obs'],obs['target']))
+        obs = np.concatenate((obs['raw_obs'], obs['target']))
         return obs
+
 
 class reward:
     """ rewards capped at 'cap' """
@@ -475,41 +480,41 @@ class reward:
             # 	norm(info['tool_pos'] - info['target_pos'])
             # 	)
             if not info['tasks'][0] and (info['orders'][0] == 0 or info['tasks'][1]):
-                r += np.exp(-10 * max(0, info['microwave_angle'] - -.7)) / 6 * 3 / 4 * 1/2
-                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['microwave_handle'])) / 6 / 4 * 1/2
+                r += np.exp(-10 * max(0, info['microwave_angle'] - -.7)) / 6 * 3 / 4 * 1 / 2
+                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['microwave_handle'])) / 6 / 4 * 1 / 2
             elif info['tasks'][0]:
                 r += 1 / 6
             if not info['tasks'][1] and (info['orders'][0] == 1 or info['tasks'][0]):
-                r += np.exp(-10 * max(0, .7 - info['fridge_angle'])) / 6 * 3 / 4 * 1/2
-                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['fridge_handle'])) / 6 / 4 * 1/2
+                r += np.exp(-10 * max(0, .7 - info['fridge_angle'])) / 6 * 3 / 4 * 1 / 2
+                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['fridge_handle'])) / 6 / 4 * 1 / 2
             elif info['tasks'][1]:
                 r += 1 / 6
 
             if not info['tasks'][2] and info['tasks'][0] and info['tasks'][1]:
-                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['target1_pos'])) / 6 * 1/2
+                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['target1_pos'])) / 6 * 1 / 2
             elif info['tasks'][2]:
                 r = -1 / 2
             if not info['tasks'][3] and info['tasks'][2]:
-                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['target_pos'])) / 6 * 1/2
+                r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['target_pos'])) / 6 * 1 / 2
             elif info['tasks'][3]:
                 r = -1 / 3
 
             if not info['tasks'][4] and info['tasks'][3] and (info['orders'][1] == 0 or info['tasks'][5]):
-                r += np.exp(-norm(info['microwave_angle'] - 0)) / 6 * 3 / 4 * 1/2
+                r += np.exp(-norm(info['microwave_angle'] - 0)) / 6 * 3 / 4 * 1 / 2
                 dist = norm(info['tool_pos'] - info['microwave_handle'])
                 if dist > .25:
-                    r += np.exp(-self.reward_temp * dist) / 6 / 4 * 1/2
+                    r += np.exp(-self.reward_temp * dist) / 6 / 4 * 1 / 2
                 else:
-                    r += np.exp(-self.reward_temp * .25) / 6 / 4 * 1/2
+                    r += np.exp(-self.reward_temp * .25) / 6 / 4 * 1 / 2
             elif info['tasks'][4]:
                 r += 1 / 6
             if not info['tasks'][5] and info['tasks'][3] and (info['orders'][1] == 1 or info['tasks'][4]):
-                r += np.exp(-norm(info['fridge_angle'] - 0)) / 6 * 3 / 4 * 1/2
+                r += np.exp(-norm(info['fridge_angle'] - 0)) / 6 * 3 / 4 * 1 / 2
                 dist = norm(info['tool_pos'] - info['fridge_handle'])
                 if dist > .25:
-                    r += np.exp(-self.reward_temp * dist) / 6 / 4 * 1/2
+                    r += np.exp(-self.reward_temp * dist) / 6 / 4 * 1 / 2
                 else:
-                    r += np.exp(-self.reward_temp * .25) / 6 / 4 * 1/2
+                    r += np.exp(-self.reward_temp * .25) / 6 / 4 * 1 / 2
             elif info['tasks'][5]:
                 r += 1 / 6
 
