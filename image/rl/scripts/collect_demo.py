@@ -1,4 +1,4 @@
-from rl.policies import EncDecPolicy, DemonstrationPolicy, FollowerPolicy
+from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 import rlkit.pythonplusplus as ppp
@@ -31,8 +31,9 @@ def collect_demonstrations(variant):
     #     deterministic=False
     # )
 
-    policy = FollowerPolicy(env)
-    policy = DemonstrationPolicy(policy, env, p=variant['p'])
+    # policy = FollowerPolicy(env)
+    # policy = DemonstrationPolicy(policy, env, p=variant['p'])
+    policy = KeyboardPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -70,7 +71,7 @@ def collect_demonstrations(variant):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
-    parser.add_argument('--suffix', )
+    parser.add_argument('--suffix', default='test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     args, _ = parser.parse_known_args()
@@ -93,7 +94,7 @@ if __name__ == "__main__":
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal', 'oracle',],
+            adapts=['goal',],
             state_type=0,
             apply_projection=False,
             reward_max=0,
