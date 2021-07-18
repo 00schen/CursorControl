@@ -31,7 +31,7 @@
       <material name="Light Grey"/>
     </visual>
 
-    <collision>
+    <collision concave="yes">
       <origin xyz="0 0 0" rpy="-1.5705 0 0"/>
       <geometry>
         <mesh filename="valve_4_high_poly.stl" scale="0.002 0.002 0.002"/>
