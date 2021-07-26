@@ -402,8 +402,12 @@ class sim_target:
         self.master_env = master_env
         self.feature = config.get('feature')
         del master_env.feature_sizes['goal']
-        self.target_size = master_env.feature_sizes['target'] = 2 if self.env_name == 'Valve' else 3  # ok for bottle
-        # and light switch, may not be true for other envs
+        self.target_size = master_env.feature_sizes['target'] = 2 if self.env_name == 'Valve' else 3
+
+        # should change to automate for all features eventually
+        if self.feature == 'direction':
+            self.target_size = master_env.feature_sizes['target'] = 3
+
         self.goal_noise_std = config['goal_noise_std']
 
     def _step(self, obs, r, done, info):

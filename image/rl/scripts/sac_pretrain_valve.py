@@ -27,7 +27,6 @@ def experiment(variant):
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
-    # qf takes in goal directly instead of latent, but same dim
     feat_dim = env.observation_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
@@ -61,7 +60,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -80,7 +79,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=[vae],
-        incl_state=False,
+        incl_state=variant['incl_state'],
         sample=False,
         deterministic=False
     )
@@ -89,7 +88,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=[vae],
-        incl_state=False,
+        incl_state=variant['incl_state'],
         sample=False,
         deterministic=True
     )
@@ -114,6 +113,7 @@ def experiment(variant):
         target_qf2=target_qf2,
         vae=vae,
         latent_size=variant['latent_size'],
+        incl_state=variant['incl_state'],
         **variant['trainer_kwargs']
     )
     replay_buffer = ModdedReplayBuffer(
@@ -147,14 +147,16 @@ if __name__ == "__main__":
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--det', action='store_true')
+    parser.add_argument('--incl_state', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     variant = dict(
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
-        latent_size=3,
+        latent_size=2,
         layer_size=256,
+        incl_state=args.incl_state,
         algorithm_args=dict(
             num_epochs=3000,
             num_eval_steps_per_epoch=0,
@@ -175,14 +177,14 @@ if __name__ == "__main__":
             reward_scale=1,
             use_automatic_entropy_tuning=True,
             sample=not args.det,
-            beta=0 if args.det else 0.01
+            beta=0 if args.det else 0.0001
         ),
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=False),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=7, stochastic=True),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
@@ -195,7 +197,7 @@ if __name__ == "__main__":
         'seedid': [2000],
         'from_pretrain': [False],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'replay_buffer_size': [int(5e5)],
+        'replay_buffer_size': [int(1e6)],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

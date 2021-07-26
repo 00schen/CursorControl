@@ -180,31 +180,38 @@ if __name__ == "__main__":
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
-    parser.add_argument('--latent_reg', action='store_true')
     parser.add_argument('--rand_latent', action='store_true')
+    parser.add_argument('--curriculum', action='store_true')
+    parser.add_argument('--objective', default='kl', type=str)
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
-    goal_noise_std = 0.1 if args.env_name == 'OneSwitch' else 0.15
+    goal_noise_std = {'OneSwitch': 0.1,
+                      'Bottle': 0.15,
+                      'Valve': 0.2}[args.env_name]
+    beta = 1e-4 if args.env_name == 'Valve' else 1e-2
+    latent_size = 2 if args.env_name == 'Valve' else 3
+
     pretrain_path = f'{args.env_name}_params_s1_sac'
     if args.pre_det:
         pretrain_path += '_det_enc'
     pretrain_path += '.pkl'
+
     default_variant = dict(
         mode=args.mode,
         random_latent=args.rand_latent,
         real_user=not args.sim,
         pretrain_path=pretrain_path,
-        latent_size=3,
+        latent_size=latent_size,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         keep_calibration_data=True,
         trainer_kwargs=dict(
             sample=not args.det,
-            beta=0 if args.det else 0.01,
-            objective='awr' if args.latent_reg else 'kl',
+            beta=0 if args.det else beta,
+            objective=args.objective,
             grad_norm_clip=None
         ),
         algorithm_args=dict(
@@ -215,30 +222,32 @@ if __name__ == "__main__":
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             pretrain_steps=1000,
-            max_failures=5,
+            max_failures=3,
             eval_paths=False,
-            relabel_failures=not args.no_failures
+            relabel_failures=not args.no_failures,
+            curriculum=args.curriculum
         ),
 
         env_config=dict(
             env_name=args.env_name,
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
+            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices,
+                            stochastic=True, num_targets=3),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
             adapts=['goal'],
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
-            eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
+            eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5',
         )
     )
     variants = []
 
     search_space = {
         'n_layers': [1],
-        'n_encoders': [5],
+        'n_encoders': [1],
         'sample': [False],
         'algorithm_args.trajs_per_index': [2],
         'lr': [5e-4],
@@ -288,6 +297,13 @@ if __name__ == "__main__":
                           'with_door': {'calibrate_split': False,
                                         'calibration_indices': [0, 3]}
 
+                          },
+                     'Valve':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': [0, 1, 2]},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': [0, 1, 2],
+                                        'num_trains_per_train_loop': 0},
                           }
                      }[variant['env_config']['env_name']][variant['mode']]
 

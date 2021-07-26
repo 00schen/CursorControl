@@ -23,6 +23,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             real_user=True,
             relabel_failures=True,
             seedid=0,
+            curriculum=False,
             **kwargs,
     ):
         super().__init__(
@@ -40,6 +41,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.real_user = real_user
         self.relabel_failures = relabel_failures
         self.seedid = seedid
+        self.curriculum = curriculum
         self.blocks = []
 
         self.metrics = {'success_episodes': [],
@@ -130,7 +132,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             success = True
 
                             # relabel with wrong goals that were reached if not actual success.
-                            # currently specific only to light switch and bottle
+                            # currently specific only to light switch and bottle, not possible with valve
                             if not real_success:
                                 if 'current_string' in path['env_infos'][-1]:
                                     wrong_reached_index = np.where(path['env_infos'][-1]['current_string'] == 0)[0][0]
@@ -172,6 +174,16 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             # only add to paths to buffer if successful
             if success:
                 paths_to_add = successful_paths + failed_paths if self.relabel_failures else successful_paths
+
+                # have to relabel goals in valve with angle actually reached
+                # if self.expl_env.env_name == 'Valve':
+                #     new_target_angle = successful_paths[-1]['env_infos'][-1]['valve_angle']
+                #     new_goal = np.concatenate((np.sin(new_target_angle), np.cos(new_target_angle)))
+                #     for path in paths_to_add:
+                #         for i in range(len(path['observations'])):
+                #             path['observations'][i]['goal'] = new_goal.copy()
+                #             path['next_observations'][i]['goal'] = new_goal.copy()
+
                 self.replay_buffer.add_paths(paths_to_add)
                 gt.stamp('data storing', unique=False)
                 self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
@@ -187,6 +199,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 failed_paths = []
                 successful_paths = []
                 self.expl_env.new_goal()  # switch positions do not change if not block end
+
+                if self.curriculum and hasattr(self.expl_env.base_env, 'update_curriculum'):
+                    self.expl_env.base_env.update_curriculum(success)
 
             self._end_epoch(epoch)
 

@@ -88,10 +88,16 @@ class EncDecSACTrainer(TorchTrainer):
             target_mean = self.policy(*target_policy_features).mean.detach()
             pred_mean = self.policy(*pred_policy_features).mean
             supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
+        elif self.objective == 'normal_kl':
+            target = self.policy(*target_policy_features).normal
+            pred = self.policy(*pred_policy_features).normal
+            supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
         elif self.objective == 'awr':
             pred_mean, pred_logvar = vae.encode(th.cat(encoder_features, dim=1))
             kl_loss = vae.kl_loss(pred_mean, pred_logvar)
             supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
+        elif self.objective == 'latent':
+            supervised_loss = th.nn.MSELoss()(pred_latent, target_latent.detach())
         elif self.objective == 'joint':
             dist = self.policy(*pred_policy_features)
 

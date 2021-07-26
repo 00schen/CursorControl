@@ -47,6 +47,7 @@ class EncDecSACTrainer(SACTrainer):
             vae=None,
             beta=0.01,
             sample=True,
+            incl_state=False
     ):
         super().__init__(env,
                          policy,
@@ -70,6 +71,7 @@ class EncDecSACTrainer(SACTrainer):
         self.beta = beta
         self.sample = sample
         self.latent_size = latent_size
+        self.incl_state = incl_state
 
         if self.vae is not None:
             self.encoder_optimizer = optimizer_class(
@@ -135,10 +137,18 @@ class EncDecSACTrainer(SACTrainer):
         has_goal_set = curr_goal_set is not None
 
         eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
+        curr_encoder_features = [curr_goal]
+        next_encoder_features = [next_goal]
+        if self.incl_state:
+            curr_encoder_features.append(obs)
+            next_encoder_features.append(next_obs)
+            if has_goal_set:
+                curr_encoder_features.append(curr_goal_set.reshape((batch_size, -1)))
+                next_encoder_features.append(next_goal_set.reshape((batch_size, -1)))
 
         if self.vae is not None:
-            curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
-            next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
+            curr_latent, kl_loss = self.vae.sample(torch.cat(curr_encoder_features, dim=1), eps=eps, return_kl=True)
+            next_latent = self.vae.sample(torch.cat(next_encoder_features, dim=1), eps=eps, return_kl=False)
 
             next_latent = next_latent.detach()
 
@@ -172,7 +182,6 @@ class EncDecSACTrainer(SACTrainer):
             new_qf_features = [obs, curr_goal_set_flat, curr_goal, new_obs_actions]
         else:
             new_qf_features = [obs, curr_goal, new_obs_actions]
-
         q_new_actions = torch.min(
             self.qf1(*new_qf_features),
             self.qf2(*new_qf_features),
