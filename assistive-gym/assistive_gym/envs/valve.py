@@ -70,7 +70,7 @@ class ValveEnv(AssistiveEnv):
             color = [0, 1, 0, 1]
         elif self.is_success:
             color = [0, 0.5, 0, 1]
-        elif self.curr_step >= self.step_limit:
+        elif self.wrong_goal_reached() or self.curr_step >= self.step_limit:
             color = [1, 0, 0, 1]
         else:
             color = [0, 0, 1, 1]
@@ -245,7 +245,7 @@ class ValveEnv(AssistiveEnv):
         self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
 
     def wrong_goal_reached(self):
-        return False
+        return self.has_moved and self.last_moved >= self.success_threshold and not self.is_success
 
     def calibrate_mode(self, calibrate, split):
         self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
