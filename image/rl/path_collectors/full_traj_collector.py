@@ -3,9 +3,12 @@ import pybullet as p
 from rlkit.samplers.rollout_functions import rollout
 from rl.misc.env_wrapper import real_gaze
 import time
+from rlkit.core import logger
+import os
+from PIL import Image
 
 
-def _wait_for_key(env, agent, o, key=p.B3G_SPACE, update_obs_class=real_gaze):
+def _wait_for_key(env, agent, o, key=p.B3G_SPACE, update_obs_class=real_gaze, ):
     while True:
         keys = p.getKeyboardEvents()
         if key in keys and keys[key] & p.KEY_WAS_TRIGGERED:
@@ -17,6 +20,21 @@ def _wait_for_key(env, agent, o, key=p.B3G_SPACE, update_obs_class=real_gaze):
     for adapt in env.adapts:
         if isinstance(adapt, update_obs_class):
             adapt.update_obs(o)
+            eye_images = Image.fromarray(adapt.eyes, 'RGB')
+            adapt.eye_images.append(eye_images)
+
+    curr_time = time.time()
+    if env.init_time is None:
+        env.init_time = curr_time
+
+    timestamps_path = os.path.join(logger.get_snapshot_dir(), 'timestamps.txt')
+    if os.path.exists(timestamps_path):
+        append_write = 'a'
+    else:
+        append_write = 'w'
+
+    with open(timestamps_path, append_write) as f:
+        f.write(str(int(1000 * (curr_time - env.init_time))) + '\n')
 
 
 class FullPathCollector(MdpPathCollector):

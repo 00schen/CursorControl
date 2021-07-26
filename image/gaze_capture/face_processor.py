@@ -5,6 +5,9 @@ import numpy as np
 from .ITrackerData import loadMetadata
 import os
 from pathlib import Path
+import matplotlib
+import matplotlib.pyplot as plt
+from PIL import Image
 main_dir = str(Path(__file__).resolve().parents[1])
 
 class FaceProcessor:
@@ -39,11 +42,11 @@ class FaceProcessor:
         if face_box is None:
             return None
 
-        face = self._get_face(frame, face_box)
-        if face is None:
+        og_face = self._get_face(frame, face_box)
+        if og_face is None:
             return None
 
-        face = (face - self.face_mean) / 255
+        face = (og_face - self.face_mean) / 255
 
         face_grid = self._get_face_grid(frame, face_box)
 
@@ -58,7 +61,34 @@ class FaceProcessor:
         face = np.moveaxis(face, -1, 0)
         left_eye = np.moveaxis(left_eye, -1, 0)
         right_eye = np.moveaxis(right_eye, -1, 0)
-        return face, left_eye, right_eye, face_grid,  # og_left_eye, og_right_eye
+
+        # fix, ax = plt.subplots()
+        # cmap = matplotlib.colors.ListedColormap(['w', '0.8'])
+        # bounds = [0, 0.5, 1]
+        # norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        #
+        # ax.xaxis.set_ticklabels([])
+        # ax.yaxis.set_ticklabels([])
+        #
+        # for line in ax.xaxis.get_ticklines():
+        #     line.set_visible(False)
+        # for line in ax.yaxis.get_ticklines():
+        #     line.set_visible(False)
+        #
+        # ax.imshow(face_grid, interpolation='none', cmap=cmap, norm=norm)
+        #
+        # major_ticks = np.arange(-.5, 25, 1)
+        # ax.set_xticks(major_ticks)
+        # ax.set_yticks(major_ticks)
+        # ax.grid(which='major', axis='both', linestyle='-', color='k')
+        # plt.savefig('grid.png')
+        #
+        # for image, name in [(np.flip(frame, axis=2), 'frame.png'), (og_face, 'face.png'), (og_left_eye, 'left_eye.png'),
+        #                     (og_right_eye, 'right_eye.png')]:
+        #     Image.fromarray(image, 'RGB').save(name)
+        #
+        # quit()
+        return face, left_eye, right_eye, face_grid, og_left_eye, og_right_eye
 
     def _get_face(self, frame, face_box):
         try:

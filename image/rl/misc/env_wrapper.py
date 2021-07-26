@@ -17,6 +17,9 @@ from gaze_capture.face_processor import FaceProcessor
 from gaze_capture.ITrackerModel import ITrackerModel
 import threading
 from rl.oracles import *
+from rlkit.core import logger
+import time
+from PIL import Image
 
 main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -47,16 +50,29 @@ def default_overhead(config):
                                                                 self.adapts, (obs, r, done, info))
             self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs, info), self.adapts,
                                                              (obs))
+            self.init_time = None
 
         def step(self, action):
             tran = super().step(action)
             tran = self.adapt_step(*tran)
+
+            timestamps_path = os.path.join(logger.get_snapshot_dir(), 'timestamps.txt')
+            curr_time = time.time()
+
+            with open(timestamps_path, 'a') as f:
+                f.write(str(int(1000 * (curr_time - self.init_time))) + '\n')
+
             return tran
 
         def reset(self):
             obs = super().reset()
             obs = self.adapt_reset(obs)
             return obs
+
+        def save(self):
+            for adapt in self.adapts:
+                if hasattr(adapt, 'save'):
+                    adapt.save()
 
     return Overhead(config)
 
@@ -354,6 +370,11 @@ class real_gaze:
         self.gaze = np.zeros(self.gaze_dim)
         self.gaze_lock = threading.Lock()
         self.gaze_thread = None
+        self.eyes = np.zeros((224, 224 * 2, 3))
+        self.eye_images = []
+        os.makedirs(os.path.join(logger.get_snapshot_dir(), 'eye_images'), exist_ok=True)
+        os.makedirs(os.path.join(logger.get_snapshot_dir(), 'latents'), exist_ok=True)
+        os.makedirs(os.path.join(logger.get_snapshot_dir(), 'gazes'), exist_ok=True)
 
     def record_gaze(self):
         _, frame = self.webcam.read()
@@ -361,13 +382,19 @@ class real_gaze:
 
         if features is None:
             gaze = np.zeros(self.gaze_dim)
+            eyes = self.eyes
         else:
-            i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
+            i_tracker_features = features[:-2]
+            i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device)
+                               for feature in i_tracker_features]
             i_tracker_features = self.i_tracker(*i_tracker_input).detach().cpu().numpy()
             gaze = i_tracker_features[0]
 
+            eyes = np.concatenate((features[-1], features[-2]), axis=1)
+
         self.gaze_lock.acquire()
         self.gaze = gaze
+        self.eyes = eyes
         self.gaze_lock.release()
 
     def restart_gaze_thread(self):
@@ -383,12 +410,20 @@ class real_gaze:
     def _step(self, obs, r, done, info):
         self.restart_gaze_thread()
         self.update_obs(obs)
+
+        eye_images = Image.fromarray(self.eyes, 'RGB')
+        self.eye_images.append(eye_images)
         return obs, r, done, info
 
     def _reset(self, obs, info=None):
         self.restart_gaze_thread()
         self.update_obs(obs)
         return obs
+
+    def save(self):
+        for i, eye_images in enumerate(self.eye_images):
+            eye_images.save(os.path.join(logger.get_snapshot_dir(), 'eye_images', 'image_' +
+                                         str(i + 1) + '.png'))
 
 
 class sim_target:

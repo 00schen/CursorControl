@@ -219,7 +219,7 @@ if __name__ == "__main__":
 
     search_space = {
         'n_layers': [1],
-        'algorithm_args.trajs_per_index': [2],
+        'algorithm_args.trajs_per_index': [1],
         'lr': [5e-4],
         'trainer_kwargs.sample': [True],
         'algorithm_args.relabel_failures': [True],
