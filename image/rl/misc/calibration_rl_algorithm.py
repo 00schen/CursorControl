@@ -115,11 +115,18 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             )
             assert len(new_expl_paths) == 1
             path = new_expl_paths[0]
+
             real_success = path['env_infos'][-1]['task_success']
+            timeout = len(path['observations']) == self.max_path_length and not real_success
+
+            # valve is still successful if timeout in success state
+            if self.expl_env.env_name == 'Valve' and timeout:
+                real_success = path['env_infos'][-1]['is_success']
+
             gt.stamp('exploration sampling', unique=False)
             if self.real_user:
-                # automate reward if timeout
-                if len(path['observations']) == self.max_path_length and not path['env_infos'][-1]['task_success']:
+                # automate reward if timeout and not valve env
+                if timeout and not self.expl_env.env_name == 'Valve':
                     time.sleep(1)
                     success = real_success
                     self.metrics['correct_rewards'].append(None)

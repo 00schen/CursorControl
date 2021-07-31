@@ -111,7 +111,8 @@ class ValveEnv(AssistiveEnv):
             'valve_angle': [self.valve_angle],
             'target_angle': [self.target_angle],
             'error_threshold': [self.error_threshold],
-            'direction': direction
+            'direction': direction,
+            'is_success': self.is_success
         }
         done = self.task_success
         return obs, reward, done, info
