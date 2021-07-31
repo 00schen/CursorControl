@@ -20,6 +20,8 @@ class EncDecSACTrainer(TorchTrainer):
                  sample=True,
                  objective='kl',
                  grad_norm_clip=1,
+                 incl_state=True,
+                 prev_incl_state=False
                  ):
         super().__init__()
         self.policy = policy
@@ -34,6 +36,8 @@ class EncDecSACTrainer(TorchTrainer):
         self.feature_keys = feature_keys
         self.objective = objective
         self.grad_norm_clip = grad_norm_clip
+        self.incl_state = incl_state
+        self.prev_incl_state = prev_incl_state
 
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -60,17 +64,25 @@ class EncDecSACTrainer(TorchTrainer):
 
         loss = ptu.zeros(1)
 
-        if has_goal_set:
-            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-            encoder_features = [features, obs, curr_goal_set_flat]
-        else:
-            encoder_features = [features, obs]
+        encoder_features = [features]
+        if self.incl_state:
+            encoder_features.append(obs)
+            if has_goal_set:
+                curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+                encoder_features.append(curr_goal_set_flat)
 
         eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
         pred_latent, kl_loss = vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
 
         if self.prev_vae is not None:
-            target_latent = self.prev_vae.sample(goals, eps=None)
+            prev_encoder_features = [goals]
+            if self.prev_incl_state:
+                prev_encoder_features.append(obs)
+                if has_goal_set:
+                    curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+                    prev_encoder_features.append(curr_goal_set_flat)
+
+            target_latent = self.prev_vae.sample(th.cat(prev_encoder_features, dim=-1), eps=None)
         else:
             target_latent = goals
 

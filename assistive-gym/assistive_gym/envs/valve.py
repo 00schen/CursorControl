@@ -15,10 +15,10 @@ default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 class ValveEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
                  capture_frames=False, stochastic=True, debug=False, step_limit=200, min_error_threshold=np.pi / 16,
-                 max_error_threshold=np.pi / 4, success_threshold=10, num_targets=None):
+                 max_error_threshold=np.pi / 4, success_threshold=20, num_targets=None, use_rand_init_angle=True):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
-        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7,), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7 + 1,), dtype=np.float32)
         self.num_targets = num_targets
         self.success_dist = success_dist
         self.debug = debug
@@ -26,11 +26,11 @@ class ValveEnv(AssistiveEnv):
         self.goal_feat = ['target_angle']  # Just an FYI
         self.feature_sizes = OrderedDict({'goal': 2})
         self.session_goal = session_goal
+        self.use_rand_init_angle = use_rand_init_angle
 
         if self.num_targets is not None:
             self.target_indices = list(np.arange(self.num_targets))
-            self.target_angles = np.linspace(-np.pi, np.pi, self.num_targets + 1, endpoint=False)
-            self.target_angles = np.delete(self.target_angles, np.where(self.target_angles == 0))
+            self.target_angles = np.linspace(-np.pi, np.pi, self.num_targets, endpoint=False)
 
         self.min_error_threshold = min_error_threshold
         self.max_error_threshold = max_error_threshold
@@ -43,6 +43,7 @@ class ValveEnv(AssistiveEnv):
         self.last_angle = None
         self.last_moved = 0
         self.has_moved = False
+        self.calibrate = False
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -86,9 +87,14 @@ class ValveEnv(AssistiveEnv):
         if self.task_success:
             reward = 0
         else:
-            reward = -np.abs(self.angle_diff(self.valve_angle, self.target_angle)) / (np.pi * 2)
-            if not (self.is_success or self.has_moved):
-                reward += (np.exp(-np.linalg.norm(self.valve_pos - self.tool_pos)) - 1) / 2
+            reward = -np.abs(self.angle_diff(self.valve_angle, self.target_angle)) / np.pi
+
+            # reward so far between (-1, 0), want to make between (-0.5, -0.1)
+            # reward = reward / 2
+            # reward = 0.4 * reward - 0.1
+            reward = 0.9 * reward - 0.1
+            # if not (self.is_success or self.has_moved):
+            #     reward += (np.exp(-np.linalg.norm(self.valve_pos - self.tool_pos)) - 1) / 2
 
         direction = np.zeros(3)
         if self.is_success:
@@ -117,7 +123,8 @@ class ValveEnv(AssistiveEnv):
 
         robot_obs = dict(
             raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.valve_pos,
-                                    [np.sin(self.valve_angle), np.cos(self.valve_angle)], robot_joint_positions]),
+                                    [np.sin(self.valve_angle), np.cos(self.valve_angle)], robot_joint_positions,
+                                    [min(self.last_moved, self.success_threshold) / self.success_threshold,]]),
             hindsight_goal=np.array([np.sin(self.valve_angle), np.cos(self.valve_angle)]),
             goal=self.goal.copy(),
         )
@@ -182,6 +189,9 @@ class ValveEnv(AssistiveEnv):
                                 baseOrientation=valve_orient, globalScaling=1,
                                 physicsClientId=self.id)
 
+        if self.use_rand_init_angle:
+            p.resetJointState(self.valve, 0, self.rand_init_angle, physicsClientId=self.id)
+
         """configure pybullet"""
         p.setGravity(0, 0, 0, physicsClientId=self.id)
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
@@ -207,7 +217,6 @@ class ValveEnv(AssistiveEnv):
         self.last_angle = self.valve_angle
         self.last_moved = 0
         self.has_moved = False
-
         return self._get_obs([0])
 
     def init_start_pos(self):
@@ -239,8 +248,16 @@ class ValveEnv(AssistiveEnv):
                 self.target_index = index
 
     def reset_noise(self):
-        # TODO: noise should be offset for center of valve
-        self.rand_angle = (np.random.rand() - 0.5) * 2 * np.pi
+
+        self.rand_init_angle = (np.random.rand() - 0.5) * 2 * np.pi
+
+        # init angle either self.rand_init_angle or 0
+        avoid = self.rand_init_angle if self.use_rand_init_angle else 0
+
+        self.rand_angle = None
+        while self.rand_angle is None or np.abs(self.angle_diff(self.rand_angle, avoid)) < self.error_threshold:
+            self.rand_angle = (np.random.rand() - 0.5) * 2 * np.pi
+
         self.valve_pos_noise = np.array([self.np_random.uniform(-.1, .1), 0, 0])
         self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
 
@@ -249,6 +266,7 @@ class ValveEnv(AssistiveEnv):
 
     def calibrate_mode(self, calibrate, split):
         self.wall_color = [255 / 255, 187 / 255, 120 / 255, 1] if calibrate else None
+        self.calibrate = calibrate
 
     @property
     def tool_pos(self):
@@ -268,7 +286,8 @@ class ValveEnv(AssistiveEnv):
 
     @property
     def target_angle(self):
-        return self.rand_angle if self.num_targets is None else self.wrap_angle(self.target_angles[self.target_index])
+        return self.rand_angle if self.num_targets is None or not self.calibrate else \
+            self.wrap_angle(self.target_angles[self.target_index])
 
     def wrap_angle(self, angle):
         return angle - 2 * np.pi * np.floor((angle + np.pi) / (2 * np.pi))

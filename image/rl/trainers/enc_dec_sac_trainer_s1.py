@@ -148,7 +148,8 @@ class EncDecSACTrainer(SACTrainer):
 
         if self.vae is not None:
             curr_latent, kl_loss = self.vae.sample(torch.cat(curr_encoder_features, dim=1), eps=eps, return_kl=True)
-            next_latent = self.vae.sample(torch.cat(next_encoder_features, dim=1), eps=eps, return_kl=False)
+            # next_latent = self.vae.sample(torch.cat(next_encoder_features, dim=1), eps=eps, return_kl=False)
+            next_latent = self.vae.sample(torch.cat(next_encoder_features, dim=1), eps=None, return_kl=False)
 
             next_latent = next_latent.detach()
 

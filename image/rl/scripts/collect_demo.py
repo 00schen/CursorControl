@@ -45,26 +45,26 @@ def collect_demonstrations(variant):
     paths = []
     success_count = 0
     while len(paths) < variant['num_episodes']:
-        target_index = 0
-        while target_index < env.base_env.num_targets:
+        # target_index = 0
+        # while target_index < env.base_env.num_targets:
             # def set_target_index(self):
             #     self.target_index = target_index
             #
             # env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
-            collected_paths = path_collector.collect_new_paths(
-                variant['path_length'],
-                variant['path_length'],
-            )
-            success_found = False
-            for path in collected_paths:
-                # if path['env_infos'][-1]['task_success']:
-                if sum(path['env_infos'][-1]['tasks']) > 2:
-                    paths.append(path)
-                    success_count += path['env_infos'][-1]['task_success']
-                    success_found = True
-            if success_found:
-                target_index += 1
-            print("total paths collected: ", len(paths), "successes: ", success_count)
+        collected_paths = path_collector.collect_new_paths(
+            variant['path_length'],
+            1,
+        )
+        # success_found = False
+        for path in collected_paths:
+            # if path['env_infos'][-1]['task_success']:
+            # if sum(path['env_infos'][-1]['tasks']) > 2:
+            paths.append(path)
+            success_count += path['env_infos'][-1]['task_success']
+                # success_found = True
+            # if success_found:
+            #     target_index += 1
+        print("total paths collected: ", len(paths), "successes: ", success_count)
     return paths
 
 
@@ -78,14 +78,15 @@ if __name__ == "__main__":
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 2000
+    path_length = 200
     variant = dict(
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
             env_name='Valve',
             step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, success_threshold=20),
             oracle='keyboard',
             oracle_kwargs=dict(
                 threshold=.5,
@@ -110,7 +111,7 @@ if __name__ == "__main__":
 
         on_policy=True,
         p=1,
-        num_episodes=250,
+        num_episodes=100,
         path_length=path_length,
         save_name_suffix=args.suffix,
 

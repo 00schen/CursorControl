@@ -17,6 +17,7 @@ from torch import optim
 from copy import deepcopy
 from functools import reduce
 import operator
+import numpy as np
 
 
 def experiment(variant):
@@ -41,7 +42,7 @@ def experiment(variant):
 
     vaes = []
     for _ in range(variant['n_encoders']):
-        vaes.append(VAE(input_size=obs_dim,
+        vaes.append(VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
                         latent_size=variant['latent_size'],
                         encoder_hidden_sizes=[M] * variant['n_layers'],
                         decoder_hidden_sizes=[M] * variant['n_layers']
@@ -71,7 +72,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=vaes,
-        incl_state=True,
+        incl_state=variant['incl_state'],
         sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
@@ -82,7 +83,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=vaes,
-        incl_state=True,
+        incl_state=variant['incl_state'],
         sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
@@ -100,7 +101,7 @@ def experiment(variant):
         env=env,
         vaes=vaes,
         prev_vae=prev_vae,
-        incl_state=False
+        incl_state=variant['trainer_kwargs']['prev_incl_state']
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -130,6 +131,7 @@ def experiment(variant):
         optimizer=optimizer,
         latent_size=variant['latent_size'],
         feature_keys=list(env.feature_sizes.keys()),
+        incl_state=variant['incl_state'],
         **variant['trainer_kwargs']
     )
 
@@ -182,7 +184,9 @@ if __name__ == "__main__":
     parser.add_argument('--no_failures', action='store_true')
     parser.add_argument('--rand_latent', action='store_true')
     parser.add_argument('--curriculum', action='store_true')
-    parser.add_argument('--objective', default='kl', type=str)
+    parser.add_argument('--objective', default='normal_kl', type=str)
+    parser.add_argument('--prev_incl_state', action='store_true')
+
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -190,17 +194,18 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.2}[args.env_name]
+                      'Valve': 0.1}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3
 
-    pretrain_path = f'{args.env_name}_params_s1_sac'
+    pretrain_path = f'{args.env_name}_params_s1_sac_det'
     if args.pre_det:
         pretrain_path += '_det_enc'
     pretrain_path += '.pkl'
 
     default_variant = dict(
         mode=args.mode,
+        incl_state=True,
         random_latent=args.rand_latent,
         real_user=not args.sim,
         pretrain_path=pretrain_path,
@@ -212,7 +217,8 @@ if __name__ == "__main__":
             sample=not args.det,
             beta=0 if args.det else beta,
             objective=args.objective,
-            grad_norm_clip=None
+            grad_norm_clip=None,
+            prev_incl_state=args.prev_incl_state
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -233,7 +239,8 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=True, num_targets=3),
+                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 8, success_threshold=20,
+                            use_rand_init_angle=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
@@ -300,9 +307,9 @@ if __name__ == "__main__":
                           },
                      'Valve':
                          {'default': {'calibrate_split': False,
-                                      'calibration_indices': [0, 1, 2]},
+                                      'calibration_indices': None},
                           'no_online': {'calibrate_split': False,
-                                        'calibration_indices': [0, 1, 2],
+                                        'calibration_indices': None,
                                         'num_trains_per_train_loop': 0},
                           }
                      }[variant['env_config']['env_name']][variant['mode']]

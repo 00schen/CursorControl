@@ -9,6 +9,8 @@ from rl.misc.env_wrapper import default_overhead
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.misc.simple_path_loader import SimplePathLoader
+from rl.trainers import TorchEncDecAWACTrainer
 
 import os
 from pathlib import Path
@@ -16,6 +18,7 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from functools import reduce
 import operator
+import numpy as np
 
 
 def experiment(variant):
@@ -133,6 +136,34 @@ def experiment(variant):
     )
     algorithm.to(ptu.device)
 
+    path_loader = SimplePathLoader(
+        demo_path=variant['demo_paths'],
+        demo_path_proportion=variant['demo_path_proportions'],
+        replay_buffer=replay_buffer,
+    )
+    path_loader.load_demos()
+
+    if variant['pretrain_steps']:
+        awac_trainer = TorchEncDecAWACTrainer(
+            policy=policy,
+            policy_lr=variant['trainer_kwargs']['policy_lr'],
+            qf1=qf1,
+            qf2=qf2,
+            target_qf1=target_qf1,
+            target_qf2=target_qf2,
+            qf_lr=variant['trainer_kwargs']['qf_lr'],
+            vae=vae,
+            latent_size=variant['latent_size'],
+            beta=variant['trainer_kwargs']['beta'],
+            sample=variant['trainer_kwargs']['sample'],
+            soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
+            target_update_period=variant['trainer_kwargs']['target_update_period'],
+            incl_state=variant['incl_state']
+        )
+        for _ in range(variant['pretrain_steps']):
+            train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
+            awac_trainer.train(train_data)
+
     if variant.get('render', False):
         env.render('human')
     algorithm.train()
@@ -153,12 +184,13 @@ if __name__ == "__main__":
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
+        pretrain_path=f'{args.env_name}_params_s1_sac_det.pkl',
         latent_size=2,
         layer_size=256,
         incl_state=args.incl_state,
+        pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=3000,
+            num_epochs=5000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -179,16 +211,20 @@ if __name__ == "__main__":
             sample=not args.det,
             beta=0 if args.det else 0.0001
         ),
+        demo_paths=[
+            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_100_test.npy"),
+        ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=7, stochastic=True),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, success_threshold=20),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'sim_target'],
+            adapts=['goal'],
             gaze_dim=128,
             state_type=0,
         )
@@ -198,6 +234,7 @@ if __name__ == "__main__":
         'from_pretrain': [False],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(1e6)],
+        'demo_path_proportions': [[100]],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
