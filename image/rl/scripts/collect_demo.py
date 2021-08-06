@@ -78,15 +78,14 @@ if __name__ == "__main__":
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 200
+    path_length = 100
     variant = dict(
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
             env_name='Valve',
-            step_limit=path_length,
             env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
-                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, success_threshold=20),
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True),
             oracle='keyboard',
             oracle_kwargs=dict(
                 threshold=.5,

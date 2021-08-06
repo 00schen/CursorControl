@@ -194,7 +194,7 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.1}[args.env_name]
+                      'Valve': 0.2}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3
 
@@ -238,9 +238,10 @@ if __name__ == "__main__":
             env_name=args.env_name,
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 8, success_threshold=20,
-                            use_rand_init_angle=False),
+            env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
+                            stochastic=False, num_targets=4, min_error_threshold=np.pi / 8,
+                            use_rand_init_angle=False,
+                            term_cond='auto'),
             action_type='joint',
             smooth_alpha=1,
             factories=[],

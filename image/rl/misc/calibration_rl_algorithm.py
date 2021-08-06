@@ -120,8 +120,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             timeout = len(path['observations']) == self.max_path_length and not real_success
 
             # valve is still successful if timeout in success state
-            if self.expl_env.env_name == 'Valve' and timeout:
-                real_success = path['env_infos'][-1]['is_success']
+            # if self.expl_env.env_name == 'Valve' and timeout:
+            #     real_success = path['env_infos'][-1]['is_success']
 
             gt.stamp('exploration sampling', unique=False)
             if self.real_user:
@@ -130,6 +130,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     time.sleep(1)
                     success = real_success
                     self.metrics['correct_rewards'].append(None)
+
+                elif self.expl_env.env_name == 'Valve':
+                    success = path['env_infos'][-1]['feedback']
 
                 else:
                     while True:
@@ -157,11 +160,12 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                     raise NotImplementedError()
 
                                 # assumes same goal each timestep
-                                if not self.expl_env.env_name == 'Valve':
-                                    for failed_path in failed_paths + [path]:
-                                        for i in range(len(failed_path['observations'])):
-                                            failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
-                                            failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
+                                # not necessary when relabeling with final angle anyways
+                                # if not self.expl_env.env_name == 'Valve':
+                                #     for failed_path in failed_paths + [path]:
+                                #         for i in range(len(failed_path['observations'])):
+                                #             failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
+                                #             failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
 
                             break
                         elif p.B3G_SHIFT in keys and keys[p.B3G_SHIFT] & p.KEY_WAS_TRIGGERED:
@@ -189,7 +193,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 # have to relabel goals in valve with angle actually reached
                 if self.expl_env.env_name == 'Valve':
                     new_target_angle = successful_paths[-1]['env_infos'][-1]['valve_angle']
-                    new_goal = np.concatenate((np.sin(new_target_angle), np.cos(new_target_angle)))
+                    new_goal = np.array([np.sin(new_target_angle), np.cos(new_target_angle)])
                     for path in paths_to_add:
                         for i in range(len(path['observations'])):
                             path['observations'][i]['goal'] = new_goal.copy()

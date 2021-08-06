@@ -10,6 +10,7 @@ from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
 from rl.misc.simple_path_loader import SimplePathLoader
+from rlkit.torch.networks import Clamp
 from rl.trainers import TorchEncDecAWACTrainer
 
 import os
@@ -217,16 +218,19 @@ if __name__ == "__main__":
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
-            step_limit=path_length,
             goal_noise_std=0,
             env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
-                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, success_threshold=20),
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, term_cond=None),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal'],
+            adapts=['goal', 'reward'],
             gaze_dim=128,
             state_type=0,
+            reward_type='valve_exp',
+            reward_min=None,
+            reward_max=0,
+            reward_temp=5
         )
     )
     search_space = {

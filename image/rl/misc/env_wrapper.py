@@ -79,7 +79,7 @@ class LibraryWrapper(Env):
 
     def step(self, action):
         obs, r, done, info = self.base_env.step(action)
-        done = info['task_success']
+        # done = info['task_success']
         if self.terminate_on_failure and hasattr(self.base_env, 'wrong_goal_reached'):
             done = done or self.base_env.wrong_goal_reached()
         return obs, r, done, info
@@ -462,9 +462,9 @@ class reward:
     def __init__(self, master_env, config):
         self.range = (config['reward_min'], config['reward_max'])
         self.master_env = master_env
-        self.reward_type = config['reward_type']
-        self.reward_temp = config['reward_temp']
-        self.reward_offset = config['reward_offset']
+        self.reward_type = config.get('reward_type')
+        self.reward_temp = config.get('reward_temp')
+        self.reward_offset = config.get('reward_offset')
 
     def _step(self, obs, r, done, info):
         if self.reward_type == 'custom':
@@ -545,6 +545,9 @@ class reward:
         # done = info['noop']
         elif self.reward_type == 'part_sparse_kitchen':
             r = -1 + sum(info['tasks']) / 6
+        elif self.reward_type == 'valve_exp':
+            dist = np.abs(self.master_env.base_env.angle_diff(info['valve_angle'], info['target_angle']))
+            r = np.exp(-self.reward_temp * dist) - 1
         else:
             raise Exception
 
