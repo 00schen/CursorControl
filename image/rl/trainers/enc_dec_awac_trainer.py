@@ -65,20 +65,13 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         next_obs = batch['next_observations']
         curr_goal = batch['curr_goal']
         next_goal = batch['next_goal']
-        curr_goal_set = batch.get('curr_goal_set')
-        next_goal_set = batch.get('next_goal_set')
-
         batch_size = obs.shape[0]
-        has_goal_set = curr_goal_set is not None
 
         curr_encoder_features = [curr_goal]
         next_encoder_features = [next_goal]
         if self.incl_state:
             curr_encoder_features.append(obs)
             next_encoder_features.append(next_obs)
-            if has_goal_set:
-                curr_encoder_features.append(curr_goal_set.reshape((batch_size, -1)))
-                next_encoder_features.append(next_goal_set.reshape((batch_size, -1)))
 
         eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
         curr_latent, kl_loss = self.vae.sample(torch.cat(curr_encoder_features, dim=1), eps=eps, return_kl=True)
@@ -89,27 +82,15 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         """
         Policy and Alpha Loss
         """
-        if has_goal_set:
-            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-            curr_policy_features = [obs, curr_goal_set_flat, curr_latent]
-        else:
-            curr_policy_features = [obs, curr_latent]
+        curr_policy_features = [obs, curr_latent]
 
         dist = self.policy(*curr_policy_features)
-
         log_pi = dist.log_prob(actions)
-
         new_obs_actions, _ = dist.rsample_and_logprob()
 
-        if has_goal_set:
-            curr_qf_features = [obs, curr_goal_set_flat, curr_goal, actions]
-            new_qf_features = [obs, curr_goal_set_flat, curr_goal, new_obs_actions]
-            next_goal_set_flat = next_goal_set.reshape((batch_size, -1))
-            next_policy_features = [next_obs, next_goal_set_flat, next_latent]
-        else:
-            curr_qf_features = [obs, curr_goal, actions]
-            new_qf_features = [obs, curr_goal, new_obs_actions]
-            next_policy_features = [next_obs, next_latent]
+        curr_qf_features = [obs, curr_goal, actions]
+        new_qf_features = [obs, curr_goal, new_obs_actions]
+        next_policy_features = [next_obs, next_latent]
 
         q_estimates = self.qf1(*curr_qf_features)
         value_estimates = self.qf1(*new_qf_features)
@@ -122,11 +103,7 @@ class TorchEncDecAWACTrainer(TorchTrainer):
 
         new_next_actions, new_log_pi = next_dist.rsample_and_logprob()
 
-        if has_goal_set:
-            next_qf_features = [next_obs, next_goal_set_flat, next_goal, new_next_actions]
-        else:
-            next_qf_features = [next_obs, next_goal, new_next_actions]
-
+        next_qf_features = [next_obs, next_goal, new_next_actions]
         target_q_values = torch.min(
             self.target_qf1(*next_qf_features),
             self.target_qf2(*next_qf_features),

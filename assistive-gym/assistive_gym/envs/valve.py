@@ -26,8 +26,7 @@ class ValveEnv(AssistiveEnv):
         self.success_dist = success_dist
         self.debug = debug
         self.stochastic = stochastic
-        self.goal_feat = ['target_angle']  # Just an FYI
-        self.feature_sizes = OrderedDict({'goal': 2})
+        self.goal_feat_sizes = {'target_angle_trig': 2}
         self.session_goal = session_goal
         self.use_rand_init_angle = use_rand_init_angle
 
@@ -56,8 +55,6 @@ class ValveEnv(AssistiveEnv):
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
-        obs = self._get_obs([0])
-
         if self.task_success:
             color = [0, 1, 0, 1]
         else:
@@ -65,26 +62,8 @@ class ValveEnv(AssistiveEnv):
         p.changeVisualShape(self.target_indicator, -1, rgbaColor=color)
 
         reward = np.exp(-np.abs(self.angle_diff(self.valve_angle, self.target_angle))) - 1
-
-        direction = np.zeros(3)
-        if self.task_success:
-            index = 0
-            self.n_success += 1
-        else:
-            index = 1 if self.angle_diff(self.valve_angle, self.target_angle) > 0 else 2
-            self.n_success = 0
-        direction[index] = 1
-
-        info = {
-            'task_success': self.task_success,
-            'old_tool_pos': old_tool_pos,
-            'tool_pos': self.tool_pos,
-            'valve_pos': self.valve_pos,
-            'valve_angle': self.valve_angle,
-            'target_angle': self.target_angle,
-            'error_threshold': self.error_threshold,
-            'direction': direction,
-        }
+        obs = self._get_obs(old_tool_pos)
+        info = self._get_obs(old_tool_pos)
         done = False
         if self.term_cond == 'auto':
             done = self.n_success >= self.term_thresh
@@ -105,18 +84,35 @@ class ValveEnv(AssistiveEnv):
 
         return obs, reward, done, info
 
-    def _get_obs(self, forces):
+    def _get_obs(self, old_tool_pos):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
 
-        robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.valve_pos,
-                                    [np.sin(self.valve_angle), np.cos(self.valve_angle)], robot_joint_positions]),
-            hindsight_goal=np.array([np.sin(self.valve_angle), np.cos(self.valve_angle)]),
-            goal=self.goal.copy(),
-        )
-        return robot_obs
+        direction = np.zeros(3)
+        if self.task_success:
+            index = 0
+            self.n_success += 1
+        else:
+            index = 1 if self.angle_diff(self.valve_angle, self.target_angle) > 0 else 2
+            self.n_success = 0
+        direction[index] = 1
+
+        obs = {
+            'task_success': self.task_success,
+            'old_tool_pos': old_tool_pos,
+            'tool_pos': self.tool_pos,
+            'valve_pos': self.valve_pos,
+            'valve_angle': self.valve_angle,
+            'target_angle': self.target_angle,
+            'target_angle_trig': np.array([np.sin(self.target_angle), np.cos(self.target_angle)]),
+            'error_threshold': self.error_threshold,
+            'direction': direction,
+
+            'joints': robot_joint_positions,
+            'goal': self.goal.copy(),
+        }
+        return obs
 
     def update_curriculum(self, success):
         if success:
@@ -158,7 +154,7 @@ class ValveEnv(AssistiveEnv):
 
         wall_pos, wall_orient = np.array([0., -1.1, 1.]), np.array([0, 0, 0, 1])
         if self.stochastic:
-            wall_pos = wall_pos + + self.wall_noise
+            wall_pos = wall_pos + self.wall_noise
 
         self.wall = p.createMultiBody(basePosition=wall_pos, baseOrientation=wall_orient,
                                       baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,

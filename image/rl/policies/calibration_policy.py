@@ -14,15 +14,11 @@ class CalibrationPolicy(EncDecPolicy):
     def get_action(self, obs):
         with th.no_grad():
             raw_obs = obs['raw_obs']
-            goal_set = obs.get('goal_set')
-
-            features = [obs['goal']]
+            features = [obs['goal_obs']]
 
             if self.prev_vae is not None:
                 if self.incl_state:
                     features.append(raw_obs)
-                    if goal_set is not None:
-                        features.append(goal_set.ravel())
                 pred_features = self.prev_vae.sample(th.Tensor(np.concatenate(features)).to(ptu.device)).detach()
             else:
                 pred_features = self.target
@@ -33,7 +29,5 @@ class CalibrationPolicy(EncDecPolicy):
                 obs['latents'] = pred_features
 
             policy_input = [raw_obs, pred_features]
-            if goal_set is not None:
-                policy_input.insert(1, goal_set.ravel())
 
             return self.policy.get_action(*policy_input)

@@ -22,24 +22,18 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         )
         self._obs_dict = {}
         self._next_obs_dict = {}
-        self._obs_dict_keys = set(env.feature_sizes.keys()) | set(['goal'])
-
-        iter_dict = {'goal': env.goal_size}
-        iter_dict.update(env.feature_sizes)
+        self._obs_dict_sizes = {
+            'goal': env.base_goal_size,
+            'goal_obs': env.goal_space.low.size,
+        }
 
         if store_latents:
             self._obs_dict_keys.add('latents')
             iter_dict['latents'] = latent_size
 
-        for key, size in iter_dict.items():
+        for key, size in self._obs_dict_sizes.items():
             self._obs_dict[key] = np.zeros((max_replay_buffer_size, size))
             self._next_obs_dict[key] = np.zeros((max_replay_buffer_size, size))
-
-        # for envs with goal sets separate from observation
-        if hasattr(env.base_env, 'goal_set_shape'):
-            self._obs_dict_keys.add('goal_set')
-            self._obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
-            self._next_obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
 
         self.sample_base = sample_base
 
@@ -56,10 +50,10 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 
     def add_sample(self, observation, action, reward, next_observation,
                    terminal, env_info, **kwargs):
-        for key in self._obs_dict_keys:
-            self._obs_dict[key][self._top] = observation[key]
+        for key in self._obs_dict_sizes.keys():
+            self._obs_dict[key][self._top] = np.array([observation[key]]).ravel()
             if key in next_observation.keys():
-                self._next_obs_dict[key][self._top] = next_observation[key]
+                self._next_obs_dict[key][self._top] = np.array([next_observation[key]]).ravel()
             else:
                 self._next_obs_dict[key][self._top] = None
         super().add_sample(observation['raw_obs'], action, reward, terminal,
@@ -73,7 +67,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
             terminals=self._terminals[indices],
             next_observations=self._next_obs[indices],
         )
-        for key in self._obs_dict_keys:
+        for key in self._obs_dict_sizes.keys():
             assert key not in batch.keys()
             batch['curr_' + key] = self._obs_dict[key][indices]
             batch['next_' + key] = self._next_obs_dict[key][indices]

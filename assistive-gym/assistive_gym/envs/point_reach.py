@@ -24,8 +24,7 @@ class PointReachEnv(AssistiveEnv):
         self.success_dist = success_dist
         self.debug = debug
         self.stochastic = stochastic
-        self.goal_feat = ['target_pos', ]  # Just an FYI
-        self.feature_sizes = OrderedDict({'goal': 3})
+        self.goal_feat_sizes = {'target_pos': 3, 'org_bottle_pos': 3}
         self.session_goal = session_goal
         self.target_indices = list(np.arange(self.num_targets))
         self.table_offset = None
@@ -45,8 +44,7 @@ class PointReachEnv(AssistiveEnv):
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
-        self.task_success = norm(self.tool_pos - self.target_pos) < self.success_dist
-        obs = self._get_obs([0])
+        self.task_success = norm(self.bottle_pos - self.target_pos) < self.success_dist
 
         if self.task_success:
             target_color = [0, 1, 0, 1]
@@ -56,7 +54,18 @@ class PointReachEnv(AssistiveEnv):
             p.changeVisualShape(self.target, -1, rgbaColor=target_color)
 
         reward = self.task_success
-        info = {
+        obs = self._get_obs(old_tool_pos)
+        info = self._get_obs(old_tool_pos)
+        done = False
+
+        return obs, reward, done, info
+
+    def _get_obs(self, old_tool_pos):
+        robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
+                                              physicsClientId=self.id)
+        robot_joint_positions = np.array([x[0] for x in robot_joint_states])
+
+        obs = {
             'task_success': self.task_success,
             'old_tool_pos': old_tool_pos,
             'target_index': self.target_index,
@@ -64,22 +73,9 @@ class PointReachEnv(AssistiveEnv):
             'tool_pos': self.tool_pos,
             'sub_target': self.sub_target_pos.copy(),
             'target_pos': self.target_pos,
+            'org_bottle_pos': self.org_bottle_pos
         }
-        done = False
-
-        return obs, reward, done, info
-
-    def _get_obs(self, forces):
-        robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
-                                              physicsClientId=self.id)
-        robot_joint_positions = np.array([x[0] for x in robot_joint_states])
-
-        robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, robot_joint_positions]),
-            hindsight_goal=np.concatenate([self.tool_pos, self.tool_pos]),
-            goal=self.goal.copy(),
-        )
-        return robot_obs
+        return obs
 
     def reset(self):
         self.task_success = False
@@ -137,10 +133,10 @@ class PointReachEnv(AssistiveEnv):
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
         self.task_success = 0
-        self.goal = np.concatenate([self.target_pos, self.bottle_pos])
+        self.goal = np.concatenate([self.target_pos, self.org_bottle_pos])
         self.curr_step = 0
 
-        return self._get_obs([0])
+        return self._get_obs(self.tool_pos)
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
@@ -185,7 +181,7 @@ class PointReachEnv(AssistiveEnv):
         target_pos = self.target_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
                                         + self.table_pos + np.array([0, 0, .1])
 
-        bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
+        bottle_pos = self.org_bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
                                         + self.table_pos + np.array([0, 0, .1])
         while norm(bottle_pos - target_pos) < .1:
             bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \

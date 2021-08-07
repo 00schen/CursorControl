@@ -57,19 +57,12 @@ class EncDecSACTrainer(TorchTrainer):
         features = th.cat([batch['curr_' + key] for key in self.feature_keys], dim=1)
         latents = batch['curr_latents']
         goals = batch['curr_goal']
-        curr_goal_set = batch.get('curr_goal_set')
-
-        has_goal_set = curr_goal_set is not None
         batch_size = obs.shape[0]
-
         loss = ptu.zeros(1)
 
         encoder_features = [features]
         if self.incl_state:
             encoder_features.append(obs)
-            if has_goal_set:
-                curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-                encoder_features.append(curr_goal_set_flat)
 
         eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
         pred_latent, kl_loss = vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
@@ -78,9 +71,6 @@ class EncDecSACTrainer(TorchTrainer):
             prev_encoder_features = [goals]
             if self.prev_incl_state:
                 prev_encoder_features.append(obs)
-                if has_goal_set:
-                    curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-                    prev_encoder_features.append(curr_goal_set_flat)
 
             target_latent = self.prev_vae.sample(th.cat(prev_encoder_features, dim=-1), eps=None)
         else:
@@ -88,13 +78,8 @@ class EncDecSACTrainer(TorchTrainer):
 
         latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
-        if has_goal_set:
-            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-            target_policy_features = [obs, curr_goal_set_flat, target_latent]
-            pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
-        else:
-            target_policy_features = [obs, target_latent]
-            pred_policy_features = [obs, pred_latent]
+        target_policy_features = [obs, target_latent]
+        pred_policy_features = [obs, pred_latent]
 
         if self.objective == 'kl':
             target_mean = self.policy(*target_policy_features).mean.detach()
@@ -116,10 +101,7 @@ class EncDecSACTrainer(TorchTrainer):
             new_obs_actions, log_pi = dist.rsample_and_logprob()
             log_pi = log_pi.unsqueeze(-1)
 
-            if has_goal_set:
-                new_qf_features = [obs, curr_goal_set_flat, goals, new_obs_actions]
-            else:
-                new_qf_features = [obs, goals, new_obs_actions]
+            new_qf_features = [obs, goals, new_obs_actions]
 
             q_new_actions = th.min(
                 self.qf1(*new_qf_features),
