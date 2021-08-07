@@ -17,6 +17,7 @@ from rlkit.torch.networks.mlp import (
     MlpQf,
     MlpQfWithObsProcessor,
     ConcatMultiHeadedMlp,
+    NeuralProcessMlp
 )
 from rlkit.torch.networks.rnn import (ConcatRNN,ConcatRNNPolicy)
 from rlkit.torch.networks.pretrained_cnn import PretrainedCNN

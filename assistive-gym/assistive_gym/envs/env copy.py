@@ -6,18 +6,15 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 import pybullet as p
-# import cv2
-# from keras.models import load_model
 from screeninfo import get_monitors
 
 from .util import Util
 from .world_creation import WorldCreation
 
 class AssistiveEnv(gym.Env):
-    def __init__(self, robot_type='pr2', task='scratch_itch', human_control=False, frame_skip=5, time_step=0.02, action_robot_len=7, action_human_len=0, obs_robot_len=30, obs_human_len=0):
+    def __init__(self, robot_type='jaco', task='reaching', frame_skip=5, time_step=0.02, action_robot_len=7, obs_robot_len=30):
         # Start the bullet physics server
         self.id = p.connect(p.DIRECT)
-        # print('Physics server ID:', self.id)
         self.gui = False
 
         self.robot_type = robot_type
@@ -436,3 +433,4 @@ class AssistiveEnv(gym.Env):
             #     return image
             #     # return np.reshape(p.getCameraImage(width=width, height=height, physicsClientId=self.id)[2], (height, width, 4))[:, :, :3]
             pass
+

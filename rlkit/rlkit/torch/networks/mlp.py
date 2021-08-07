@@ -116,12 +116,23 @@ class MultiHeadedMlp(Mlp):
         flat_outputs = super().forward(input)
         return self._splitter(flat_outputs)
 
+class NeuralProcessMlp(Mlp):
+    def forward(self, input, set_dim=1):
+        batch_outputs = super().forward(input)
+        output = torch.mean(batch_outputs, set_dim)
+        return output
+
+class ConcatNeuralProcessMlp(NeuralProcessMlp):
+    def forward(self, *inputs, set_dim=1):
+        flat_inputs = torch.cat(inputs, dim=-1)
+        output = super().forward(flat_inputs, set_dim=set_dim)
+        return output
 
 class ConcatMultiHeadedMlp(MultiHeadedMlp):
     """
     Concatenate inputs along dimension and then pass through MultiHeadedMlp.
     """
-    def __init__(self, *args, dim=1, **kwargs):
+    def __init__(self, *args, dim=-1, **kwargs):
         super().__init__(*args, **kwargs)
         self.dim = dim
 
@@ -134,7 +145,7 @@ class ConcatMlp(Mlp):
     """
     Concatenate inputs along dimension and then pass through MLP.
     """
-    def __init__(self, *args, dim=1, **kwargs):
+    def __init__(self, *args, dim=-1, **kwargs):
         super().__init__(*args, **kwargs)
         self.dim = dim
 
@@ -380,10 +391,12 @@ class VAE(PyTorchModule):
             latent_size,
             input_size,
             output_activation=F.relu,
+            encoder_class=Mlp,
+            **kwargs
     ):
         super().__init__()
-        self.encoder = Mlp(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * 2,
-                           input_size=input_size)
+        self.encoder = encoder_class(hidden_sizes=encoder_hidden_sizes, output_size=latent_size * 2,
+                        input_size=input_size, **kwargs)
         self.decoder = Mlp(hidden_sizes=decoder_hidden_sizes, output_size=input_size, input_size=latent_size,
                            output_activation=output_activation)
         self.latent_size = latent_size
@@ -412,11 +425,17 @@ class VAE(PyTorchModule):
     def decode(self, z):
         return self.decoder(z)
 
-    def sample(self, x, eps=None, return_kl=False):
+    def sample(self, x, sample_dim=None, eps=None, return_kl=False):
         mean, logvar = torch.split(self.encoder(x), self.latent_size, dim=-1)
-        sample = mean
+        if sample_dim is None:
+            sample = mean
+            sample_logvar = logvar
+        else:
+            batch_shape = mean.size()
+            sample = mean.unsqueeze(1).expand(batch_shape[0],sample_dim,*batch_shape[1:])
+            sample_logvar = logvar.unsqueeze(1).expand(batch_shape[0],sample_dim,*batch_shape[1:])
         if eps is not None:
-            sample = sample + torch.exp(logvar * 0.5) * eps
+            sample = sample + torch.exp(sample_logvar * 0.5) * eps
         if return_kl:
             return sample, self.kl_loss(mean, logvar)
         return sample

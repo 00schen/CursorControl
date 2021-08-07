@@ -34,21 +34,21 @@ def default_overhead(config):
             super().__init__(config)
             self.rng = default_rng(config['seedid'])
             adapt_map = {
-                'oracle': oracle,
                 'static_gaze': static_gaze,
                 'real_gaze': real_gaze,
                 'joint': joint,
                 'goal': goal,
                 'reward': reward,
                 'sim_target': sim_target,
+                'sim_keyboard': sim_keyboard,
                 'dict_to_array': dict_to_array,
             }
             self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
             self.adapts = [adapt(self, config) for adapt in self.adapts]
             self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
                                                                 self.adapts, (obs, r, done, info))
-            self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs, info), self.adapts,
-                                                             (obs))
+            self.adapt_reset = lambda obs: reduce(lambda obs, adapt: adapt._reset(obs), 
+                                                                self.adapts, obs)
 
         def step(self, action):
             tran = super().step(action)
@@ -70,6 +70,9 @@ class LibraryWrapper(Env):
             "OneSwitch": ag.OneSwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
             "Valve": ag.ValveJacoEnv,
+            "PointReach": ag.PointReachJacoEnv,
+            "Rope": ag.RopeEnv,
+            "BlockPush": ag.BlockPushEnv,
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
@@ -105,10 +108,11 @@ def action_factory(base):
         def __init__(self, config):
             super().__init__(config)
             self.action_type = config['action_type']
+            self.action_grab = config.get('action_grab', False)
             self.action_space = {
-                "trajectory": spaces.Box(-.1, .1, (3,)),
-                "joint": spaces.Box(-.25, .25, (7,)),
-                "disc_traj": spaces.Box(0, 1, (6,)),
+                "trajectory": spaces.Box(-.1, .1, (3+self.action_grab,)),
+                "joint": spaces.Box(-1, 1, (7+self.action_grab,)),
+                "disc_traj": spaces.Box(0, 1, (6+self.action_grab,)),
             }[config['action_type']]
             self.translate = {
                 # 'target': target,
@@ -116,14 +120,14 @@ def action_factory(base):
                 'joint': self.joint,
                 'disc_traj': self.disc_traj,
             }[config['action_type']]
-            self.smooth_alpha = config['smooth_alpha']
+            if self.action_grab:
+                self.sub_translate = self.translate
+                self.translate = self.grab
 
         def joint(self, action, info={}):
             clip_by_norm = lambda traj, limit: traj / max(1e-4, norm(traj)) * np.clip(norm(traj), None, limit)
-            action = clip_by_norm(action, .25)
-            self.action = self.smooth_alpha * action + (1 - self.smooth_alpha) * self.action if np.count_nonzero(
-                self.action) else action
-            info['joint'] = self.action
+            action = clip_by_norm(action, 1)
+            info['joint'] = action
             return action, info
 
         def target(self, coor, info={}):
@@ -161,6 +165,12 @@ def action_factory(base):
                 np.array((0, 0, 1)),
             ][index]
             return self.trajectory(traj, info)
+
+        def grab(self, action, info={}):
+            info['grab'] = action[-1]
+            joint_action, info = self.sub_translate(action[:-1], info)
+            action = np.concatenate([joint_action, [action[-1]]])
+            return action, info
 
         def step(self, action):
             action, ainfo = self.translate(action)
@@ -226,7 +236,7 @@ class oracle:
                 'keyboard': KeyboardOracle,
                 'dummy_gaze': BottleOracle,
             }[config['oracle']]
-            if config['oracle'] == 'sim_gaze':  # TODO: look at how oracke works (why oracle_type)
+            if config['oracle'] == 'sim_gaze':
                 self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
             elif config['oracle'] == 'dummy_gaze':
                 self.oracle = master_env.oracle = oracle_type(master_env.rng, **config['oracle_kwargs'])
@@ -266,7 +276,10 @@ class goal:
             Bottle=None,
             OneSwitch=None,
             Valve=None,
-            AnySwitch=lambda info: [info['switch_pos']]
+            AnySwitch=lambda info: [info['switch_pos']],
+            PointReach=lambda info: [info['sub_goal']],
+            Rope=lambda info: [info['ground_truth']],
+            BlockPush=lambda info: [info['ground_truth']]
         )[self.env_name]
         self.hindsight_feat = dict(
             # Kitchen=({'tool_pos': 3, 'orders': 2},{'tool_pos': 3, 'orders': 2, 'tasks': 6}),
@@ -274,7 +287,10 @@ class goal:
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
             Valve={'valve_angle': 2},
-            AnySwitch={'tool_pos': 3}
+            AnySwitch={'tool_pos': 3},
+            PointReach={'tool_pos': 3},
+            Rope={'ground_truth': 300},
+            BlockPush={'ground_truth': 3}
         )[self.env_name]
         # if isinstance(self.goal_feat_func,tuple):
         #     self.goal_feat_func = self.goal_feat_func[config['goal_func_ind']]
@@ -428,6 +444,29 @@ class sim_target:
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['target'] = target + noise
 
+class sim_keyboard:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        master_env.feature_sizes['target'] = 6
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        traj = obs[self.feature] - obs['tool_pos']
+        axis = np.argmax(np.abs(traj))
+        index = 2 * axis + (traj[axis] > 0)
+        action = np.zeros(6)
+        action[index] = 1
+        obs['target'] = action
 
 class joint:
     def __init__(self, master_env, config):
@@ -539,7 +578,7 @@ class reward:
         elif self.reward_type == 'sparse':
             r = -1 + info['task_success']
         elif self.reward_type == 'part_sparse':
-            r = -1 + .5 * (info['task_success'] + info['door_open'])
+            r = -1 + .5 * (info['task_success'] + info['target1_reached'])
         elif self.reward_type == 'terminal_interrupt':
             r = info['noop']
         # done = info['noop']
@@ -548,6 +587,28 @@ class reward:
         elif self.reward_type == 'valve_exp':
             dist = np.abs(self.master_env.base_env.angle_diff(info['valve_angle'], info['target_angle']))
             r = np.exp(-self.reward_temp * dist) - 1
+        elif self.reward_type == 'pointreach_exp':
+            r = -1
+            r += np.exp(-norm(info['tool_pos'] - info['org_bottle_pos'])) / 2
+            if info['target1_reached']:
+                r = -.5
+                r += np.exp(-norm(info['tool_pos'] - info['target_pos'])) / 2
+            if info['task_success']:
+                r = 0
+        elif self.reward_type == 'rope_exp':
+            r = -1
+            r += np.exp(-info['frechet']) / 2
+            if info['task_success']:
+                r = 0
+        elif self.reward_type == 'blockpush_exp':
+            r = -1
+            dist = norm(info['block_pos']-info['target_pos']) + norm(info['tool_pos'] - info['block_pos'])/2
+            old_dist = norm(info['old_block_pos']-info['target_pos']) + norm(info['old_tool_pos'] - info['old_block_pos'])/2
+            under_table_penalty = max(0, info['target_pos'][2]-info['tool_pos'][2]-.1)
+            sigmoid = lambda x: 1/(1 + np.exp(-x))
+            r += sigmoid(self.reward_temp*(old_dist-dist-under_table_penalty))*self.reward_offset
+            if info['task_success']:
+                r = 0
         else:
             raise Exception
 

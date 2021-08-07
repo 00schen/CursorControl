@@ -78,7 +78,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         # the buffer actually used for calibration
         calibration_buffer = self.calibration_buffer if self.calibration_buffer is not None else self.replay_buffer
 
-        for _ in range(self.trajs_per_index):
+        for i in range(self.trajs_per_index):
             for index in self.calibration_indices:
                 self.expl_env.new_goal(index)
                 calibration_paths = self.calibration_data_collector.collect_new_paths(
@@ -86,6 +86,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     1,
                     discard_incomplete_paths=False,
                 )
+                if self.expl_env.env_name == 'PointReach':
+                    self.expl_env.base_env.set_reset_environment()
                 self.calibration_data_collector.end_epoch(-1)
 
                 calibration_buffer.add_paths(calibration_paths)
@@ -168,6 +170,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                 elif self.expl_env.env_name == 'Valve':
                                     wrong_reached_goal = None
 
+                                elif self.expl_env.env_name == 'PointReach':
+                                    wrong_reached_goal = None
+
                                 else:
                                     raise NotImplementedError()
 
@@ -204,8 +209,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
             # no actual relabeling right now, since goals for all paths should be same
             # only add to paths to buffer if successful
-            if success:
-                paths_to_add = successful_paths + failed_paths if self.relabel_failures else successful_paths
+            if success or (self.expl_env.env_name == 'PointReach' and path['env_infos'][-1]['sub_goal_reached']):
+                paths_to_add = (successful_paths + failed_paths) if self.relabel_failures else successful_paths
+                failed_paths = []
+                successful_paths = []
 
                 # have to relabel goals in valve with angle actually reached
                 if self.expl_env.env_name == 'Valve':
@@ -226,6 +233,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
             block_timeout = len(failed_paths) >= self.max_failures
             if success or block_timeout or epoch == self.num_epochs - 1:
+                if self.expl_env.env_name == 'PointReach':
+                    self.expl_env.base_env.set_reset_environment()
+
                 self.metrics['success_blocks'].append(real_success)
                 self.metrics['block_lengths'].append(len(failed_paths) + len(successful_paths))
                 if self.real_user:
@@ -236,7 +246,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 successful_paths = []
                 self.expl_env.new_goal()  # switch positions do not change if not block end
 
-                if self.curriculum and hasattr(self.expl_env.base_env, 'update_curriculum'):
+                if self.curriculum:
+                    assert hasattr(self.expl_env.base_env, 'update_curriculum'),\
+                            "environment must have method 'update_curriculum' to be used with curriculum setting"
                     self.expl_env.base_env.update_curriculum(success)
 
             self._end_epoch(epoch)

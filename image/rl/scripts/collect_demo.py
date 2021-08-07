@@ -1,4 +1,4 @@
-from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy
+from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy, GrabKeyboardPolicy, PointReachOracle
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 import rlkit.pythonplusplus as ppp
@@ -20,20 +20,19 @@ def collect_demonstrations(variant):
     env = default_overhead(variant['env_kwargs']['config'])
     env.seed(variant['seedid'] + 100 + current_time)
 
-    # file_name = os.path.join(variant['eval_path'])
-    # loaded = th.load(file_name, map_location='cpu')
-    # policy = EncDecPolicy(
-    #     policy=loaded['trainer/policy'],
-    #     features_keys=list(env.feature_sizes.keys()),
-    #     vae=loaded['trainer/vae'],
-    #     incl_state=False,
-    #     sample=False,
-    #     deterministic=False
-    # )
+    file_name = os.path.join(variant['eval_path'])
+    loaded = th.load(file_name, map_location='cpu')
+    policy = EncDecPolicy(
+        policy=loaded['trainer/policy'],
+        features_keys=list(env.feature_sizes.keys()),
+        vaes=[loaded['trainer/vae']],
+        incl_state=False,
+        sample=False,
+        deterministic=False
+    )
 
-    # policy = FollowerPolicy(env)
-    # policy = DemonstrationPolicy(policy, env, p=variant['p'])
-    policy = KeyboardPolicy()
+    # policy = PointReachOracle()
+    # policy = KeyboardPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -74,27 +73,26 @@ if __name__ == "__main__":
     parser.add_argument('--suffix', default='test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
+    parser.add_argument('--num_workers', type=int, default=1)
+
     args, _ = parser.parse_known_args()
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 100
+    path_length = 1000
     variant = dict(
         seedid=3000,
-        eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
+        eval_path=os.path.join(main_dir, 'util_models', 'BlockPush_sac.pkl'),
         env_kwargs={'config': dict(
-            env_name='Valve',
+            env_name='BlockPush',
             env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
-            oracle='keyboard',
-            oracle_kwargs=dict(
-                threshold=.5,
-            ),
-            action_type='disc_traj',
+            action_type='joint',
+            # action_grab=True,
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal',],
+            adapts=['goal'],
             state_type=0,
             apply_projection=False,
             reward_max=0,
@@ -110,7 +108,7 @@ if __name__ == "__main__":
 
         on_policy=True,
         p=1,
-        num_episodes=100,
+        num_episodes=1000,
         path_length=path_length,
         save_name_suffix=args.suffix,
 
@@ -125,9 +123,13 @@ if __name__ == "__main__":
     def process_args(variant):
         variant['env_kwargs']['config']['seedid'] = variant['seedid']
         variant['save_name'] = \
-            f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
-            + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+            f"{variant['env_kwargs']['config']['env_name']}" \
+            + f"_{variant['num_episodes']}" \
             + "_" + variant['save_name_suffix']
+        # variant['save_name'] = \
+        #     f"{variant['env_kwargs']['config']['env_name']}" \
+        #     + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+        #     + "_" + variant['save_name_suffix']
 
 
     if args.use_ray:
@@ -159,7 +161,7 @@ if __name__ == "__main__":
                 return collect_demonstrations(variant)
 
 
-        num_workers = 16
+        num_workers = args.num_workers
         variant['num_episodes'] = variant['num_episodes'] // num_workers
 
         samplers = [Sampler.remote() for i in range(num_workers)]

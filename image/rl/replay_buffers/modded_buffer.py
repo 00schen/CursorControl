@@ -10,6 +10,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
             env,
             env_info_sizes={'episode_success': 1},
             # env_info_sizes={'noop':1,},
+            obs_feature_sizes={},
             sample_base=0,
             latent_size=3,
             store_latents=True,
@@ -28,6 +29,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
 
         iter_dict = {'goal': env.goal_size}
         iter_dict.update(env.feature_sizes)
+        iter_dict.update(obs_feature_sizes)
 
         # window functionality only works if replay buffer never becomes full / old entries never discarded
         self.window_size = window_size
@@ -78,7 +80,8 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         super().add_sample(observation['raw_obs'], action, reward, terminal,
                            next_observation['raw_obs'], env_info=env_info, **kwargs)
 
-    def _get_batch(self, indices):
+    def _get_batch(self, batch_size):
+        indices = np.random.choice(self._size, size=batch_size, replace=self._replace or self._size < batch_size)
         batch = dict(
             observations=self._observations[indices],
             actions=self._actions[indices],

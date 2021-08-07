@@ -21,7 +21,24 @@ class KeyboardPolicy:
                 self.action = np.zeros(6)
                 self.action[inputs.index(key)] = 1
                 noop = False
-        return self.action, {}
+        info = dict(keys=keys)
+        return self.action, info
 
     def reset(self):
         self.action = np.zeros(6)
+
+class GrabKeyboardPolicy(KeyboardPolicy):
+    def __init__(self):
+        super().__init__()
+        self.grab = False
+
+    def get_action(self, obs):
+        action, info = super().get_action(obs)
+        if ord('a') in info['keys']:
+            self.grab = not self.grab
+        action = np.concatenate([action, [self.grab]])
+        return action, info
+
+    def reset(self):
+        super().reset()
+        self.grab = False    

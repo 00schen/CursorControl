@@ -201,7 +201,8 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.1}[args.env_name]
+                      'PointReach': 0.1,
+                      'Valve': 0.2}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
 
@@ -270,7 +271,7 @@ if __name__ == "__main__":
         'lr': [1e-3],
         'algorithm_args.num_trains_per_train_loop': [50],
         'env_config.feature': [None],
-        'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        'seedid': [0, 1, 2,],
         'freeze_decoder': [True],
     }
 
@@ -316,6 +317,13 @@ if __name__ == "__main__":
 
                           },
                      'Valve':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': None},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': None,
+                                        'num_trains_per_train_loop': 0},
+                          },
+                    'PointReach':
                          {'default': {'calibrate_split': False,
                                       'calibration_indices': None},
                           'no_online': {'calibrate_split': False,

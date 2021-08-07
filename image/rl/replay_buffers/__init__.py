@@ -1,1 +1,2 @@
 from .modded_buffer import ModdedReplayBuffer
+from .modded_traj_buffer import ModdedTrajReplayBuffer
