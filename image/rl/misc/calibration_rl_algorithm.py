@@ -164,8 +164,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                 # if not self.expl_env.env_name == 'Valve':
                                 #     for failed_path in failed_paths + [path]:
                                 #         for i in range(len(failed_path['observations'])):
-                                #             failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
-                                #             failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
+                                #             failed_path['observations'][i]['ground_truth'] = wrong_reached_goal.copy()
+                                #             failed_path['next_observations'][i]['ground_truth'] = wrong_reached_goal.copy()
 
                             break
                         elif p.B3G_SHIFT in keys and keys[p.B3G_SHIFT] & p.KEY_WAS_TRIGGERED:
@@ -196,8 +196,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     new_goal = np.array([np.sin(new_target_angle), np.cos(new_target_angle)])
                     for path in paths_to_add:
                         for i in range(len(path['observations'])):
-                            path['observations'][i]['goal'] = new_goal.copy()
-                            path['next_observations'][i]['goal'] = new_goal.copy()
+                            path['observations'][i]['ground_truth'] = new_goal.copy()
+                            path['next_observations'][i]['ground_truth'] = new_goal.copy()
 
                 self.replay_buffer.add_paths(paths_to_add)
                 gt.stamp('data storing', unique=False)

@@ -110,7 +110,7 @@ class ValveEnv(AssistiveEnv):
             'direction': direction,
 
             'joints': robot_joint_positions,
-            'goal': self.goal.copy(),
+            'ground_truth': self.goal.copy(),
         }
         return obs
 

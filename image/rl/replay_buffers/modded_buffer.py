@@ -23,7 +23,7 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         self._obs_dict = {}
         self._next_obs_dict = {}
         self._obs_dict_sizes = {
-            'goal': env.base_goal_size,
+            'ground_truth': env.base_goal_size,
             'goal_obs': env.goal_space.low.size,
         }
 

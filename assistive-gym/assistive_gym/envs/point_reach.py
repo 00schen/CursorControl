@@ -12,11 +12,11 @@ from collections import OrderedDict
 
 reach_arena = (np.array([-.25, -.5, 1]), np.array([.6, .4, .2]))
 default_orientation = p.getQuaternionFromEuler([0, 0, 0])
-
+bottle_offset = np.array([0, 0, .05])
 
 class PointReachEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05,session_goal=False, frame_skip=5,
-                 capture_frames=False, stochastic=True, debug=False, step_limit=200, **kwargs):
+                 capture_frames=False, stochastic=True, debug=False, step_limit=500, **kwargs):
         super().__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                         action_robot_len=7, obs_robot_len=14)
         self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 7,), dtype=np.float32)  # TODO: observation space size
@@ -44,7 +44,7 @@ class PointReachEnv(AssistiveEnv):
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
-        if norm(self.tool_pos - self.bottle_pos):
+        if norm(self.tool_pos - self.bottle_pos) < self.success_dist:
             self.target1_reached = True
         self.task_success = norm(self.bottle_pos - self.target_pos) < self.success_dist
 
@@ -58,7 +58,7 @@ class PointReachEnv(AssistiveEnv):
         reward = self.task_success
         obs = self._get_obs(old_tool_pos)
         info = self._get_obs(old_tool_pos)
-        done = False
+        done = self.task_success
 
         return obs, reward, done, info
 
@@ -69,18 +69,23 @@ class PointReachEnv(AssistiveEnv):
 
         obs = {
             'task_success': self.task_success,
-            'old_tool_pos': old_tool_pos,
+            'target1_reached': self.target1_reached,
             'target_index': self.target_index,
 
+            'old_tool_pos': old_tool_pos.copy(),
             'tool_pos': self.tool_pos,
-            'sub_target': self.sub_target_pos.copy(),
+            'tool_orient': self.tool_orient,
             'target_pos': self.target_pos,
-            'org_bottle_pos': self.org_bottle_pos
+            'org_bottle_pos': self.org_bottle_pos,
+
+            'joints': robot_joint_positions,
+            'ground_truth': self.goal.copy(),
         }
         return obs
 
     def reset(self):
         self.task_success = False
+        self.target1_reached = False
 
         """set up standard environment"""
         self.setup_timing()
@@ -179,15 +184,14 @@ class PointReachEnv(AssistiveEnv):
         self.table_offset = 0.1 if split else 0
 
     def generate_target(self):
-        table_boundary = [.2, .1, 0]
-        target_pos = self.target_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
-                                        + self.table_pos + np.array([0, 0, .1])
+        table_boundary = [.25, .15, 0]
+        table_center = (self.table_pos + np.array([0, .2, .75])) + bottle_offset
+        target_pos = self.target_pos = table_boundary * self.np_random.uniform(-1, 1, 3) + table_center
 
         bottle_pos = self.org_bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
-                                        + self.table_pos + np.array([0, 0, .1])
+                     + table_center - bottle_offset
         while norm(bottle_pos - target_pos) < .1:
-            bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) \
-                                        + self.table_pos + np.array([0, 0, .1])
+            bottle_pos = table_boundary * self.np_random.uniform(-1, 1, 3) + table_center - bottle_offset
         self.bottle = p.loadURDF(os.path.join(self.world_creation.directory, 'bottle', 'bottle.urdf'),
                                  basePosition=bottle_pos, useFixedBase=True,
                                  baseOrientation=default_orientation, globalScaling=.01,
@@ -203,7 +207,7 @@ class PointReachEnv(AssistiveEnv):
 
     def update_targets(self):
         if self.target1_reached:
-            p.resetBasePositionAndOrientation(self.bottle, self.tool_pos - np.array([0, 0, .05]),
+            p.resetBasePositionAndOrientation(self.bottle, self.tool_pos - bottle_offset,
                                             default_orientation, physicsClientId=self.id)
 
     @property
@@ -216,8 +220,8 @@ class PointReachEnv(AssistiveEnv):
 
     @property
     def bottle_pos(self):
-        return np.array(p.getBasePositionAndOrientation(self.botle_pos, physicsClientId=self.id)[0]) \
-                     + np.array([0, 0, .05])
+        return np.array(p.getBasePositionAndOrientation(self.bottle, physicsClientId=self.id)[0]) \
+                     + bottle_offset
 
 class PointReachJacoEnv(PointReachEnv):
     def __init__(self, **kwargs):

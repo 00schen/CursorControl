@@ -99,7 +99,7 @@ class BottleEnv(AssistiveEnv):
             'goal_set': self.bottle_poses,
 
             'joints': robot_joint_positions,
-            'goal': self.goal.copy(),
+            'ground_truth': self.goal.copy(),
         }
         return obs
 

@@ -17,7 +17,6 @@ import torch
 from gaze_capture.face_processor import FaceProcessor
 from gaze_capture.ITrackerModel import ITrackerModel
 import threading
-from rl.oracles import *
 
 main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -84,10 +83,10 @@ class LibraryWrapper(Env):
         self.terminate_on_failure = config['terminate_on_failure']
 
         self.feature_sizes = {
-            "OneSwitch": OrderedDict({'tool_pos':3, 'tool_orient': 4, 'goal_set': 20}),
-            "Bottle": OrderedDict({'tool_pos':3, 'tool_orient': 4, 'shelf_pos': 3}),
+            "OneSwitch": OrderedDict({'tool_pos':3, 'tool_orient': 4, 'goal_set': 20, 'joints': 7}),
+            "Bottle": OrderedDict({'tool_pos':3, 'tool_orient': 4, 'shelf_pos': 3, 'joints': 7}),
             "Valve": {},
-            "PointReach": {},
+            "PointReach": OrderedDict({'tool_pos':3, 'tool_orient': 4, 'target1_reached': 1, 'joints': 7}),
         }[config['env_name']]
 
         self.base_goal_size = sum(self.base_env.goal_feat_sizes.values())
@@ -131,13 +130,10 @@ def action_factory(base):
                 'joint': self.joint,
                 'disc_traj': self.disc_traj,
             }[config['action_type']]
-            self.smooth_alpha = config['smooth_alpha']
 
         def joint(self, action, info={}):
             clip_by_norm = lambda traj, limit: traj / max(1e-4, norm(traj)) * np.clip(norm(traj), None, limit)
             action = clip_by_norm(action, .25)
-            self.action = self.smooth_alpha * action + (1 - self.smooth_alpha) * self.action if np.count_nonzero(
-                self.action) else action
             info['joint'] = self.action
             return action, info
 
@@ -346,7 +342,7 @@ class sim_target(Adapter):
         return obs
 
     def add_target(self, obs):
-        target = obs['goal']
+        target = obs['ground_truth']
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['gaze_features'] = target + noise
 

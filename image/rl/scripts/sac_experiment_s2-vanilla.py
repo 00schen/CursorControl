@@ -166,7 +166,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal','dict_to_array','reward'],
+            adapts=['ground_truth','dict_to_array','reward'],
             reward_type='sparse',
             reward_max=0,
             reward_min=-1,

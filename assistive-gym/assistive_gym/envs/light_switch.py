@@ -178,7 +178,7 @@ class LightSwitchEnv(AssistiveEnv):
             'aux_switch_pos': np.array(self.target_pos1).copy(),
             'switch_orient': switch_orient,
 
-            'goal':self.goal.copy(),
+            'ground_truth':self.goal.copy(),
             'goal_set':np.concatenate((self.goal_positions, np.array(self.lever_angles)[:, None]),
                                     axis=1),
             'joints': robot_joint_positions,

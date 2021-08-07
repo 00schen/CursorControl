@@ -1,4 +1,4 @@
-from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy
+from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy, PointReachOracle
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 import rlkit.pythonplusplus as ppp
@@ -31,9 +31,8 @@ def collect_demonstrations(variant):
     #     deterministic=False
     # )
 
-    # policy = FollowerPolicy(env)
-    # policy = DemonstrationPolicy(policy, env, p=variant['p'])
-    policy = KeyboardPolicy()
+    policy = PointReachOracle()
+    # policy = KeyboardPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -86,15 +85,11 @@ if __name__ == "__main__":
             env_name='PointReach',
             env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
-            oracle='keyboard',
-            oracle_kwargs=dict(
-                threshold=.5,
-            ),
-            action_type='disc_traj',
+            action_type='trajectory',
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal',],
+            adapts=['ground_truth'],
             state_type=0,
             apply_projection=False,
             reward_max=0,
@@ -125,9 +120,13 @@ if __name__ == "__main__":
     def process_args(variant):
         variant['env_kwargs']['config']['seedid'] = variant['seedid']
         variant['save_name'] = \
-            f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
-            + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+            f"{variant['env_kwargs']['config']['env_name']}" \
+            + f"_{variant['num_episodes']}" \
             + "_" + variant['save_name_suffix']
+        # variant['save_name'] = \
+        #     f"{variant['env_kwargs']['config']['env_name']}" \
+        #     + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+        #     + "_" + variant['save_name_suffix']
 
 
     if args.use_ray:
