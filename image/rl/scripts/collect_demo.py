@@ -83,7 +83,7 @@ if __name__ == "__main__":
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
-            env_name='Valve',
+            env_name='PointReach',
             env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
             oracle='keyboard',

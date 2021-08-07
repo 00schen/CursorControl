@@ -34,7 +34,6 @@ def default_overhead(config):
             super().__init__(config)
             self.rng = default_rng(config['seedid'])
             adapt_map = {
-                'oracle': oracle,
                 'static_gaze': static_gaze,
                 'real_gaze': real_gaze,
                 'joint': joint,
@@ -47,8 +46,8 @@ def default_overhead(config):
             self.adapts = [adapt(self, config) for adapt in self.adapts]
             self.adapt_step = lambda obs, r, done, info: reduce(lambda sub_tran, adapt: adapt._step(*sub_tran),
                                                                 self.adapts, (obs, r, done, info))
-            self.adapt_reset = lambda obs, info=None: reduce(lambda obs, adapt: adapt._reset(obs, info), self.adapts,
-                                                             (obs))
+            self.adapt_reset = lambda obs: reduce(lambda obs, adapt: adapt._reset(obs), 
+                                                                self.adapts, obs)
 
         def step(self, action):
             tran = super().step(action)
@@ -70,6 +69,7 @@ class LibraryWrapper(Env):
             "OneSwitch": ag.OneSwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
             "Valve": ag.ValveJacoEnv,
+            "PointReach": ag.PointReachJacoEnv,
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
