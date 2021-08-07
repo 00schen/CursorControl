@@ -44,6 +44,8 @@ class PointReachEnv(AssistiveEnv):
 
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
+        if norm(self.tool_pos - self.bottle_pos):
+            self.target1_reached = True
         self.task_success = norm(self.bottle_pos - self.target_pos) < self.success_dist
 
         if self.task_success:
@@ -200,7 +202,8 @@ class PointReachEnv(AssistiveEnv):
         self.update_targets()
 
     def update_targets(self):
-        p.resetBasePositionAndOrientation(self.bottle, self.tool_pos - np.array([0, 0, .05]),
+        if self.target1_reached:
+            p.resetBasePositionAndOrientation(self.bottle, self.tool_pos - np.array([0, 0, .05]),
                                             default_orientation, physicsClientId=self.id)
 
     @property
@@ -213,7 +216,8 @@ class PointReachEnv(AssistiveEnv):
 
     @property
     def bottle_pos(self):
-        return np.array(p.getBasePositionAndOrientation(self.botle_pos, physicsClientId=self.id)[0])
+        return np.array(p.getBasePositionAndOrientation(self.botle_pos, physicsClientId=self.id)[0]) \
+                     + np.array([0, 0, .05])
 
 class PointReachJacoEnv(PointReachEnv):
     def __init__(self, **kwargs):

@@ -17,8 +17,6 @@ import os
 from pathlib import Path
 import rlkit.util.hyperparameter as hyp
 import argparse
-from functools import reduce
-import operator
 import numpy as np
 
 
@@ -31,10 +29,9 @@ def experiment(variant):
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
-    obs_dim = feat_dim + sum(env.feature_sizes.values())
-
+    feat_dim = env.observation_space.low.size
+    goal_dim = env.goal_space.low.size
+    obs_dim = feat_dim + goal_dim
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -64,7 +61,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
+        vae = VAE(input_size=obs_dim if variant['incl_state'] else goal_dim,
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -224,7 +221,7 @@ if __name__ == "__main__":
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
             reward_type='valve_exp',

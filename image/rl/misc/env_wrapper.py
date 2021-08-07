@@ -375,34 +375,32 @@ class reward(Adapter):
         self.reward_offset = config.get('reward_offset')
 
     def _step(self, obs, r, done, info):
-        if self.reward_type == 'custom':
-            r = -1
-            r += np.exp(-norm(info['tool_pos'] - info['target1_pos'])) / 2
-            if info['target1_reached']:
-                r = -.5
-                r += np.exp(-norm(info['tool_pos'] - info['target_pos'])) / 2
-            if info['task_success']:
-                r = 0
-        elif self.reward_type == 'dist':
+        if self.reward_type == 'dist':
             r = 0
             if not info['task_success']:
                 dist = np.linalg.norm(info['tool_pos'] - info['target_pos'])
                 r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset)) - 1
+        elif self.reward_type == 'sparse':
+            r = -1 + info['task_success']
+        elif self.reward_type == 'part_sparse':
+            r = -1 + .5 * (info['task_success'] + info['door_open'])
+
         elif self.reward_type == 'custom_switch':
             r = 0
             if not info['task_success']:
                 dist = np.linalg.norm(info['tool_pos'] - info['switch_pos'][info['target_index']])
                 r = np.exp(-self.reward_temp * dist + np.log(1 + self.reward_offset)) - 1
-
-        elif self.reward_type == 'sparse':
-            r = -1 + info['task_success']
-        elif self.reward_type == 'part_sparse':
-            r = -1 + .5 * (info['task_success'] + info['door_open'])
-        elif self.reward_type == 'part_sparse_kitchen':
-            r = -1 + sum(info['tasks']) / 6
         elif self.reward_type == 'valve_exp':
             dist = np.abs(self.master_env.base_env.angle_diff(info['valve_angle'], info['target_angle']))
             r = np.exp(-self.reward_temp * dist) - 1
+        elif self.reward_type == 'reachpoint_exp':
+            r = -1
+            r += np.exp(-norm(info['tool_pos'] - info['org_bottle_pos'])) / 2
+            if info['target1_reached']:
+                r = -.5
+                r += np.exp(-norm(info['tool_pos'] - info['target_pos'])) / 2
+            if info['task_success']:
+                r = 0
         else:
             raise Exception
 
