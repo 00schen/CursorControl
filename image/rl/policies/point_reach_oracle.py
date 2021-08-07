@@ -25,4 +25,6 @@ class PointReachOracle(Oracle):
             target_pos = obs['goal_obs'][:3]
 
         traj = target_pos - tool_pos
+        
+
         return traj, {}

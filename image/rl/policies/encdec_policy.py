@@ -30,10 +30,10 @@ class EncDecPolicy(PyTorchModule):
         self.curr_vae = None
 
     def get_action(self, obs):
-        features = [obs[k] for k in self.features_keys]
+        # features = [obs[k] for k in self.features_keys]
+        features = [obs['goal_obs']]
+        raw_obs = obs['raw_obs']
         with th.no_grad():
-            raw_obs = obs['raw_obs']
-
             if self.random_latent:
                 pred_features = self.episode_latent.detach().cpu().numpy()
             elif len(self.vaes):

@@ -73,6 +73,8 @@ if __name__ == "__main__":
     parser.add_argument('--suffix', default='test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
+    parser.add_argument('--num_workers', type=int, default=1)
+
     args, _ = parser.parse_known_args()
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
@@ -158,7 +160,7 @@ if __name__ == "__main__":
                 return collect_demonstrations(variant)
 
 
-        num_workers = 16
+        num_workers = args.num_workers
         variant['num_episodes'] = variant['num_episodes'] // num_workers
 
         samplers = [Sampler.remote() for i in range(num_workers)]

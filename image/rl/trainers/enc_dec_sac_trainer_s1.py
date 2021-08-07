@@ -128,8 +128,8 @@ class EncDecSACTrainer(SACTrainer):
         obs = batch['observations']
         actions = batch['actions']
         next_obs = batch['next_observations']
-        curr_goal = batch['curr_goal']
-        next_goal = batch['next_goal']
+        curr_goal = batch['curr_goal_obs']
+        next_goal = batch['next_goal_obs']
 
         batch_size = obs.shape[0]
 

@@ -379,7 +379,7 @@ class reward(Adapter):
         elif self.reward_type == 'sparse':
             r = -1 + info['task_success']
         elif self.reward_type == 'part_sparse':
-            r = -1 + .5 * (info['task_success'] + info['door_open'])
+            r = -1 + .5 * (info['task_success'] + info['target1_reached'])
 
         elif self.reward_type == 'custom_switch':
             r = 0

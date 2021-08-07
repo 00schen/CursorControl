@@ -186,9 +186,9 @@ if __name__ == "__main__":
         latent_size=2,
         layer_size=256,
         incl_state=args.incl_state,
-        pretrain_steps=25000,
+        pretrain_steps=5000,
         algorithm_args=dict(
-            num_epochs=5000,
+            num_epochs=100000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -210,7 +210,7 @@ if __name__ == "__main__":
             beta=0 if args.det else 0.0001
         ),
         demo_paths=[
-            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_100_test.npy"),
+            os.path.join(main_dir, "demos", f"{args.env_name}_1000_optimal.npy"),
         ],
         env_config=dict(
             terminate_on_failure=False,
@@ -224,18 +224,18 @@ if __name__ == "__main__":
             adapts=['sim_target', 'reward'],
             gaze_dim=128,
             state_type=0,
-            reward_type='pointreach_exp',
+            reward_type='part_sparse',
             reward_min=None,
             reward_max=0,
             reward_temp=5
         )
     )
     search_space = {
-        'seedid': [2000],
+        'seedid': [2000, 2001, 2002],
         'from_pretrain': [False],
-        'algorithm_args.num_trains_per_train_loop': [1000],
+        'algorithm_args.num_trains_per_train_loop': [100, 1000],
         'replay_buffer_size': [int(1e6)],
-        'demo_path_proportions': [[]],
+        'demo_path_proportions': [[1000]],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

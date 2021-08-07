@@ -63,8 +63,8 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         terminals = batch['terminals']
         actions = batch['actions']
         next_obs = batch['next_observations']
-        curr_goal = batch['curr_goal']
-        next_goal = batch['next_goal']
+        curr_goal = batch['curr_goal_obs']
+        next_goal = batch['next_goal_obs']
         batch_size = obs.shape[0]
 
         curr_encoder_features = [curr_goal]
