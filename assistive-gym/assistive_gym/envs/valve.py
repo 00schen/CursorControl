@@ -18,7 +18,7 @@ class ValveEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
                  capture_frames=False, stochastic=True, debug=False, min_error_threshold=np.pi / 16,
                  max_error_threshold=np.pi / 4, num_targets=None, use_rand_init_angle=True, term_cond=None,
-                 term_thresh=10):
+                 term_thresh=10, preserve_angle=False):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
         self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7,), dtype=np.float32)
@@ -32,12 +32,15 @@ class ValveEnv(AssistiveEnv):
         self.use_rand_init_angle = use_rand_init_angle
 
         if self.num_targets is not None:
-            self.target_indices = list(np.arange(self.num_targets))
             self.target_angles = np.linspace(-np.pi, np.pi, self.num_targets, endpoint=False)
+            # self.target_angles = np.delete(self.target_angles, np.argwhere(self.target_angles == 0))
+            self.target_indices = np.arange(len(self.target_angles))
 
         self.min_error_threshold = min_error_threshold
         self.max_error_threshold = max_error_threshold
         self.error_threshold = min_error_threshold
+        self.preserve_angle = preserve_angle
+        self.last_angle = None
 
         self.wall_color = None
         self.calibrate = False
@@ -84,6 +87,7 @@ class ValveEnv(AssistiveEnv):
             'target_angle': self.target_angle,
             'error_threshold': self.error_threshold,
             'direction': direction,
+            'angle_error': self.angle_diff(self.valve_angle, self.target_angle)
         }
         done = False
         if self.term_cond == 'auto':
@@ -116,6 +120,8 @@ class ValveEnv(AssistiveEnv):
             hindsight_goal=np.array([np.sin(self.valve_angle), np.cos(self.valve_angle)]),
             goal=self.goal.copy(),
         )
+
+        self.last_angle = self.valve_angle
         return robot_obs
 
     def update_curriculum(self, success):
@@ -175,7 +181,10 @@ class ValveEnv(AssistiveEnv):
                                 baseOrientation=valve_orient, globalScaling=1,
                                 physicsClientId=self.id)
 
-        if self.use_rand_init_angle:
+        if self.preserve_angle and self.last_angle is not None:
+            p.resetJointState(self.valve, 0, self.last_angle, physicsClientId=self.id)
+
+        elif self.use_rand_init_angle:
             p.resetJointState(self.valve, 0, self.rand_init_angle, physicsClientId=self.id)
 
         """configure pybullet"""
@@ -183,7 +192,7 @@ class ValveEnv(AssistiveEnv):
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
         # Enable rendering
         p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=-10,
-                                     cameraTargetPosition=[0, -.4, 1.1], physicsClientId=self.id)
+                                     cameraTargetPosition=[0, -.3, 1.1], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
 
         self.goal = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
@@ -191,7 +200,7 @@ class ValveEnv(AssistiveEnv):
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05,
                                             rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
 
-        target_coord = 0.4 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
+        target_coord = 0.55 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
                        [0, 0.105, 0]
 
         self.target_indicator = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1,
@@ -237,7 +246,12 @@ class ValveEnv(AssistiveEnv):
         self.rand_init_angle = (np.random.rand() - 0.5) * 2 * np.pi
 
         # init angle either self.rand_init_angle or 0
-        avoid = self.rand_init_angle if self.use_rand_init_angle else 0
+        if self.preserve_angle and self.last_angle is not None:
+            avoid = self.last_angle
+        elif self.use_rand_init_angle:
+            avoid = self.rand_init_angle
+        else:
+            avoid = 0
 
         self.rand_angle = None
         while self.rand_angle is None or np.abs(self.angle_diff(self.rand_angle, avoid)) < self.error_threshold:

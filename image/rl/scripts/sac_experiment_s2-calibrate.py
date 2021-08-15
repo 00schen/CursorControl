@@ -135,9 +135,7 @@ def experiment(variant):
         **variant['trainer_kwargs']
     )
 
-    if variant['keep_calibration_data']:
-        calibration_buffer = replay_buffer
-    else:
+    if variant['balance_calibration']:
         calibration_buffer = ModdedReplayBuffer(
             variant['replay_buffer_size'],
             env,
@@ -145,6 +143,8 @@ def experiment(variant):
             latent_size=variant['latent_size'],
             store_latents=True
         )
+    else:
+        calibration_buffer = None
 
     if variant['real_user']:
         variant['algorithm_args']['eval_paths'] = False
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -212,7 +212,7 @@ if __name__ == "__main__":
         latent_size=latent_size,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
-        keep_calibration_data=True,
+        balance_calibration=True,
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else beta,
@@ -239,9 +239,9 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=False, num_targets=4, min_error_threshold=np.pi / 8,
-                            use_rand_init_angle=False,
-                            term_cond='auto'),
+                            stochastic=False, num_targets=4, min_error_threshold=np.pi / 16,
+                            use_rand_init_angle=True,
+                            term_cond='keyboard'),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
@@ -257,7 +257,7 @@ if __name__ == "__main__":
         'n_layers': [1],
         'n_encoders': [1],
         'sample': [False],
-        'algorithm_args.trajs_per_index': [2],
+        'algorithm_args.trajs_per_index': [1],
         'lr': [5e-4],
         'algorithm_args.num_trains_per_train_loop': [100],
         'env_config.feature': [None],

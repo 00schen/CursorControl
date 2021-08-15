@@ -53,12 +53,18 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         if self.real_user:
             self.metrics['correct_rewards'] = []
             self.metrics['correct_blocks'] = []
+            self.metrics['user_feedback'] = []
 
-    def _sample_and_train(self, steps, buffer):
+        if self.expl_env.env_name == 'Valve':
+            self.metrics['final_angle_error'] = []
+            self.metrics['init_angle_error'] = []
+
+    def _sample_and_train(self, steps, buffers):
         self.training_mode(True)
         for _ in range(steps):
             for _ in range(len(self.trainer.vaes)):
-                train_data = buffer.random_batch(self.batch_size)
+                batches = [buffer.random_batch(self.batch_size) for buffer in buffers]
+                train_data = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0].keys()}
                 self.trainer.train(train_data)
         gt.stamp('training', unique=False)
         self.training_mode(False)
@@ -69,6 +75,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
         calibration_data = []
 
+        # the buffer actually used for calibration
+        calibration_buffer = self.calibration_buffer if self.calibration_buffer is not None else self.replay_buffer
+
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
                 self.expl_env.new_goal(index)
@@ -78,13 +87,14 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     discard_incomplete_paths=False,
                 )
                 self.calibration_data_collector.end_epoch(-1)
-                self.calibration_buffer.add_paths(calibration_paths)
+
+                calibration_buffer.add_paths(calibration_paths)
                 calibration_data.extend(calibration_paths)
 
         logger.save_extra_data(calibration_data, 'calibration_data.pkl', mode='pickle')
 
         gt.stamp('pretrain exploring', unique=False)
-        self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
+        self._sample_and_train(self.pretrain_steps, [calibration_buffer])
 
         self.expl_env.seed(self.seedid + 100)
         self.eval_env.seed(self.seedid + 200)
@@ -125,6 +135,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
             gt.stamp('exploration sampling', unique=False)
             if self.real_user:
+                success = None
                 # automate reward if timeout and not valve env
                 if timeout and not self.expl_env.env_name == 'Valve':
                     time.sleep(1)
@@ -134,7 +145,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 elif self.expl_env.env_name == 'Valve':
                     success = path['env_infos'][-1]['feedback']
 
-                else:
+                if not isinstance(success, bool):
                     while True:
                         keys = p.getKeyboardEvents()
 
@@ -173,12 +184,17 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             break
 
                     self.metrics['correct_rewards'].append(success == real_success)
+                    self.metrics['user_feedback'].append(success)
 
             else:
                 success = real_success
 
             self.metrics['success_episodes'].append(real_success)
             self.metrics['episode_lengths'].append(len(path['observations']))
+
+            if self.expl_env.env_name == 'Valve':
+                self.metrics['final_angle_error'].append(path['env_infos'][-1]['angle_error'])
+                self.metrics['init_angle_error'].append(path['env_infos'][0]['angle_error'])
 
             if success:
                 successful_paths.append(path)
@@ -201,7 +217,11 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
                 self.replay_buffer.add_paths(paths_to_add)
                 gt.stamp('data storing', unique=False)
-                self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
+
+                buffers = [self.replay_buffer]
+                if self.calibration_buffer is not None:
+                    buffers.append(self.calibration_buffer)
+                self._sample_and_train(self.num_trains_per_train_loop, buffers)
 
             block_timeout = len(failed_paths) >= self.max_failures
             if success or block_timeout or epoch == self.num_epochs - 1:
@@ -220,5 +240,5 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
             self._end_epoch(epoch)
 
-        logger.save_extra_data(self.metrics, 'metrics.pkl', mode='pickle')
-        logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
+            logger.save_extra_data(self.metrics, 'metrics.pkl', mode='pickle')
+            logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
