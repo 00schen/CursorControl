@@ -182,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -247,7 +247,7 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 8,
+                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 16,
                             use_rand_init_angle=False, term_thresh=20,
                             term_cond='keyboard' if not args.sim else 'auto'),
             action_type='joint',

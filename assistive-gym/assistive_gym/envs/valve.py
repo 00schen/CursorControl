@@ -191,7 +191,7 @@ class ValveEnv(AssistiveEnv):
 
         self.goal = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
 
-        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05,
+        sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.1,
                                             rgbaColor=[1, 0, 0, 1], physicsClientId=self.id)
 
         target_coord = 0.55 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
