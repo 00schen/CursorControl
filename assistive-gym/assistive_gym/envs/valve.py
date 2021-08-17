@@ -7,7 +7,6 @@ from .env import AssistiveEnv
 from gym.utils import seeding
 from collections import OrderedDict
 import os
-import threading
 import time
 
 reach_arena = (np.array([-.25, -.5, 1]), np.array([.6, .4, .2]))
@@ -18,7 +17,7 @@ class ValveEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
                  capture_frames=False, stochastic=True, debug=False, min_error_threshold=np.pi / 16,
                  max_error_threshold=np.pi / 4, num_targets=None, use_rand_init_angle=True, term_cond=None,
-                 term_thresh=10, preserve_angle=False):
+                 term_thresh=20, preserve_angle=False):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
         self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7,), dtype=np.float32)
@@ -62,12 +61,6 @@ class ValveEnv(AssistiveEnv):
 
         obs = self._get_obs([0])
 
-        if self.task_success:
-            color = [0, 1, 0, 1]
-        else:
-            color = [1, 0, 0, 1]
-        p.changeVisualShape(self.target_indicator, -1, rgbaColor=color)
-
         reward = np.exp(-np.abs(self.angle_diff(self.valve_angle, self.target_angle))) - 1
 
         direction = np.zeros(3)
@@ -78,6 +71,14 @@ class ValveEnv(AssistiveEnv):
             index = 1 if self.angle_diff(self.valve_angle, self.target_angle) > 0 else 2
             self.n_success = 0
         direction[index] = 1
+
+        if self.n_success >= self.term_thresh:
+            color = [0, 1, 0, 1]
+        elif self.task_success:
+            color = [0, 0, 1, 1]
+        else:
+            color = [1, 0, 0, 1]
+        p.changeVisualShape(self.target_indicator, -1, rgbaColor=color)
 
         info = {
             'task_success': self.task_success,
@@ -95,18 +96,10 @@ class ValveEnv(AssistiveEnv):
             done = self.n_success >= self.term_thresh
         elif self.term_cond == 'keyboard':
             keys = p.getKeyboardEvents()
-            if p.B3G_RETURN in keys and keys[p.B3G_RETURN] & p.KEY_WAS_TRIGGERED:
+            if self.n_success >= self.term_thresh and p.B3G_RETURN in keys and keys[p.B3G_RETURN] & p.KEY_WAS_TRIGGERED:
                 done = True
-                info['feedback'] = True
-
-            elif p.B3G_SHIFT in keys and keys[p.B3G_SHIFT] & p.KEY_WAS_TRIGGERED:
-                done = True
-                info['feedback'] = False
-
-            else:
-                info['feedback'] = -1
-            if done:
                 time.sleep(1)
+        info['feedback'] = True if done else -1
 
         return obs, reward, done, info
 
@@ -199,7 +192,7 @@ class ValveEnv(AssistiveEnv):
         self.goal = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
 
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05,
-                                            rgbaColor=[0, 0, 1, 1], physicsClientId=self.id)
+                                            rgbaColor=[1, 0, 0, 1], physicsClientId=self.id)
 
         target_coord = 0.55 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
                        [0, 0.105, 0]

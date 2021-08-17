@@ -11,7 +11,7 @@ import random
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False, random_latent=False):
+                 deterministic=False, random_latent=False, window=20, exp_avg=0.9):
         super().__init__()
 
         self.vaes = vaes if vaes is not None else []
@@ -28,6 +28,10 @@ class EncDecPolicy(PyTorchModule):
         self.random_latent = random_latent
         self.episode_latent = None
         self.curr_vae = None
+        self.window = window
+        self.exp_avg = exp_avg
+        self.past_latents = []
+        self.exp_avg_latent = None
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -50,7 +54,19 @@ class EncDecPolicy(PyTorchModule):
 
             obs['latents'] = pred_features
 
-            policy_input = [raw_obs, pred_features]
+            if self.window is not None:
+                self.past_latents.append(pred_features)
+                self.past_latents = self.past_latents[-self.window:]
+                avg_latent = np.mean(self.past_latents, axis=0)
+
+            else:
+                if self.exp_avg_latent is None:
+                    self.exp_avg_latent = pred_features
+                else:
+                    self.exp_avg_latent = (1 - self.exp_avg) * self.exp_avg_latent + self.exp_avg * pred_features
+                avg_latent = self.exp_avg_latent
+
+            policy_input = [raw_obs, avg_latent]
             if goal_set is not None:
                 policy_input.insert(1, goal_set.ravel())
             action = self.policy.get_action(*policy_input)
@@ -62,6 +78,8 @@ class EncDecPolicy(PyTorchModule):
         self.policy.reset()
         if len(self.vaes):
             self.curr_vae = random.choice(self.vaes)
+        self.past_latents = []
+        self.exp_avg_latent = None
 
 
 class EncDecMakeDeterministic(PyTorchModule):

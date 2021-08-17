@@ -145,6 +145,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 elif self.expl_env.env_name == 'Valve':
                     success = path['env_infos'][-1]['feedback']
 
+                # valve success feedback is True if user terminated as a success, -1 otherwise
                 if not isinstance(success, bool):
                     while True:
                         keys = p.getKeyboardEvents()
@@ -193,8 +194,8 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             self.metrics['episode_lengths'].append(len(path['observations']))
 
             if self.expl_env.env_name == 'Valve':
-                self.metrics['final_angle_error'].append(path['env_infos'][-1]['angle_error'])
-                self.metrics['init_angle_error'].append(path['env_infos'][0]['angle_error'])
+                self.metrics['final_angle_error'].append(np.abs(path['env_infos'][-1]['angle_error']))
+                self.metrics['init_angle_error'].append(np.abs(path['env_infos'][0]['angle_error']))
 
             if success:
                 successful_paths.append(path)

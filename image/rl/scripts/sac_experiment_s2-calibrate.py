@@ -76,7 +76,9 @@ def experiment(variant):
         sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
-        random_latent=variant.get('random_latent', False)
+        random_latent=variant.get('random_latent', False),
+        window=variant['window'],
+        exp_avg=variant['exp_avg']
     )
 
     eval_policy = EncDecPolicy(
@@ -87,6 +89,8 @@ def experiment(variant):
         sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
+        window=variant['window'],
+        exp_avg=variant['exp_avg']
     )
 
     eval_path_collector = FullPathCollector(
@@ -178,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -186,6 +190,8 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
+    parser.add_argument('--window', default=None, type=int)
+    parser.add_argument('--exp_avg', default=0.1, type=int)
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -213,6 +219,8 @@ if __name__ == "__main__":
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         balance_calibration=True,
+        window=args.window,
+        exp_avg=args.exp_avg,
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else beta,
@@ -239,9 +247,9 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=False, num_targets=4, min_error_threshold=np.pi / 16,
-                            use_rand_init_angle=False,
-                            term_cond='keyboard'),
+                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 8,
+                            use_rand_init_angle=False, term_thresh=20,
+                            term_cond='keyboard' if not args.sim else 'auto'),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
