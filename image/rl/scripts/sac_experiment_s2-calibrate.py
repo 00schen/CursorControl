@@ -240,7 +240,7 @@ if __name__ == "__main__":
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
                             stochastic=False, num_targets=4, min_error_threshold=np.pi / 16,
-                            use_rand_init_angle=True,
+                            use_rand_init_angle=False,
                             term_cond='keyboard'),
             action_type='joint',
             smooth_alpha=1,

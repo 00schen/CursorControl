@@ -33,7 +33,8 @@ class ValveEnv(AssistiveEnv):
 
         if self.num_targets is not None:
             self.target_angles = np.linspace(-np.pi, np.pi, self.num_targets, endpoint=False)
-            # self.target_angles = np.delete(self.target_angles, np.argwhere(self.target_angles == 0))
+            if not self.use_rand_init_angle:
+                self.target_angles = np.delete(self.target_angles, np.argwhere(self.target_angles == 0))
             self.target_indices = np.arange(len(self.target_angles))
 
         self.min_error_threshold = min_error_threshold
