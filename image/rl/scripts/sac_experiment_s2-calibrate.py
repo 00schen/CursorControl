@@ -78,7 +78,6 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         random_latent=variant.get('random_latent', False),
         window=variant['window'],
-        exp_avg=variant['exp_avg']
     )
 
     eval_policy = EncDecPolicy(
@@ -90,7 +89,6 @@ def experiment(variant):
         deterministic=True,
         latent_size=variant['latent_size'],
         window=variant['window'],
-        exp_avg=variant['exp_avg']
     )
 
     eval_path_collector = FullPathCollector(
@@ -124,7 +122,8 @@ def experiment(variant):
         env,
         sample_base=0,
         latent_size=variant['latent_size'],
-        store_latents=True
+        store_latents=True,
+        window_size=args.window
     )
     trainer = LatentEncDecSACTrainer(
         vaes=vaes,
@@ -145,7 +144,8 @@ def experiment(variant):
             env,
             sample_base=0,
             latent_size=variant['latent_size'],
-            store_latents=True
+            store_latents=True,
+            window_size=args.window
         )
     else:
         calibration_buffer = None
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -190,8 +190,7 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
-    parser.add_argument('--window', default=None, type=int)
-    parser.add_argument('--exp_avg', default=0.1, type=int)
+    parser.add_argument('--window', default=20, type=int)
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -200,7 +199,7 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.2}[args.env_name]
+                      'Valve': 0.1}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3
 
@@ -220,13 +219,13 @@ if __name__ == "__main__":
         replay_buffer_size=int(1e4 * path_length),
         balance_calibration=True,
         window=args.window,
-        exp_avg=args.exp_avg,
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else beta,
             objective=args.objective,
             grad_norm_clip=None,
-            prev_incl_state=args.prev_incl_state
+            prev_incl_state=args.prev_incl_state,
+            window_size=args.window,
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -266,8 +265,8 @@ if __name__ == "__main__":
         'n_encoders': [1],
         'sample': [False],
         'algorithm_args.trajs_per_index': [1],
-        'lr': [5e-4],
-        'algorithm_args.num_trains_per_train_loop': [100],
+        'lr': [1e-3],
+        'algorithm_args.num_trains_per_train_loop': [50],
         'env_config.feature': [None],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         'freeze_decoder': [True],

@@ -11,7 +11,7 @@ import random
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False, random_latent=False, window=20, exp_avg=0.9):
+                 deterministic=False, random_latent=False, window=None):
         super().__init__()
 
         self.vaes = vaes if vaes is not None else []
@@ -28,10 +28,8 @@ class EncDecPolicy(PyTorchModule):
         self.random_latent = random_latent
         self.episode_latent = None
         self.curr_vae = None
-        self.window = window
-        self.exp_avg = exp_avg
-        self.past_latents = []
-        self.exp_avg_latent = None
+        self.window = window if window is not None else 1
+        self.past_factors = []
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -47,26 +45,25 @@ class EncDecPolicy(PyTorchModule):
                     if goal_set is not None:
                         features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
-                eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
-                pred_features = self.curr_vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
+                mean, logvar = self.curr_vae.encode(encoder_input)
+                self.past_factors.append((mean, logvar))
+
+                self.past_factors = self.past_factors[-self.window:]
+                mean, sigma_squared = self._product_of_gaussians(*zip(*self.past_factors))
+
+                if self.sample:
+                    posterior = th.distributions.Normal(mean, th.sqrt(sigma_squared))
+                    pred_features = posterior.rsample()
+                else:
+                    pred_features = mean
+                pred_features = pred_features.cpu().numpy()
+
             else:
                 pred_features = np.concatenate(features)
 
             obs['latents'] = pred_features
 
-            if self.window is not None:
-                self.past_latents.append(pred_features)
-                self.past_latents = self.past_latents[-self.window:]
-                avg_latent = np.mean(self.past_latents, axis=0)
-
-            else:
-                if self.exp_avg_latent is None:
-                    self.exp_avg_latent = pred_features
-                else:
-                    self.exp_avg_latent = (1 - self.exp_avg) * self.exp_avg_latent + self.exp_avg * pred_features
-                avg_latent = self.exp_avg_latent
-
-            policy_input = [raw_obs, avg_latent]
+            policy_input = [raw_obs, pred_features]
             if goal_set is not None:
                 policy_input.insert(1, goal_set.ravel())
             action = self.policy.get_action(*policy_input)
@@ -78,9 +75,13 @@ class EncDecPolicy(PyTorchModule):
         self.policy.reset()
         if len(self.vaes):
             self.curr_vae = random.choice(self.vaes)
-        self.past_latents = []
-        self.exp_avg_latent = None
+        self.past_factors = []
 
+    def _product_of_gaussians(self, means, logvars):
+        sigmas_squared = th.clamp(th.exp(th.stack(logvars)), min=1e-7)
+        sigma_squared = 1. / th.sum(th.reciprocal(sigmas_squared), dim=0)
+        mean = sigma_squared * th.sum(th.stack(means) / sigmas_squared, dim=0)
+        return mean, sigma_squared
 
 class EncDecMakeDeterministic(PyTorchModule):
     def __init__(

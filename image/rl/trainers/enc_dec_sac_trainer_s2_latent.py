@@ -21,7 +21,8 @@ class EncDecSACTrainer(TorchTrainer):
                  objective='kl',
                  grad_norm_clip=1,
                  incl_state=True,
-                 prev_incl_state=False
+                 prev_incl_state=False,
+                 window_size=None
                  ):
         super().__init__()
         self.policy = policy
@@ -38,6 +39,7 @@ class EncDecSACTrainer(TorchTrainer):
         self.grad_norm_clip = grad_norm_clip
         self.incl_state = incl_state
         self.prev_incl_state = prev_incl_state
+        self.window_size = window_size
 
         self.eval_statistics = OrderedDict()
         self._n_train_steps_total = 0
@@ -54,7 +56,9 @@ class EncDecSACTrainer(TorchTrainer):
 
         episode_success = batch['episode_success']
         obs = batch['observations']
-        features = th.cat([batch['curr_' + key] for key in self.feature_keys], dim=1)
+
+        feature_name = lambda x: 'curr_' + x if self.window_size is None else x + '_hist'
+        features = th.cat([batch[feature_name(key)] for key in self.feature_keys], dim=1)
         latents = batch['curr_latents']
         goals = batch['curr_goal']
         curr_goal_set = batch.get('curr_goal_set')
@@ -66,13 +70,25 @@ class EncDecSACTrainer(TorchTrainer):
 
         encoder_features = [features]
         if self.incl_state:
-            encoder_features.append(obs)
+            encoder_obs = obs if self.window_size is None else batch['obs_hist']
+            encoder_features.append(encoder_obs)
+
+            # goal set and window does not work together
             if has_goal_set:
                 curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
                 encoder_features.append(curr_goal_set_flat)
 
-        eps = th.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
-        pred_latent, kl_loss = vae.sample(th.cat(encoder_features, dim=1), eps=eps, return_kl=True)
+        mean, logvar = vae.encode(th.cat(encoder_features, dim=-1))
+        if self.window_size is not None:
+            mean, sigma_squared = self._product_of_gaussians(mean, logvar, batch['hist_mask'])
+        else:
+            sigma_squared = th.exp(logvar)
+
+        kl_loss = vae.kl_loss(mean, th.log(sigma_squared))
+
+        pred_latent = mean
+        if self.sample:
+            pred_latent = pred_latent + th.sqrt(sigma_squared) * ptu.normal(th.zeros(pred_latent.shape), 1)
 
         if self.prev_vae is not None:
             prev_encoder_features = [goals]
@@ -137,11 +153,6 @@ class EncDecSACTrainer(TorchTrainer):
         """
         self.optimizer.zero_grad()
         loss.backward()
-        total_norm = 0
-        for p in vae.encoder.parameters():
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** (1. / 2)
         if self.grad_norm_clip is not None:
             th.nn.utils.clip_grad_norm_(vae.encoder.parameters(), self.grad_norm_clip)
         self.optimizer.step()
@@ -156,7 +167,19 @@ class EncDecSACTrainer(TorchTrainer):
             self.eval_statistics['SL Loss'] = np.mean(ptu.get_numpy(supervised_loss))
             self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
             self.eval_statistics['Latent Error'] = np.mean(ptu.get_numpy(latent_error))
-            self.eval_statistics['Gradient Norm'] = np.mean(total_norm)
+
+    def _product_of_gaussians(self, means, logvars, mask):
+        sigmas_squared = th.clamp(th.exp(logvars), min=1e-7)
+        mask = th.unsqueeze(mask, -1)
+        sigma_squared = 1. / th.sum(th.reciprocal(sigmas_squared) * mask, dim=1)
+        mean = sigma_squared * th.sum((means / sigmas_squared) * mask, dim=1)
+        return mean, sigma_squared
+
+    def compute_kl_div(self, mean, sigma_squared):
+        prior = th.distributions.Normal(ptu.zeros(self.latent_size), ptu.ones(self.latent_size))
+        posteriors = [th.distributions.Normal(m, th.sqrt(s)) for m, s in zip(th.unbind(mean), th.unbind(sigma_squared))]
+        kl_divs = [th.distributions.kl.kl_divergence(post, prior) for post in posteriors]
+        return th.mean(th.sum(th.stack(kl_divs), dim=-1))
 
     @property
     def networks(self):

@@ -63,7 +63,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.training_mode(True)
         for _ in range(steps):
             for _ in range(len(self.trainer.vaes)):
-                batches = [buffer.random_batch(self.batch_size) for buffer in buffers]
+                batches = [buffer.random_batch(self.batch_size // len(buffers)) for buffer in buffers]
                 train_data = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0].keys()}
                 self.trainer.train(train_data)
         gt.stamp('training', unique=False)

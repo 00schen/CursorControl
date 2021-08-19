@@ -60,7 +60,6 @@ class ValveEnv(AssistiveEnv):
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
         obs = self._get_obs([0])
-
         reward = np.exp(-np.abs(self.angle_diff(self.valve_angle, self.target_angle))) - 1
 
         direction = np.zeros(3)
@@ -206,7 +205,8 @@ class ValveEnv(AssistiveEnv):
         # if self.term_cond == 'keyboard':
         #     self.success = None
 
-        return self._get_obs([0])
+        obs = self._get_obs([0])
+        return obs
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
@@ -237,7 +237,7 @@ class ValveEnv(AssistiveEnv):
                 self.target_index = index
 
     def reset_noise(self):
-        self.rand_init_angle = (np.random.rand() - 0.5) * 2 * np.pi
+        self.rand_init_angle = (self.np_random.rand() - 0.5) * 2 * np.pi
 
         # init angle either self.rand_init_angle or 0
         if self.preserve_angle and self.last_angle is not None:
@@ -249,10 +249,11 @@ class ValveEnv(AssistiveEnv):
 
         self.rand_angle = None
         while self.rand_angle is None or np.abs(self.angle_diff(self.rand_angle, avoid)) < self.error_threshold:
-            self.rand_angle = (np.random.rand() - 0.5) * 2 * np.pi
+            self.rand_angle = (self.np_random.rand() - 0.5) * 2 * np.pi
 
-        self.valve_pos_noise = np.array([self.np_random.uniform(-.1, .1), 0, 0])
-        self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
+        if self.stochastic:
+            self.valve_pos_noise = np.array([self.np_random.uniform(-.1, .1), 0, 0])
+            self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
 
     def wrong_goal_reached(self):
         return False
