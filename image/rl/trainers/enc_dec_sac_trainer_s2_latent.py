@@ -54,7 +54,6 @@ class EncDecSACTrainer(TorchTrainer):
     def train_from_torch(self, batch):
         vae = self.vaes[self._num_train_steps % len(self.vaes)]
 
-        episode_success = batch['episode_success']
         obs = batch['observations']
 
         feature_name = lambda x: 'curr_' + x if self.window_size is None else x + '_hist'
@@ -66,7 +65,6 @@ class EncDecSACTrainer(TorchTrainer):
         has_goal_set = curr_goal_set is not None
         batch_size = obs.shape[0]
 
-        loss = ptu.zeros(1)
 
         encoder_features = [features]
         if self.incl_state:
@@ -80,73 +78,83 @@ class EncDecSACTrainer(TorchTrainer):
 
         mean, logvar = vae.encode(th.cat(encoder_features, dim=-1))
         if self.window_size is not None:
-            mean, sigma_squared = self._product_of_gaussians(mean, logvar, batch['hist_mask'])
+            if self.objective == 'goal':
+                mask = th.unsqueeze(batch['hist_mask'], -1)
+                mean = th.sum(mean * mask, dim=1) / th.sum(mask, dim=1)
+                sigma_squared = None
+            else:
+                mean, sigma_squared = self._product_of_gaussians(mean, logvar, batch['hist_mask'])
         else:
             sigma_squared = th.exp(logvar)
 
-        kl_loss = vae.kl_loss(mean, th.log(sigma_squared))
+        # regress directly to goals
+        if self.objective == 'goal':
+            supervised_loss = th.nn.MSELoss()(mean, goals)
+            kl_loss = ptu.zeros(1)
+            latent_error = ptu.zeros(1)
 
-        pred_latent = mean
-        if self.sample:
-            pred_latent = pred_latent + th.sqrt(sigma_squared) * ptu.normal(th.zeros(pred_latent.shape), 1)
-
-        if self.prev_vae is not None:
-            prev_encoder_features = [goals]
-            if self.prev_incl_state:
-                prev_encoder_features.append(obs)
-                if has_goal_set:
-                    curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-                    prev_encoder_features.append(curr_goal_set_flat)
-
-            target_latent = self.prev_vae.sample(th.cat(prev_encoder_features, dim=-1), eps=None)
         else:
-            target_latent = goals
+            kl_loss = vae.kl_loss(mean, th.log(sigma_squared))
+            pred_latent = mean
+            if self.sample:
+                pred_latent = pred_latent + th.sqrt(sigma_squared) * ptu.normal(th.zeros(pred_latent.shape), 1)
 
-        latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
+            if self.prev_vae is not None:
+                prev_encoder_features = [goals]
+                if self.prev_incl_state:
+                    prev_encoder_features.append(obs)
+                    if has_goal_set:
+                        curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+                        prev_encoder_features.append(curr_goal_set_flat)
 
-        if has_goal_set:
-            curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
-            target_policy_features = [obs, curr_goal_set_flat, target_latent]
-            pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
-        else:
-            target_policy_features = [obs, target_latent]
-            pred_policy_features = [obs, pred_latent]
+                target_latent = self.prev_vae.sample(th.cat(prev_encoder_features, dim=-1), eps=None)
+            else:
+                target_latent = goals
 
-        if self.objective == 'kl':
-            target_mean = self.policy(*target_policy_features).mean.detach()
-            pred_mean = self.policy(*pred_policy_features).mean
-            supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
-        elif self.objective == 'normal_kl':
-            target = self.policy(*target_policy_features).normal
-            pred = self.policy(*pred_policy_features).normal
-            supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
-        elif self.objective == 'awr':
-            pred_mean, pred_logvar = vae.encode(th.cat(encoder_features, dim=1))
-            kl_loss = vae.kl_loss(pred_mean, pred_logvar)
-            supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
-        elif self.objective == 'latent':
-            supervised_loss = th.nn.MSELoss()(pred_latent, target_latent.detach())
-        elif self.objective == 'joint':
-            dist = self.policy(*pred_policy_features)
-
-            new_obs_actions, log_pi = dist.rsample_and_logprob()
-            log_pi = log_pi.unsqueeze(-1)
+            latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
             if has_goal_set:
-                new_qf_features = [obs, curr_goal_set_flat, goals, new_obs_actions]
+                curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
+                target_policy_features = [obs, curr_goal_set_flat, target_latent]
+                pred_policy_features = [obs, curr_goal_set_flat, pred_latent]
             else:
-                new_qf_features = [obs, goals, new_obs_actions]
+                target_policy_features = [obs, target_latent]
+                pred_policy_features = [obs, pred_latent]
 
-            q_new_actions = th.min(
-                self.qf1(*new_qf_features),
-                self.qf2(*new_qf_features),
-            )
+            if self.objective == 'kl':
+                target_mean = self.policy(*target_policy_features).mean.detach()
+                pred_mean = self.policy(*pred_policy_features).mean
+                supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
+            elif self.objective == 'normal_kl':
+                target = self.policy(*target_policy_features).normal
+                pred = self.policy(*pred_policy_features).normal
+                supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
+            elif self.objective == 'awr':
+                pred_mean, pred_logvar = vae.encode(th.cat(encoder_features, dim=1))
+                kl_loss = vae.kl_loss(pred_mean, pred_logvar)
+                supervised_loss = th.nn.GaussianNLLLoss()(pred_mean, latents.detach(), th.exp(pred_logvar))
+            elif self.objective == 'latent':
+                supervised_loss = th.nn.MSELoss()(pred_latent, target_latent.detach())
+            elif self.objective == 'joint':
+                dist = self.policy(*pred_policy_features)
 
-            supervised_loss = (-q_new_actions).mean()
-        else:
-            raise NotImplementedError()
+                new_obs_actions, log_pi = dist.rsample_and_logprob()
 
-        loss += supervised_loss + self.beta * kl_loss
+                if has_goal_set:
+                    new_qf_features = [obs, curr_goal_set_flat, goals, new_obs_actions]
+                else:
+                    new_qf_features = [obs, goals, new_obs_actions]
+
+                q_new_actions = th.min(
+                    self.qf1(*new_qf_features),
+                    self.qf2(*new_qf_features),
+                )
+
+                supervised_loss = (-q_new_actions).mean()
+            else:
+                raise NotImplementedError()
+
+        loss = supervised_loss + self.beta * kl_loss
 
         """
         Update Q networks
@@ -156,7 +164,6 @@ class EncDecSACTrainer(TorchTrainer):
         if self.grad_norm_clip is not None:
             th.nn.utils.clip_grad_norm_(vae.encoder.parameters(), self.grad_norm_clip)
         self.optimizer.step()
-
 
         """
         Save some statistics for eval using just one batch.

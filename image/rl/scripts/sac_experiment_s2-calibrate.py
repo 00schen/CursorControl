@@ -78,6 +78,7 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         random_latent=variant.get('random_latent', False),
         window=variant['window'],
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
     )
 
     eval_policy = EncDecPolicy(
@@ -89,6 +90,7 @@ def experiment(variant):
         deterministic=True,
         latent_size=variant['latent_size'],
         window=variant['window'],
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
     )
 
     eval_path_collector = FullPathCollector(
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
-    parser.add_argument('--window', default=20, type=int)
+    parser.add_argument('--window', default=None, type=int)
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -201,7 +203,7 @@ if __name__ == "__main__":
                       'Bottle': 0.15,
                       'Valve': 0.1}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
-    latent_size = 2 if args.env_name == 'Valve' else 3
+    latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
 
     pretrain_path = f'{args.env_name}_params_s1_sac_det'
     if args.pre_det:

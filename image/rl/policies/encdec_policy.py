@@ -11,7 +11,7 @@ import random
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False, random_latent=False, window=None):
+                 deterministic=False, random_latent=False, window=None, prev_vae=None):
         super().__init__()
 
         self.vaes = vaes if vaes is not None else []
@@ -29,7 +29,11 @@ class EncDecPolicy(PyTorchModule):
         self.episode_latent = None
         self.curr_vae = None
         self.window = window if window is not None else 1
-        self.past_factors = []
+        self.past_means = []
+        self.past_logvars = []
+
+        # use encoder to map to goals for prev vae
+        self.prev_vae = prev_vae
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -46,16 +50,27 @@ class EncDecPolicy(PyTorchModule):
                         features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
                 mean, logvar = self.curr_vae.encode(encoder_input)
-                self.past_factors.append((mean, logvar))
+                self.past_means.append(mean)
+                self.past_logvars.append(logvar)
 
-                self.past_factors = self.past_factors[-self.window:]
-                mean, sigma_squared = self._product_of_gaussians(*zip(*self.past_factors))
+                self.past_means = self.past_means[-self.window:]
+                self.past_logvars = self.past_logvars[-self.window:]
 
-                if self.sample:
-                    posterior = th.distributions.Normal(mean, th.sqrt(sigma_squared))
-                    pred_features = posterior.rsample()
+                # use current encoder to map to latent
+                if self.prev_vae is None:
+                    mean, sigma_squared = self._product_of_gaussians(self.past_means, self.past_logvars)
+
+                    if self.sample:
+                        posterior = th.distributions.Normal(mean, th.sqrt(sigma_squared))
+                        pred_features = posterior.rsample()
+                    else:
+                        pred_features = mean
+
+                # use current encoder to map to goal for prev vae
                 else:
-                    pred_features = mean
+                    mean = th.mean(th.stack(self.past_means), dim=0)
+                    pred_features, _ = self.prev_vae.encode(mean)
+
                 pred_features = pred_features.cpu().numpy()
 
             else:
@@ -75,7 +90,8 @@ class EncDecPolicy(PyTorchModule):
         self.policy.reset()
         if len(self.vaes):
             self.curr_vae = random.choice(self.vaes)
-        self.past_factors = []
+        self.past_means = []
+        self.past_logvars = []
 
     def _product_of_gaussians(self, means, logvars):
         sigmas_squared = th.clamp(th.exp(th.stack(logvars)), min=1e-7)
