@@ -175,7 +175,7 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', default='PointReach')
+    parser.add_argument('--env_name', default='BlockPush')
     parser.add_argument('--exp_name', default='experiments')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
@@ -252,7 +252,7 @@ if __name__ == "__main__":
             smooth_alpha=1,
             factories=[],
             # adapts=['goal', 'sim_target'],
-            feature='sub_goal',
+            feature='goal',
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5',
@@ -264,11 +264,13 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [5],
         'lr': [5e-4],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'seedid': [0,],
-        'env_config.adapts': [['goal', 'sim_target'], ['goal', 'sim_keyboard']],
+        'seedid': [0,1,2,3,4],
+        'env_config.adapts': [['goal', 'sim_keyboard'],],
+        'env_config.mode': ['oracle'],
+        'env_config.keyboard_size': [14],
         # 'env_config.env_kwargs.always_reset': [True, False],
         # 'use_np': [True, False]
-        'window': [5, 10, 20]
+        'window': [1, 5, 10, 20]
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -276,6 +278,24 @@ if __name__ == "__main__":
     )
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
+
+    # search_space = {
+    #     'algorithm_args.trajs_per_index': [5],
+    #     'lr': [5e-4],
+    #     'algorithm_args.num_trains_per_train_loop': [100],
+    #     'seedid': [0,1,2,3,4],
+    #     'env_config.adapts': [['goal', 'sim_target'],],
+    #     # 'env_config.mode': ['block', 'tool'],
+    #     # 'env_config.env_kwargs.always_reset': [True, False],
+    #     # 'use_np': [True, False]
+    #     'window': [1, 5, 10, 20]
+    # }
+
+    # sweeper = hyp.DeterministicHyperparameterSweeper(
+    #     search_space, default_parameters=default_variant,
+    # )
+    # for variant in sweeper.iterate_hyperparameters():
+    #     variants.append(variant)
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']

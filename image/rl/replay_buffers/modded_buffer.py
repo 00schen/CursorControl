@@ -81,7 +81,9 @@ class ModdedReplayBuffer(EnvReplayBuffer):
                            next_observation['raw_obs'], env_info=env_info, **kwargs)
 
     def _get_batch(self, batch_size):
-        indices = np.random.choice(self._size, size=batch_size, replace=self._replace or self._size < batch_size)
+        if self._size < batch_size:
+            batch_size = self._size
+        indices = np.random.choice(self._size, size=batch_size, replace=self._replace)
         batch = dict(
             observations=self._observations[indices],
             actions=self._actions[indices],
@@ -113,14 +115,15 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         return batch
 
     def random_batch(self, batch_size):
-        if self._size < batch_size:
-            batch_size = self._size
-        indices = np.random.choice(self._size, size=batch_size, replace=self._replace)
+        # if self._size < batch_size:
+        #     batch_size = self._size
+        # indices = np.random.choice(self._size, size=batch_size, replace=self._replace)
+
         # indices = np.random.choice(self._size, size=batch_size, replace=self._replace or self._size < batch_size)
         # if not self._replace and self._size < batch_size:
         #     warnings.warn(
         #         'Replace was set to false, but is temporarily set to true because batch size is larger than current size of replay.')
-        return self._get_batch(indices)
+        return self._get_batch(batch_size)
 
     def add_path(self, path):
         self.modify_path(path)

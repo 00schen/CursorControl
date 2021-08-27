@@ -113,16 +113,22 @@ def action_factory(base):
                 "trajectory": spaces.Box(-.1, .1, (3+self.action_grab,)),
                 "joint": spaces.Box(-1, 1, (7+self.action_grab,)),
                 "disc_traj": spaces.Box(0, 1, (6+self.action_grab,)),
+                "raw": spaces.Box(-1, 1, (7+self.action_grab,)),
             }[config['action_type']]
             self.translate = {
                 # 'target': target,
                 'trajectory': self.trajectory,
                 'joint': self.joint,
                 'disc_traj': self.disc_traj,
+                'raw': self.raw,
             }[config['action_type']]
             if self.action_grab:
                 self.sub_translate = self.translate
                 self.translate = self.grab
+
+        def raw(self, action, info={}):
+            info['raw'] = action
+            return action, info
 
         def joint(self, action, info={}):
             clip_by_norm = lambda traj, limit: traj / max(1e-4, norm(traj)) * np.clip(norm(traj), None, limit)
@@ -381,6 +387,7 @@ class real_gaze:
         features = self.face_processor.get_gaze_features(frame)
 
         if features is None:
+            print("GAZE NOT CAPTURED")
             gaze = np.zeros(self.gaze_dim)
         else:
             i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
@@ -444,13 +451,30 @@ class sim_target:
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['target'] = target + noise
 
+
+from rl.policies.encdec_policy import EncDecPolicy
+import rlkit.torch.pytorch_util as ptu
+import torch as th
 class sim_keyboard:
     def __init__(self, master_env, config):
         self.env_name = master_env.env_name
         self.master_env = master_env
         self.feature = config.get('feature')
         del master_env.feature_sizes['goal']
-        master_env.feature_sizes['target'] = 6
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 6)
+        self.mode = config.get('mode')
+
+        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det')
+        loaded = th.load(file_name, map_location=ptu.device)
+        policy = loaded['trainer/policy']
+        prev_vae = loaded['trainer/vae'].to(ptu.device)
+        self.policy = EncDecPolicy(
+            policy=policy,
+            features_keys=['goal'],
+            vaes=[prev_vae],
+            deterministic=True,
+            latent_size=4,
+        )
 
     def _step(self, obs, r, done, info):
         self.add_target(obs, info)
@@ -461,12 +485,33 @@ class sim_keyboard:
         return obs
 
     def add_target(self, obs, info):
-        traj = obs[self.feature] - obs['tool_pos']
-        axis = np.argmax(np.abs(traj))
-        index = 2 * axis + (traj[axis] > 0)
-        action = np.zeros(6)
+        if self.mode == 'tool':
+            traj = obs[self.feature] - obs['tool_pos']
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'block':
+            traj = obs[self.feature] - obs['block_pos']
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'sip-puff':
+            dist = norm(obs[self.feature] - obs['block_pos'])
+            old_dist = norm(obs[self.feature] - obs['old_block_pos'])
+            index = dist < old_dist
+        elif self.mode == 'xy':
+            traj = obs[self.feature][:2] - obs['block_pos'][:2]
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'oracle':
+            oracle_action = self.policy(obs)
+            axis = np.argmax(np.abs(oracle_action))
+            index = 2 * axis + (oracle_action[axis] > 0)
+
+        action = np.zeros(self.size)
         action[index] = 1
+        if self.mode == 'sip-puff':
+            action[-3:] = obs['old_block_pos']
         obs['target'] = action
+
 
 class joint:
     def __init__(self, master_env, config):
@@ -607,6 +652,14 @@ class reward:
             under_table_penalty = max(0, info['target_pos'][2]-info['tool_pos'][2]-.1)
             sigmoid = lambda x: 1/(1 + np.exp(-x))
             r += sigmoid(self.reward_temp*(old_dist-dist-under_table_penalty))*self.reward_offset
+            if info['task_success']:
+                r = 0
+        elif self.reward_type == 'debug_blockpush':
+            r = -1
+            dist = norm(info['block_pos']-info['target_pos'])
+            old_dist = norm(info['old_block_pos']-info['target_pos'])
+            sigmoid = lambda x: 1/(1 + np.exp(-x))
+            r += sigmoid(self.reward_temp*(old_dist-dist))*self.reward_offset
             if info['task_success']:
                 r = 0
         else:

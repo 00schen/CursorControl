@@ -218,8 +218,8 @@ if __name__ == "__main__":
             env_name=args.env_name,
             step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(),
-            action_type='joint',
+            env_kwargs=dict(debug=True),
+            action_type='raw',
             smooth_alpha=1,
             factories=[],
             adapts=['goal','reward'],
@@ -238,12 +238,12 @@ if __name__ == "__main__":
         'replay_buffer_size': [int(1e6)],
         'demo_path_proportions': [[]],
         'latent_size': [4],
-        'env_config.reward_type': ['blockpush_exp'],
+        'env_config.reward_type': ['debug_blockpush'],
         'trainer_kwargs.beta': [0],
-        'env_config.reward_temp': [1,5,10],
-        'env_config.reward_offset': [.25, .5,]
-        # 'env_config.reward_temp': [5,],
-        # 'env_config.reward_offset': [.5]
+        # 'env_config.reward_temp': [1,5,10],
+        # 'env_config.reward_offset': [.25, .5,]
+        'env_config.reward_temp': [50,],
+        'env_config.reward_offset': [.25]
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

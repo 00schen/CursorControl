@@ -4,3 +4,4 @@ from .encdec_policy import EncDecPolicy, EncDecMakeDeterministic
 from .keyboard_policy import KeyboardPolicy, GrabKeyboardPolicy
 from .point_reach_oracle import PointReachOracle
 from .np_encdec_policy import EncDecPolicy as NPEncDecPolicy
+from .block_push_oracle import BlockPushPolicy

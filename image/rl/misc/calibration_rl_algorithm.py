@@ -209,13 +209,15 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
             # no actual relabeling right now, since goals for all paths should be same
             # only add to paths to buffer if successful
-            if success or (self.expl_env.env_name == 'PointReach' and path['env_infos'][-1]['sub_goal_reached']):
+            # if success or (self.expl_env.env_name == 'PointReach' and path['env_infos'][-1]['sub_goal_reached']):
+            if success:
                 paths_to_add = (successful_paths + failed_paths) if self.relabel_failures else successful_paths
                 failed_paths = []
                 successful_paths = []
 
                 # have to relabel goals in valve with angle actually reached
                 if self.expl_env.env_name == 'Valve':
+                    print(successful_paths)
                     new_target_angle = successful_paths[-1]['env_infos'][-1]['valve_angle']
                     new_goal = np.array([np.sin(new_target_angle), np.cos(new_target_angle)])
                     for path in paths_to_add:

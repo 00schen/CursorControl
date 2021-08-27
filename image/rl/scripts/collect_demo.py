@@ -1,4 +1,4 @@
-from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy, GrabKeyboardPolicy, PointReachOracle
+from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy, GrabKeyboardPolicy, PointReachOracle, BlockPushPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 import rlkit.pythonplusplus as ppp
@@ -31,8 +31,36 @@ def collect_demonstrations(variant):
         deterministic=False
     )
 
+    # from rlkit.torch.networks import ConcatMlp, VAE
+    # from rlkit.torch.torch_rl_algorithm import TorchBatchRLAlgorithm
+    # from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
+    # feat_dim = env.observation_space.low.size
+    # goal_dim = sum(env.feature_sizes.values())
+    # obs_dim = feat_dim + goal_dim
+    # action_dim = env.action_space.low.size
+    # M = 64
+    # policy = ConcatTanhGaussianPolicy(
+    #         obs_dim=feat_dim + 4,
+    #         action_dim=action_dim,
+    #         hidden_sizes=[M, M],
+    #     )
+    # vae = VAE(input_size=goal_dim,
+    #               latent_size=4,
+    #               encoder_hidden_sizes=[64],
+    #               decoder_hidden_sizes=[64]
+    #               )
+    # policy = EncDecPolicy(
+    #     policy=policy,
+    #     features_keys=list(env.feature_sizes.keys()),
+    #     vaes=[vae],
+    #     sample=False,
+    #     deterministic=False,
+    #     incl_state=False
+    # )
+
     # policy = PointReachOracle()
     # policy = KeyboardPolicy()
+    # policy = BlockPushPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -82,27 +110,28 @@ if __name__ == "__main__":
     path_length = 1000
     variant = dict(
         seedid=3000,
-        eval_path=os.path.join(main_dir, 'util_models', 'BlockPush_sac.pkl'),
+        eval_path=os.path.join(main_dir, 'util_models', 'debug_blockpush.pkl'),
         env_kwargs={'config': dict(
             env_name='BlockPush',
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+            env_kwargs=dict(frame_skip=5, debug=True, num_targets=None, stochastic=False,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
-            action_type='joint',
+            action_type='raw',
             # action_grab=True,
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal'],
+            adapts=['goal', 'reward'],
+            reward_type='debug_blockpush',
             state_type=0,
             apply_projection=False,
             reward_max=0,
             reward_min=-1,
             input_penalty=1,
-            reward_type='sparse',
+            # reward_type='sparse',
             terminate_on_failure=False,
             goal_noise_std=0,
             reward_temp=1,
-            reward_offset=-0.2
+            reward_offset=1
         )},
         render=args.no_render and (not args.use_ray),
 

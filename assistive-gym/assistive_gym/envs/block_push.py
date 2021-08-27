@@ -49,12 +49,17 @@ class BlockPushEnv(AssistiveEnv):
         old_tool_pos = self.tool_pos
         old_block_pos = self.block_pos
 
+        if self.debug:
+            force = action[:3] / norm(action[:3]) * 10
+            p.applyExternalForce(self.block, -1, force, [0,0,0], p.LINK_FRAME)
+            action = np.zeros(7)
+
         self.take_step(action, robot_arm='left', gains=self.config('robot_gains'), forces=self.config('robot_forces'))
 
         # if norm(self.tool_pos - self.block_pos) < self.success_dist:
         #     self.target1_reached = True
         self.task_success = norm(self.block_pos - self.target_pos) < self.success_dist
-        obs = self._get_obs([0])
+        obs = self._get_obs([0], old_block_pos)
 
         if self.task_success:
             target_color = [0, 1, 0, 1]
@@ -89,7 +94,7 @@ class BlockPushEnv(AssistiveEnv):
 
         return obs, reward, done, info
 
-    def _get_obs(self, forces):
+    def _get_obs(self, forces, old_block_pos):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
@@ -98,8 +103,10 @@ class BlockPushEnv(AssistiveEnv):
             raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.block_pos, robot_joint_positions]),
             hindsight_goal=np.concatenate([self.tool_pos, self.tool_pos]),
             goal=self.goal.copy(),
+            block_pos=self.block_pos,
             # sub_goal=self.target_pos if self.target1_reached else self.org_block_pos,
             tool_pos=self.tool_pos,
+            old_block_pos=old_block_pos,
             # target1_reached=self.target1_reached
         )
         return robot_obs
@@ -189,7 +196,7 @@ class BlockPushEnv(AssistiveEnv):
         self.goal = self.target_pos
         self.curr_step = 0
 
-        return self._get_obs([0])
+        return self._get_obs([0], self.block_pos)
 
     def init_start_pos(self):
         """exchange this function for curriculum"""
@@ -200,7 +207,7 @@ class BlockPushEnv(AssistiveEnv):
 
     def init_robot_arm(self):
         self.init_start_pos()
-        init_orient = p.getQuaternionFromEuler(np.array([0, np.pi / 2.0, 0]), physicsClientId=self.id)
+        init_orient = p.getQuaternionFromEuler(np.array([0, np.pi / 2.0, 0]))
         self.util.ik_random_restarts(self.robot, 11, self.init_pos, init_orient, self.world_creation,
                                      self.robot_left_arm_joint_indices, self.robot_lower_limits,
                                      self.robot_upper_limits,
@@ -208,8 +215,7 @@ class BlockPushEnv(AssistiveEnv):
                                      max_ik_random_restarts=10, random_restart_threshold=0.03, step_sim=True)
         self.world_creation.set_gripper_open_position(self.robot, position=1, left=True, set_instantly=True)
         self.tool = self.world_creation.init_tool(self.robot, mesh_scale=[0.001] * 3, pos_offset=[0, 0, 0.02],
-                                                  orient_offset=p.getQuaternionFromEuler([0, -np.pi / 2.0, 0],
-                                                                                         physicsClientId=self.id),
+                                                  orient_offset=p.getQuaternionFromEuler([0, -np.pi / 2.0, 0]),
                                                   maximal=False)
 
     def set_target_index(self, index=None):
@@ -241,10 +247,10 @@ class BlockPushEnv(AssistiveEnv):
         target_pos = self.target_pos = self.goal_noise + table_center
 
         block_pos = self.org_block_pos = self.block_noise + table_center
-        block_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[.03, .03, .03])
-        block_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[.03, .03, .03])
+        block_collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=[.03, .03, .03], physicsClientId=self.id)
+        block_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[.03, .03, .03], physicsClientId=self.id)
         self.block = p.createMultiBody(0.5, block_collision, block_visual, basePosition=block_pos,
-                                        baseOrientation=default_orientation)
+                                        baseOrientation=default_orientation, physicsClientId=self.id)
         p.changeDynamics(self.block, -1, lateralFriction=.5)
         sphere_collision = -1
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.05, rgbaColor=[0, 0, 1, 1],
