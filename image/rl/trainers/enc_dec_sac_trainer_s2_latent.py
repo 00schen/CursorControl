@@ -89,7 +89,7 @@ class EncDecSACTrainer(TorchTrainer):
 
         # regress directly to goals
         if self.objective == 'goal':
-            supervised_loss = th.nn.MSELoss()(mean, goals)
+            supervised_loss = th.nn.MSELoss()(mean[...,:3], goals)
             kl_loss = ptu.zeros(1)
             latent_error = ptu.zeros(1)
 

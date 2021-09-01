@@ -220,7 +220,7 @@ if __name__ == "__main__":
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else 1e-4,
-            objective=args.objective,
+            # objective=args.objective,
             grad_norm_clip=None,
             prev_incl_state=args.prev_incl_state
         ),
@@ -266,11 +266,14 @@ if __name__ == "__main__":
         'algorithm_args.num_trains_per_train_loop': [100],
         'seedid': [0,1,2,3,4],
         'env_config.adapts': [['goal', 'sim_keyboard'],],
-        'env_config.mode': ['oracle'],
+        'env_config.mode': ['block', 'oracle'],
+        'env_config.keyboard_p': [.5, .6, .7, .8],
+        'env_config.blank_p': [.5, .6, .7, .8],
         'env_config.keyboard_size': [14],
         # 'env_config.env_kwargs.always_reset': [True, False],
         # 'use_np': [True, False]
-        'window': [1, 5, 10, 20]
+        'window': [20],
+        'trainer_kwargs.objective': ['normal_kl','goal']
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -278,24 +281,6 @@ if __name__ == "__main__":
     )
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
-
-    # search_space = {
-    #     'algorithm_args.trajs_per_index': [5],
-    #     'lr': [5e-4],
-    #     'algorithm_args.num_trains_per_train_loop': [100],
-    #     'seedid': [0,1,2,3,4],
-    #     'env_config.adapts': [['goal', 'sim_target'],],
-    #     # 'env_config.mode': ['block', 'tool'],
-    #     # 'env_config.env_kwargs.always_reset': [True, False],
-    #     # 'use_np': [True, False]
-    #     'window': [1, 5, 10, 20]
-    # }
-
-    # sweeper = hyp.DeterministicHyperparameterSweeper(
-    #     search_space, default_parameters=default_variant,
-    # )
-    # for variant in sweeper.iterate_hyperparameters():
-    #     variants.append(variant)
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']

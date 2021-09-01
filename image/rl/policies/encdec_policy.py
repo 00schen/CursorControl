@@ -68,7 +68,7 @@ class EncDecPolicy(PyTorchModule):
 
                 # use current encoder to map to goal for prev vae
                 else:
-                    mean = th.mean(th.stack(self.past_means), dim=0)
+                    mean = th.mean(th.stack(self.past_means), dim=0)[...,:3]
                     pred_features, _ = self.prev_vae.encode(mean)
 
                 pred_features = pred_features.cpu().numpy()

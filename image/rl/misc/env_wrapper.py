@@ -70,7 +70,7 @@ class LibraryWrapper(Env):
             "OneSwitch": ag.OneSwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
             "Valve": ag.ValveJacoEnv,
-            "PointReach": ag.PointReachJacoEnv,
+            "PointReach": ag.PointReachEnv,
             "Rope": ag.RopeEnv,
             "BlockPush": ag.BlockPushEnv,
         }[config['env_name']]
@@ -463,8 +463,10 @@ class sim_keyboard:
         del master_env.feature_sizes['goal']
         self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 6)
         self.mode = config.get('mode')
+        self.noise_p = config.get('keyboard_p')
+        self.blank_p = config.get('blank_p')
 
-        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det')
+        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
         loaded = th.load(file_name, map_location=ptu.device)
         policy = loaded['trainer/policy']
         prev_vae = loaded['trainer/vae'].to(ptu.device)
@@ -474,6 +476,7 @@ class sim_keyboard:
             vaes=[prev_vae],
             deterministic=True,
             latent_size=4,
+            incl_state=False,
         )
 
     def _step(self, obs, r, done, info):
@@ -481,10 +484,13 @@ class sim_keyboard:
         return obs, r, done, info
 
     def _reset(self, obs, info=None):
+        self.policy.reset()
         self.add_target(obs, info)
         return obs
 
     def add_target(self, obs, info):
+        dist = norm(obs[self.feature] - obs['block_pos'])
+        old_dist = norm(obs[self.feature] - obs['old_block_pos'])
         if self.mode == 'tool':
             traj = obs[self.feature] - obs['tool_pos']
             axis = np.argmax(np.abs(traj))
@@ -494,20 +500,23 @@ class sim_keyboard:
             axis = np.argmax(np.abs(traj))
             index = 2 * axis + (traj[axis] > 0)
         elif self.mode == 'sip-puff':
-            dist = norm(obs[self.feature] - obs['block_pos'])
-            old_dist = norm(obs[self.feature] - obs['old_block_pos'])
             index = dist < old_dist
         elif self.mode == 'xy':
             traj = obs[self.feature][:2] - obs['block_pos'][:2]
             axis = np.argmax(np.abs(traj))
             index = 2 * axis + (traj[axis] > 0)
         elif self.mode == 'oracle':
-            oracle_action = self.policy(obs)
+            oracle_action, _ = self.policy.get_action(obs)
             axis = np.argmax(np.abs(oracle_action))
             index = 2 * axis + (oracle_action[axis] > 0)
 
+        if np.random.uniform() < self.noise_p:
+            index = np.random.randint(self.size)
         action = np.zeros(self.size)
         action[index] = 1
+        if np.random.uniform() < self.blank_p:
+            action = np.zeros(self.size)
+
         if self.mode == 'sip-puff':
             action[-3:] = obs['old_block_pos']
         obs['target'] = action
