@@ -49,10 +49,18 @@ class ModdedReplayBuffer(EnvReplayBuffer):
             self._next_obs_dict[key] = np.zeros((max_replay_buffer_size, size))
 
         # for envs with goal sets separate from observation
+        # does not work with window yet
         if hasattr(env.base_env, 'goal_set_shape'):
             self._obs_dict_keys.add('goal_set')
             self._obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
             self._next_obs_dict['goal_set'] = np.zeros((max_replay_buffer_size,) + env.base_env.goal_set_shape)
+
+        # for envs withs separate observations for the encoder
+        self.encoder_obs = env.encoder_observation_space is not None
+        if self.encoder_obs:
+            self._obs_dict_keys.add('encoder_obs')
+            self._obs_dict['encoder_obs'] = np.zeros((max_replay_buffer_size,) + env.encoder_observation_space.shape)
+            self._next_obs_dict['encoder_obs'] = np.zeros((max_replay_buffer_size,)+ env.encoder_observation_space.shape)
 
         self.sample_base = sample_base
 
@@ -98,6 +106,12 @@ class ModdedReplayBuffer(EnvReplayBuffer):
             obs_hist = [self._observations[hist_idx] for hist_idx in hist_indices]
             batch['obs_hist'] = np.stack([np.pad(x, ((self.window_size - len(x), 0), (0, 0))) for x in obs_hist],
                                          axis=0)
+
+            if self.encoder_obs:
+                encoder_obs_hist = [self._obs_dict['encoder_obs'][hist_idx] for hist_idx in hist_indices]
+                batch['encoder_obs_hist'] = np.stack(
+                    [np.pad(x, ((self.window_size - len(x), 0), (0, 0))) for x in encoder_obs_hist], axis=0)
+
             for key in self.feature_keys:
                 key_hist = [self._obs_dict[key][hist_idx] for hist_idx in hist_indices]
                 batch[key + '_hist'] = np.stack([np.pad(x, ((self.window_size - len(x), 0), (0, 0)))

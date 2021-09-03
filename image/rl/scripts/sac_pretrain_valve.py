@@ -191,7 +191,7 @@ if __name__ == "__main__":
         incl_state=args.incl_state,
         pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=5000,
+            num_epochs=10000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -219,7 +219,7 @@ if __name__ == "__main__":
             terminate_on_failure=False,
             env_name=args.env_name,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=True,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True, term_cond=None),
             action_type='joint',
             smooth_alpha=1,

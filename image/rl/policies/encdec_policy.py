@@ -39,13 +39,14 @@ class EncDecPolicy(PyTorchModule):
         features = [obs[k] for k in self.features_keys]
         with th.no_grad():
             raw_obs = obs['raw_obs']
+            encoder_obs = obs.get('encoder_obs', raw_obs)
             goal_set = obs.get('goal_set')
 
             if self.random_latent:
                 pred_features = self.episode_latent.detach().cpu().numpy()
             elif len(self.vaes):
                 if self.incl_state:
-                    features.append(raw_obs)
+                    features.append(encoder_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)

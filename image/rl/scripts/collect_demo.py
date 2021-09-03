@@ -84,7 +84,7 @@ if __name__ == "__main__":
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
             env_name='Valve',
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=True,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
             oracle='keyboard',
             oracle_kwargs=dict(

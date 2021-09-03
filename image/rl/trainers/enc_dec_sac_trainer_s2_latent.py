@@ -11,6 +11,7 @@ class EncDecSACTrainer(TorchTrainer):
                  vaes,
                  prev_vae,
                  policy,
+                 old_policy,
                  qf1,
                  qf2,
                  optimizer,
@@ -26,6 +27,7 @@ class EncDecSACTrainer(TorchTrainer):
                  ):
         super().__init__()
         self.policy = policy
+        self.old_policy = old_policy
         self.qf1 = qf1
         self.qf2 = qf2
         self.optimizer = optimizer
@@ -68,7 +70,8 @@ class EncDecSACTrainer(TorchTrainer):
 
         encoder_features = [features]
         if self.incl_state:
-            encoder_obs = obs if self.window_size is None else batch['obs_hist']
+            encoder_obs = batch.get('encoder_obs', obs) if self.window_size is None \
+                else batch.get('encoder_obs_hist', batch['obs_hist'])
             encoder_features.append(encoder_obs)
 
             # goal set and window does not work together
@@ -122,11 +125,11 @@ class EncDecSACTrainer(TorchTrainer):
                 pred_policy_features = [obs, pred_latent]
 
             if self.objective == 'kl':
-                target_mean = self.policy(*target_policy_features).mean.detach()
+                target_mean = self.old_policy(*target_policy_features).mean
                 pred_mean = self.policy(*pred_policy_features).mean
                 supervised_loss = th.mean(th.sum(th.nn.MSELoss(reduction='none')(pred_mean, target_mean), dim=-1))
             elif self.objective == 'normal_kl':
-                target = self.policy(*target_policy_features).normal
+                target = self.old_policy(*target_policy_features).normal
                 pred = self.policy(*pred_policy_features).normal
                 supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
             elif self.objective == 'awr':

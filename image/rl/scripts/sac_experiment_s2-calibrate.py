@@ -36,7 +36,11 @@ def experiment(variant):
     file_name = os.path.join('image', 'util_models', variant['pretrain_path'])
     loaded = th.load(file_name, map_location=ptu.device)
 
-    feat_dim = env.observation_space.low.size + reduce(operator.mul,
+    obs_space = env.encoder_observation_space
+    if obs_space is None:
+        obs_space = env.observation_space
+
+    feat_dim = obs_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
 
@@ -48,6 +52,7 @@ def experiment(variant):
                         decoder_hidden_sizes=[M] * variant['n_layers']
                         ).to(ptu.device))
     policy = loaded['trainer/policy']
+    old_policy = deepcopy(policy)
 
     qf1 = loaded['trainer/qf1']
     qf2 = loaded['trainer/qf2']
@@ -59,9 +64,9 @@ def experiment(variant):
 
     optim_params = []
     for vae in vaes:
-        optim_params += list(vae.encoder.parameters())
+        optim_params.append({'params': vae.encoder.parameters()})
     if not variant['freeze_decoder']:
-        optim_params += list(policy.parameters())
+        optim_params.append({'params': policy.parameters(), 'lr': 1e-6})
 
     optimizer = optim.Adam(
         optim_params,
@@ -131,6 +136,7 @@ def experiment(variant):
         vaes=vaes,
         prev_vae=prev_vae,
         policy=policy,
+        old_policy=old_policy,
         qf1=qf1,
         qf2=qf2,
         optimizer=optimizer,
@@ -192,7 +198,8 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
-    parser.add_argument('--window', default=None, type=int)
+    parser.add_argument('--window', default=20, type=int)
+    parser.add_argument('--unfreeze_decoder', action='store_true')
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -205,12 +212,13 @@ if __name__ == "__main__":
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
 
-    pretrain_path = f'{args.env_name}_params_s1_sac_det'
+    pretrain_path = f'{args.env_name}_params_s1_sac'
     if args.pre_det:
         pretrain_path += '_det_enc'
     pretrain_path += '.pkl'
 
     default_variant = dict(
+        freeze_decoder=not args.unfreeze_decoder,
         mode=args.mode,
         incl_state=True,
         random_latent=args.rand_latent,
@@ -248,7 +256,7 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=False, num_targets=8, min_error_threshold=np.pi / 16,
+                            stochastic=True, num_targets=8, min_error_threshold=np.pi / 16,
                             use_rand_init_angle=False, term_thresh=20,
                             term_cond='keyboard' if not args.sim else 'auto'),
             action_type='joint',
@@ -269,9 +277,8 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [1],
         'lr': [1e-3],
         'algorithm_args.num_trains_per_train_loop': [50],
-        'env_config.feature': [None],
+        'env_config.feature': ['target_position'],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        'freeze_decoder': [True],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

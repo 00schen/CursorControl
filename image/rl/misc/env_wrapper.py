@@ -73,6 +73,9 @@ class LibraryWrapper(Env):
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
+        self.encoder_observation_space = None
+        if hasattr(self.base_env, 'encoder_observation_space'):
+            self.encoder_observation_space = self.base_env.encoder_observation_space
         self.action_space = self.base_env.action_space
         self.feature_sizes = self.base_env.feature_sizes
         self.terminate_on_failure = config['terminate_on_failure']
@@ -406,6 +409,8 @@ class sim_target:
 
         # should change to automate for all features eventually
         if self.feature == 'direction':
+            self.target_size = master_env.feature_sizes['target'] = 3
+        elif self.feature == 'target_position':
             self.target_size = master_env.feature_sizes['target'] = 3
 
         self.goal_noise_std = config['goal_noise_std']

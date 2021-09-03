@@ -20,7 +20,14 @@ class ValveEnv(AssistiveEnv):
                  term_thresh=20, preserve_angle=False):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
-        self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 2 + 7,), dtype=np.float32)
+        obs_dim = 3 + 4 + 3 + 2 + 1 + 7 + 7
+        encoder_obs_dim = 3 + 2
+        if stochastic:
+            obs_dim += 3  # for valve pos
+            encoder_obs_dim += 3
+        self.observation_space = spaces.Box(-np.inf, np.inf, (obs_dim,), dtype=np.float32)
+        self.encoder_observation_space = spaces.Box(-np.inf, np.inf, (encoder_obs_dim,), dtype=np.float32)
+
         self.num_targets = num_targets
         self.success_dist = success_dist
         self.debug = debug
@@ -88,7 +95,8 @@ class ValveEnv(AssistiveEnv):
             'target_angle': self.target_angle,
             'error_threshold': self.error_threshold,
             'direction': direction,
-            'angle_error': self.angle_diff(self.valve_angle, self.target_angle)
+            'angle_error': self.angle_diff(self.valve_angle, self.target_angle),
+            'target_position': self.target_position
         }
         done = False
         if self.term_cond == 'auto':
@@ -106,10 +114,23 @@ class ValveEnv(AssistiveEnv):
         robot_joint_states = p.getJointStates(self.robot, jointIndices=self.robot_left_arm_joint_indices,
                                               physicsClientId=self.id)
         robot_joint_positions = np.array([x[0] for x in robot_joint_states])
+        robot_joint_velocities = np.array([x[1] for x in robot_joint_states])
+
+        angle_features = [np.sin(self.valve_angle), np.cos(self.valve_angle)]
+
+        obs = [self.tool_pos, self.tool_orient, self.tool_velocity,
+               angle_features, [self.valve_velocity],
+               robot_joint_positions, robot_joint_velocities
+               ]
+        encoder_obs = [self.tool_pos, angle_features]
+
+        if self.stochastic:
+            obs.append(self.valve_pos)
+            encoder_obs.append(self.valve_pos)
 
         robot_obs = dict(
-            raw_obs=np.concatenate([self.tool_pos, self.tool_orient, self.valve_pos,
-                                    [np.sin(self.valve_angle), np.cos(self.valve_angle)], robot_joint_positions]),
+            raw_obs=np.concatenate(obs),
+            encoder_obs=np.concatenate(encoder_obs),
             hindsight_goal=np.array([np.sin(self.valve_angle), np.cos(self.valve_angle)]),
             goal=self.goal.copy(),
         )
@@ -156,8 +177,8 @@ class ValveEnv(AssistiveEnv):
         wall_visual = p.createVisualShape(p.GEOM_BOX, halfExtents=[4, .1, 1], rgbaColor=self.wall_color)
 
         wall_pos, wall_orient = np.array([0., -1.1, 1.]), np.array([0, 0, 0, 1])
-        if self.stochastic:
-            wall_pos = wall_pos + + self.wall_noise
+        if self.stochastic and not self.calibrate:
+            wall_pos = wall_pos + self.wall_noise
 
         self.wall = p.createMultiBody(basePosition=wall_pos, baseOrientation=wall_orient,
                                       baseCollisionShapeIndex=wall_collision, baseVisualShapeIndex=wall_visual,
@@ -166,7 +187,7 @@ class ValveEnv(AssistiveEnv):
         valve_pos, valve_orient = p.multiplyTransforms(wall_pos, wall_orient, [0, 0.1, 0],
                                                        p.getQuaternionFromEuler([0, 0, 0]),
                                                        physicsClientId=self.id)
-        if self.stochastic:
+        if self.stochastic and not self.calibrate:
             valve_pos = np.array(valve_pos) + self.valve_pos_noise
 
         self.valve = p.loadURDF(os.path.join(self.world_creation.directory, 'valve', 'valve.urdf'),
@@ -252,8 +273,8 @@ class ValveEnv(AssistiveEnv):
             self.rand_angle = (self.np_random.rand() - 0.5) * 2 * np.pi
 
         if self.stochastic:
-            self.valve_pos_noise = np.array([self.np_random.uniform(-.1, .1), 0, 0])
-            self.wall_noise = np.array([0, self.np_random.uniform(-.1, .1), 0])
+            self.valve_pos_noise = np.array([self.np_random.uniform(-.05, .05), 0, 0])
+            self.wall_noise = np.array([0, self.np_random.uniform(-.05, .05), 0])
 
     def wrong_goal_reached(self):
         return False
@@ -271,6 +292,10 @@ class ValveEnv(AssistiveEnv):
         return np.array(p.getBasePositionAndOrientation(self.tool, physicsClientId=self.id)[1])
 
     @property
+    def tool_velocity(self):
+        return np.array(p.getBaseVelocity(self.tool, physicsClientId=self.id)[0])
+
+    @property
     def valve_pos(self):
         return p.getLinkState(self.valve, 0, computeForwardKinematics=True, physicsClientId=self.id)[0]
 
@@ -279,9 +304,17 @@ class ValveEnv(AssistiveEnv):
         return self.wrap_angle(p.getJointStates(self.valve, jointIndices=[0], physicsClientId=self.id)[0][0])
 
     @property
+    def valve_velocity(self):
+        return p.getJointStates(self.valve, jointIndices=[0], physicsClientId=self.id)[0][1]
+
+    @property
     def target_angle(self):
         return self.rand_angle if self.num_targets is None or not self.calibrate else \
             self.wrap_angle(self.target_angles[self.target_index])
+
+    @property
+    def target_position(self):
+        return np.array(p.getBasePositionAndOrientation(self.target_indicator, physicsClientId=self.id)[0])
 
     def wrap_angle(self, angle):
         return angle - 2 * np.pi * np.floor((angle + np.pi) / (2 * np.pi))

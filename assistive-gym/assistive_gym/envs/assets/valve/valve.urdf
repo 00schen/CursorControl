@@ -63,6 +63,7 @@
   <joint name="swivel" type="continuous">
       <parent link="base_link"/>
       <child link="valve"/>
+      <dynamics damping="0.0" friction="1.0"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <axis xyz="0 1 0"/>
   </joint>
