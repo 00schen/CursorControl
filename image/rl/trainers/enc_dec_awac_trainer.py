@@ -24,6 +24,7 @@ class TorchEncDecAWACTrainer(TorchTrainer):
             sample=True,
             soft_target_tau=1e-2,
             target_update_period=1,
+            incl_state=False
     ):
         super().__init__()
 
@@ -54,6 +55,7 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         self._n_train_steps_total = 0
         self.soft_target_tau = soft_target_tau
         self.target_update_period = target_update_period
+        self.incl_state = incl_state
 
     def train_from_torch(self, batch):
         obs = batch['observations']
@@ -69,16 +71,24 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         batch_size = obs.shape[0]
         has_goal_set = curr_goal_set is not None
 
+        curr_encoder_features = [curr_goal]
+        next_encoder_features = [next_goal]
+        if self.incl_state:
+            curr_encoder_features.append(obs)
+            next_encoder_features.append(next_obs)
+            if has_goal_set:
+                curr_encoder_features.append(curr_goal_set.reshape((batch_size, -1)))
+                next_encoder_features.append(next_goal_set.reshape((batch_size, -1)))
+
         eps = torch.normal(ptu.zeros((batch_size, self.latent_size)), 1) if self.sample else None
-        curr_latent, kl_loss = self.vae.sample(curr_goal, eps=eps, return_kl=True)
-        next_latent = self.vae.sample(next_goal, eps=eps, return_kl=False)
+        curr_latent, kl_loss = self.vae.sample(torch.cat(curr_encoder_features, dim=1), eps=eps, return_kl=True)
+        next_latent = self.vae.sample(torch.cat(next_encoder_features, dim=1), eps=None, return_kl=False)
 
         next_latent = next_latent.detach()
 
         """
         Policy and Alpha Loss
         """
-
         if has_goal_set:
             curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
             curr_policy_features = [obs, curr_goal_set_flat, curr_latent]

@@ -6,10 +6,11 @@ from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 from rl.policies import EncDecPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
-from rl.misc.simple_path_loader import SimplePathLoader
 from rl.trainers import EncDecSACTrainer
 from rl.replay_buffers import ModdedReplayBuffer
 from rl.scripts.run_util import run_exp
+from rl.misc.simple_path_loader import SimplePathLoader
+from rlkit.torch.networks import Clamp
 from rl.trainers import TorchEncDecAWACTrainer
 
 import os
@@ -18,6 +19,7 @@ import rlkit.util.hyperparameter as hyp
 import argparse
 from functools import reduce
 import operator
+import numpy as np
 
 
 def experiment(variant):
@@ -29,10 +31,10 @@ def experiment(variant):
     eval_env = default_overhead(eval_config)
     eval_env.seed(variant['seedid'] + 1)
 
-    # qf takes in goal directly instead of latent, but same dim
     feat_dim = env.observation_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
+
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
@@ -62,7 +64,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=sum(env.feature_sizes.values()),
+        vae = VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -81,7 +83,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=[vae],
-        incl_state=False,
+        incl_state=variant['incl_state'],
         sample=False,
         deterministic=False
     )
@@ -90,7 +92,7 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         vaes=[vae],
-        incl_state=False,
+        incl_state=variant['incl_state'],
         sample=False,
         deterministic=True
     )
@@ -115,6 +117,7 @@ def experiment(variant):
         target_qf2=target_qf2,
         vae=vae,
         latent_size=variant['latent_size'],
+        incl_state=variant['incl_state'],
         **variant['trainer_kwargs']
     )
     replay_buffer = ModdedReplayBuffer(
@@ -152,10 +155,11 @@ def experiment(variant):
             qf_lr=variant['trainer_kwargs']['qf_lr'],
             vae=vae,
             latent_size=variant['latent_size'],
-            beta=0.01,
-            sample=True,
+            beta=variant['trainer_kwargs']['beta'],
+            sample=variant['trainer_kwargs']['sample'],
             soft_target_tau=variant['trainer_kwargs']['soft_target_tau'],
             target_update_period=variant['trainer_kwargs']['target_update_period'],
+            incl_state=variant['incl_state']
         )
         for _ in range(variant['pretrain_steps']):
             train_data = replay_buffer.random_batch(variant['algorithm_args']['batch_size'])
@@ -168,24 +172,26 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', default='Bottle')
-    parser.add_argument('--exp_name', default='pretrain_sac_bottle')
+    parser.add_argument('--env_name', default='Valve')
+    parser.add_argument('--exp_name', default='pretrain_sac_valve')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--det', action='store_true')
+    parser.add_argument('--incl_state', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
     variant = dict(
-        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
-        latent_size=3,
+        pretrain_path=f'{args.env_name}_params_s1_sac_det.pkl',
+        latent_size=2,
         layer_size=256,
-        pretrain_steps=0,
+        incl_state=args.incl_state,
+        pretrain_steps=25000,
         algorithm_args=dict(
-            num_epochs=3000,
+            num_epochs=5000,
             num_eval_steps_per_epoch=0,
             eval_paths=False,
             num_expl_steps_per_train_loop=1000,
@@ -204,36 +210,35 @@ if __name__ == "__main__":
             reward_scale=1,
             use_automatic_entropy_tuning=True,
             sample=not args.det,
-            beta=0 if args.det else 0.01
+            beta=0 if args.det else 0.0001
         ),
         demo_paths=[
-            os.path.join(main_dir, "demos", f"{args.env_name}_model_on_policy_5000_full.npy"),
+            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_100_test.npy"),
         ],
         env_config=dict(
             terminate_on_failure=False,
             env_name=args.env_name,
-            step_limit=path_length,
             goal_noise_std=0,
-            env_kwargs=dict(frame_skip=5, debug=False),
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True, term_cond=None),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
-            adapts=['goal', 'sim_target', 'reward'],
+            adapts=['goal', 'reward'],
             gaze_dim=128,
             state_type=0,
+            reward_type='valve_exp',
+            reward_min=None,
             reward_max=0,
-            reward_min=-1,
-            reward_type='part_sparse',
-            reward_temp=1,
-            reward_offset=-0.2
+            reward_temp=5
         )
     )
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'demo_path_proportions': [[5000]],
         'algorithm_args.num_trains_per_train_loop': [1000],
-        'replay_buffer_size': [int(2e7)],
+        'replay_buffer_size': [int(1e6)],
+        'demo_path_proportions': [[100]],
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(

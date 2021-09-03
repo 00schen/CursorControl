@@ -17,6 +17,7 @@ from torch import optim
 from copy import deepcopy
 from functools import reduce
 import operator
+import numpy as np
 
 
 def experiment(variant):
@@ -39,11 +40,13 @@ def experiment(variant):
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
 
-    vae = VAE(input_size=obs_dim,
-              latent_size=variant['latent_size'],
-              encoder_hidden_sizes=[M] * variant['n_layers'],
-              decoder_hidden_sizes=[M] * variant['n_layers']
-              ).to(ptu.device)
+    vaes = []
+    for _ in range(variant['n_encoders']):
+        vaes.append(VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
+                        latent_size=variant['latent_size'],
+                        encoder_hidden_sizes=[M] * variant['n_layers'],
+                        decoder_hidden_sizes=[M] * variant['n_layers']
+                        ).to(ptu.device))
     policy = loaded['trainer/policy']
 
     qf1 = loaded['trainer/qf1']
@@ -54,7 +57,9 @@ def experiment(variant):
     else:
         prev_vae = None
 
-    optim_params = list(vae.encoder.parameters())
+    optim_params = []
+    for vae in vaes:
+        optim_params += list(vae.encoder.parameters())
     if not variant['freeze_decoder']:
         optim_params += list(policy.parameters())
 
@@ -66,21 +71,30 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
-        incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
+        vaes=vaes,
+        incl_state=variant['incl_state'],
+        sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
+        random_latent=variant.get('random_latent', False),
+        window=variant['window'],
+        goal_reg=variant['trainer_kwargs']['objective'] == 'goal',
+        prev_vae=prev_vae,
+        env=env
     )
 
     eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
-        incl_state=True,
-        sample=variant['trainer_kwargs']['sample'],
+        vaes=vaes,
+        incl_state=variant['incl_state'],
+        sample=variant['sample'],
         deterministic=True,
         latent_size=variant['latent_size'],
+        window=variant['window'],
+        goal_reg=variant['trainer_kwargs']['objective'] == 'goal',
+        prev_vae=prev_vae,
+        env=eval_env
     )
 
     eval_path_collector = FullPathCollector(
@@ -93,9 +107,9 @@ def experiment(variant):
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
         env=env,
-        vae=vae,
+        vaes=vaes,
         prev_vae=prev_vae,
-        incl_state=False
+        incl_state=variant['trainer_kwargs']['prev_incl_state']
     )
     expl_path_collector = FullPathCollector(
         env,
@@ -114,10 +128,11 @@ def experiment(variant):
         env,
         sample_base=0,
         latent_size=variant['latent_size'],
-        store_latents=True
+        store_latents=True,
+        window_size=args.window
     )
     trainer = LatentEncDecSACTrainer(
-        vae=vae,
+        vaes=vaes,
         prev_vae=prev_vae,
         policy=policy,
         qf1=qf1,
@@ -125,19 +140,21 @@ def experiment(variant):
         optimizer=optimizer,
         latent_size=variant['latent_size'],
         feature_keys=list(env.feature_sizes.keys()),
+        incl_state=variant['incl_state'],
         **variant['trainer_kwargs']
     )
 
-    if variant['keep_calibration_data']:
-        calibration_buffer = replay_buffer
-    else:
+    if variant['balance_calibration']:
         calibration_buffer = ModdedReplayBuffer(
             variant['replay_buffer_size'],
             env,
             sample_base=0,
             latent_size=variant['latent_size'],
-            store_latents=True
+            store_latents=True,
+            window_size=args.window
         )
+    else:
+        calibration_buffer = None
 
     if variant['real_user']:
         variant['algorithm_args']['eval_paths'] = False
@@ -163,31 +180,59 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
-    parser.add_argument('--exp_name', default='calibrate_sac')
+    parser.add_argument('--env_name')
+    parser.add_argument('--exp_name', default='experiments')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=10, type=int)
+    parser.add_argument('--det', action='store_true')
+    parser.add_argument('--pre_det', action='store_true')
+    parser.add_argument('--no_failures', action='store_true')
+    parser.add_argument('--rand_latent', action='store_true')
+    parser.add_argument('--curriculum', action='store_true')
+    parser.add_argument('--objective', default='normal_kl', type=str)
+    parser.add_argument('--prev_incl_state', action='store_true')
+    parser.add_argument('--window', default=None, type=int)
+
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
     path_length = 200
-    target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
+    # target_indices = None
+    target_indices = [0, 2, 4] if args.env_name == 'OneSwitch' else None
+    goal_noise_std = {'OneSwitch': 0.1,
+                      'Bottle': 0.15,
+                      'Valve': 0.1}[args.env_name]
+    beta = 1e-4 if args.env_name == 'Valve' else 1e-2
+    latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
+
+    pretrain_path = f'{args.env_name}_params_s1_sac'
+    if args.pre_det:
+        pretrain_path += '_det_enc'
+    pretrain_path += '.pkl'
+
     default_variant = dict(
         mode=args.mode,
+        incl_state=True,
+        random_latent=args.rand_latent,
         real_user=not args.sim,
-        pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
-        latent_size=3,
+        pretrain_path=pretrain_path,
+        latent_size=latent_size,
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
-        keep_calibration_data=True,
+        balance_calibration=True,
+        window=args.window,
         trainer_kwargs=dict(
-            beta=0.01,
-            grad_norm_clip=None
+            sample=not args.det,
+            beta=0 if args.det else beta,
+            objective=args.objective,
+            grad_norm_clip=None,
+            prev_incl_state=args.prev_incl_state,
+            window_size=args.window,
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -197,39 +242,42 @@ if __name__ == "__main__":
             num_train_loops_per_epoch=1,
             collect_new_paths=True,
             pretrain_steps=1000,
-            max_failures=5,
+            max_failures=3,
             eval_paths=False,
+            relabel_failures=not args.no_failures,
+            curriculum=args.curriculum
         ),
 
         env_config=dict(
             env_name=args.env_name,
-            goal_noise_std=0.05,
+            goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
-            env_kwargs=dict(step_limit=path_length, frame_skip=5, debug=False, target_indices=target_indices),
+            # env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
+            #                 stochastic=False, num_targets=8, min_error_threshold=np.pi / 16,
+            #                 use_rand_init_angle=False, term_thresh=20,
+            #                 term_cond='keyboard' if not args.sim else 'auto'),
+            env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
+                            stochastic=False),
             action_type='joint',
             smooth_alpha=1,
             factories=[],
             adapts=['goal'],
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
-            eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5'
+            eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5',
         )
     )
     variants = []
 
     search_space = {
         'n_layers': [1],
+        'n_encoders': [1],
+        'sample': [False],
         'algorithm_args.trajs_per_index': [1],
-        'lr': [5e-4],
-        'trainer_kwargs.sample': [True],
-        'algorithm_args.relabel_failures': [True],
-        'algorithm_args.num_trains_per_train_loop': [100],
-        'trainer_kwargs.objective': ['kl'],
-        # 'algorithm_args.calibrate_split': [False],
-        # 'algorithm_args.calibration_indices': [[1, 2, 3]],
-        # 'mode': ['with_door'],
-        # 'env_config.feature': ['sub_target'],
-        'seedid': [0],
+        'lr': [1e-3],
+        'algorithm_args.num_trains_per_train_loop': [50],
+        'env_config.feature': [None],
+        'seedid': [1, 2, 3, 4, 5, 6, 7, 8, 9],
         'freeze_decoder': [True],
     }
 
@@ -238,6 +286,7 @@ if __name__ == "__main__":
     )
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
+
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
@@ -248,14 +297,14 @@ if __name__ == "__main__":
 
         mode_dict = {'OneSwitch':
                          {'default': {'calibrate_split': False,
-                                      'calibration_indices': [1, 2, 3]},
+                                      'calibration_indices': [0, 2, 4]},
                           'no_online': {'calibrate_split': False,
-                                        'calibration_indices': [1, 2, 3],
+                                        'calibration_indices': [0, 2, 4],
                                         'num_trains_per_train_loop': 0},
                           'shift': {'calibrate_split': True,
-                                    'calibration_indices': [1, 2, 3]},
+                                    'calibration_indices': [0, 2, 4]},
                           'no_right': {'calibrate_split': False,
-                                       'calibration_indices': [2, 3]},
+                                       'calibration_indices': [2, 4]},
                           'overcalibrate': {'calibrate_split': False,
                                             'calibration_indices': [0, 1, 2, 3, 4]}
                           },
@@ -272,6 +321,13 @@ if __name__ == "__main__":
                           'with_door': {'calibrate_split': False,
                                         'calibration_indices': [0, 3]}
 
+                          },
+                     'Valve':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': None},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': None,
+                                        'num_trains_per_train_loop': 0},
                           }
                      }[variant['env_config']['env_name']][variant['mode']]
 

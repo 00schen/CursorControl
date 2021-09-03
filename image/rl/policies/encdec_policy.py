@@ -6,13 +6,15 @@ from rlkit.torch.distributions import (
     Delta
 )
 from rlkit.torch.networks.stochastic.distribution_generator import DistributionGenerator
+import random
 
 
 class EncDecPolicy(PyTorchModule):
-    def __init__(self, policy, features_keys, vae=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False):
+    def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
+                 deterministic=False, random_latent=False, window=None, prev_vae=None, goal_reg=False, env=None):
         super().__init__()
-        self.vae = vae
+
+        self.vaes = vaes if vaes is not None else []
         self.policy = policy
         if deterministic:
             assert isinstance(policy, DistributionGenerator)
@@ -23,6 +25,17 @@ class EncDecPolicy(PyTorchModule):
         self.latent_size = latent_size
         if self.sample:
             assert self.latent_size is not None
+        self.random_latent = random_latent
+        self.episode_latent = None
+        self.curr_vae = None
+        self.window = window if window is not None else 1
+        self.past_means = []
+        self.past_logvars = []
+
+        # use encoder to map to goals for prev vae
+        self.prev_vae = prev_vae
+        self.goal_reg = goal_reg
+        self.env = env
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -30,14 +43,46 @@ class EncDecPolicy(PyTorchModule):
             raw_obs = obs['raw_obs']
             goal_set = obs.get('goal_set')
 
-            if self.vae != None:
+            if self.random_latent:
+                pred_features = self.episode_latent.detach().cpu().numpy()
+            elif len(self.vaes):
                 if self.incl_state:
                     features.append(raw_obs)
                     if goal_set is not None:
                         features.append(goal_set.ravel())
                 encoder_input = th.Tensor(np.concatenate(features)).to(ptu.device)
-                eps = th.normal(ptu.zeros(self.latent_size), 1) if self.sample else None
-                pred_features = self.vae.sample(encoder_input, eps=eps).detach().cpu().numpy()
+                mean, logvar = self.curr_vae.encode(encoder_input)
+                self.past_means.append(mean)
+                self.past_logvars.append(logvar)
+
+                self.past_means = self.past_means[-self.window:]
+                self.past_logvars = self.past_logvars[-self.window:]
+
+                # use current encoder to map to latent
+                if not self.goal_reg:
+                    mean, sigma_squared = self._product_of_gaussians(self.past_means, self.past_logvars)
+
+                    if self.sample:
+                        posterior = th.distributions.Normal(mean, th.sqrt(sigma_squared))
+                        pred_features = posterior.rsample()
+                    else:
+                        pred_features = mean
+
+                # use current encoder to map to goal for prev vae
+                else:
+                    mean = th.mean(th.stack(self.past_means), dim=0)
+                    pred_features, _ = self.prev_vae.encode(mean)
+
+                pred_features = pred_features.cpu().numpy()
+
+                if self.env is not None and self.env.env_name == 'OneSwitch':
+                    goal_latents, _ = self.prev_vae.encode(th.Tensor(self.env.base_env.goal_positions).to(ptu.device))
+                    goal_latents = goal_latents.cpu().numpy()
+                    distances = np.linalg.norm(pred_features[None] - goal_latents, axis=-1)
+                    proba = np.exp(-5 * distances)
+                    proba = proba / np.sum(proba)
+                    self.env.base_env.beliefs = proba
+
             else:
                 pred_features = np.concatenate(features)
 
@@ -50,8 +95,20 @@ class EncDecPolicy(PyTorchModule):
             return action
 
     def reset(self):
+        if self.random_latent:
+            self.episode_latent = th.normal(ptu.zeros(self.latent_size), 1).to(ptu.device)
         self.policy.reset()
+        if len(self.vaes):
+            # self.curr_vae = random.choice(self.vaes)
+            self.curr_vae = self.vaes[0]
+        self.past_means = []
+        self.past_logvars = []
 
+    def _product_of_gaussians(self, means, logvars):
+        sigmas_squared = th.clamp(th.exp(th.stack(logvars)), min=1e-7)
+        sigma_squared = 1. / th.sum(th.reciprocal(sigmas_squared), dim=0)
+        mean = sigma_squared * th.sum(th.stack(means) / sigmas_squared, dim=0)
+        return mean, sigma_squared
 
 class EncDecMakeDeterministic(PyTorchModule):
     def __init__(

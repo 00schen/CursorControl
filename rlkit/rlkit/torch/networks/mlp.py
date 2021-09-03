@@ -406,7 +406,7 @@ class VAE(PyTorchModule):
         return mean, logvar
 
     def reparameterize(self, mean, logvar):
-        eps = torch.normal(torch.zeros(self.latent_size).to(ptu.device), 1)
+        eps = torch.normal(torch.zeros(mean.shape).to(ptu.device), 1)
         return mean + eps * torch.exp(logvar * 0.5)
 
     def decode(self, z):

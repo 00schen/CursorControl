@@ -38,6 +38,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             real_user=True,
             relabel_failures=True,
             seedid=0,
+            curriculum=False,
             **kwargs,
     ):
         super().__init__(
@@ -55,6 +56,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.real_user = real_user
         self.relabel_failures = relabel_failures
         self.seedid = seedid
+        self.curriculum = curriculum
         self.blocks = []
 
         self.metrics = {'success_episodes': [],
@@ -66,15 +68,22 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         if self.real_user:
             self.metrics['correct_rewards'] = []
             self.metrics['correct_blocks'] = []
+            self.metrics['user_feedback'] = []
 
-        self.gaze_user = GazeUser(self.expl_env)
-        self.gaze_user.run()
+        # self.gaze_user = GazeUser(self.expl_env)
+        # self.gaze_user.run()
 
-    def _sample_and_train(self, steps, buffer):
+        if self.expl_env.env_name == 'Valve':
+            self.metrics['final_angle_error'] = []
+            self.metrics['init_angle_error'] = []
+
+    def _sample_and_train(self, steps, buffers):
         self.training_mode(True)
         for _ in range(steps):
-            train_data = buffer.random_batch(self.batch_size)
-            self.trainer.train(train_data)
+            for _ in range(len(self.trainer.vaes)):
+                batches = [buffer.random_batch(self.batch_size // len(buffers)) for buffer in buffers]
+                train_data = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0].keys()}
+                self.trainer.train(train_data)
         gt.stamp('training', unique=False)
         self.training_mode(False)
 
@@ -83,6 +92,9 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.expl_env.seed(self.seedid)
         self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
         calibration_data = []
+
+        # the buffer actually used for calibration
+        calibration_buffer = self.calibration_buffer if self.calibration_buffer is not None else self.replay_buffer
 
         for _ in range(self.trajs_per_index):
             for index in self.calibration_indices:
@@ -93,13 +105,14 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                     discard_incomplete_paths=False,
                 )
                 self.calibration_data_collector.end_epoch(-1)
-                self.calibration_buffer.add_paths(calibration_paths)
+
+                calibration_buffer.add_paths(calibration_paths)
                 calibration_data.extend(calibration_paths)
 
         logger.save_extra_data(calibration_data, 'calibration_data.pkl', mode='pickle')
 
         gt.stamp('pretrain exploring', unique=False)
-        self._sample_and_train(self.pretrain_steps, self.calibration_buffer)
+        self._sample_and_train(self.pretrain_steps, [calibration_buffer])
 
         self.expl_env.seed(self.seedid + 100)
         self.eval_env.seed(self.seedid + 200)
@@ -130,16 +143,28 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             )
             assert len(new_expl_paths) == 1
             path = new_expl_paths[0]
+
             real_success = path['env_infos'][-1]['task_success']
+            timeout = len(path['observations']) == self.max_path_length and not real_success
+
+            # valve is still successful if timeout in success state
+            # if self.expl_env.env_name == 'Valve' and timeout:
+            #     real_success = path['env_infos'][-1]['is_success']
+
             gt.stamp('exploration sampling', unique=False)
             if self.real_user:
-                # automate reward if timeout
-                if len(path['observations']) == self.max_path_length and not path['env_infos'][-1]['task_success']:
+                success = None
+                # automate reward if timeout and not valve env
+                if timeout and not self.expl_env.env_name == 'Valve':
                     time.sleep(1)
                     success = real_success
                     self.metrics['correct_rewards'].append(None)
 
-                else:
+                elif self.expl_env.env_name == 'Valve':
+                    success = path['env_infos'][-1]['feedback']
+
+                # valve success feedback is True if user terminated as a success, -1 otherwise
+                if not isinstance(success, bool):
                     while True:
                         keys = p.getKeyboardEvents()
 
@@ -147,7 +172,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             success = True
 
                             # relabel with wrong goals that were reached if not actual success.
-                            # currently specific only to light switch and bottle
+                            # currently specific only to light switch and bottle, handled by valve differently
                             if not real_success:
                                 if 'current_string' in path['env_infos'][-1]:
                                     wrong_reached_index = np.where(path['env_infos'][-1]['current_string'] == 0)[0][0]
@@ -158,14 +183,19 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                                     wrong_reached_index = 1 - path['env_infos'][-1]['unique_index']
                                     wrong_reached_goal = path['env_infos'][0]['unique_targets'][wrong_reached_index]
 
+                                elif self.expl_env.env_name == 'Valve':
+                                    wrong_reached_goal = None
+
                                 else:
                                     raise NotImplementedError()
 
                                 # assumes same goal each timestep
-                                for failed_path in failed_paths + [path]:
-                                    for i in range(len(failed_path['observations'])):
-                                        failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
-                                        failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
+                                # not necessary when relabeling with final angle anyways
+                                # if not self.expl_env.env_name == 'Valve':
+                                #     for failed_path in failed_paths + [path]:
+                                #         for i in range(len(failed_path['observations'])):
+                                #             failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
+                                #             failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
 
                             break
                         elif 8 in keys and keys[8] & p.KEY_WAS_TRIGGERED:
@@ -173,12 +203,17 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                             break
 
                     self.metrics['correct_rewards'].append(success == real_success)
+                    self.metrics['user_feedback'].append(success)
 
             else:
                 success = real_success
 
             self.metrics['success_episodes'].append(real_success)
             self.metrics['episode_lengths'].append(len(path['observations']))
+
+            if self.expl_env.env_name == 'Valve':
+                self.metrics['final_angle_error'].append(np.abs(path['env_infos'][-1]['angle_error']))
+                self.metrics['init_angle_error'].append(np.abs(path['env_infos'][0]['angle_error']))
 
             if success:
                 successful_paths.append(path)
@@ -189,9 +224,23 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             # only add to paths to buffer if successful
             if success:
                 paths_to_add = successful_paths + failed_paths if self.relabel_failures else successful_paths
+
+                # have to relabel goals in valve with angle actually reached
+                if self.expl_env.env_name == 'Valve':
+                    new_target_angle = successful_paths[-1]['env_infos'][-1]['valve_angle']
+                    new_goal = np.array([np.sin(new_target_angle), np.cos(new_target_angle)])
+                    for path in paths_to_add:
+                        for i in range(len(path['observations'])):
+                            path['observations'][i]['goal'] = new_goal.copy()
+                            path['next_observations'][i]['goal'] = new_goal.copy()
+
                 self.replay_buffer.add_paths(paths_to_add)
                 gt.stamp('data storing', unique=False)
-                self._sample_and_train(self.num_trains_per_train_loop, self.replay_buffer)
+
+                buffers = [self.replay_buffer]
+                if self.calibration_buffer is not None:
+                    buffers.append(self.calibration_buffer)
+                self._sample_and_train(self.num_trains_per_train_loop, buffers)
 
             block_timeout = len(failed_paths) >= self.max_failures
             if success or block_timeout or epoch == self.num_epochs - 1:
@@ -205,22 +254,40 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
                 successful_paths = []
                 self.expl_env.new_goal()  # switch positions do not change if not block end
 
+                if self.curriculum and hasattr(self.expl_env.base_env, 'update_curriculum'):
+                    self.expl_env.base_env.update_curriculum(success)
+
             self._end_epoch(epoch)
 
-        logger.save_extra_data(self.metrics, 'metrics.pkl', mode='pickle')
-        logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
+            logger.save_extra_data(self.metrics, 'metrics.pkl', mode='pickle')
+            logger.save_extra_data(self.blocks, 'data.pkl', mode='pickle')
 
-        total_features = []
-        gaze_features = []
-        policy = self.expl_data_collector._policy
-        for block in [[x] for x in calibration_data] + self.blocks:
-            for eps in block:
-                episode_features = []
-                episode_gaze_features = []
-                for obs in eps['observations']:
-                    raw_obs = obs['raw_obs']
-                    goal_set = obs.get('goal_set')
-                    features = [obs[k] for k in policy.features_keys]
+        log_latents = False
+        if log_latents:
+            total_features = []
+            gaze_features = []
+            policy = self.expl_data_collector._policy
+            for block in [[x] for x in calibration_data] + self.blocks:
+                for eps in block:
+                    episode_features = []
+                    episode_gaze_features = []
+                    for obs in eps['observations']:
+                        raw_obs = obs['raw_obs']
+                        goal_set = obs.get('goal_set')
+                        features = [obs[k] for k in policy.features_keys]
+                        episode_gaze_features.append(np.concatenate(features))
+
+                        if policy.incl_state:
+                            features.append(raw_obs)
+                            if goal_set is not None:
+                                features.append(goal_set.ravel())
+
+                        episode_features.append(np.concatenate(features))
+
+                    last_obs = eps['next_observations'][-1]
+                    raw_obs = last_obs['raw_obs']
+                    goal_set = last_obs.get('goal_set')
+                    features = [last_obs[k] for k in policy.features_keys]
                     episode_gaze_features.append(np.concatenate(features))
 
                     if policy.incl_state:
@@ -230,88 +297,83 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
                     episode_features.append(np.concatenate(features))
 
-                last_obs = eps['next_observations'][-1]
-                raw_obs = last_obs['raw_obs']
-                goal_set = last_obs.get('goal_set')
-                features = [last_obs[k] for k in policy.features_keys]
-                episode_gaze_features.append(np.concatenate(features))
+                    total_features.append(np.array(episode_features))
+                    gaze_features.append(np.array(episode_gaze_features))
 
-                if policy.incl_state:
-                    features.append(raw_obs)
-                    if goal_set is not None:
-                        features.append(goal_set.ravel())
+            for j, vae in enumerate(policy.vaes):
+                latents = []
+                for eps in total_features:
+                    encoder_input = torch.Tensor(eps).to(ptu.device)
+                    pred_features = vae.sample(encoder_input, eps=None).detach().cpu().numpy()
+                    latents.append(pred_features)
 
-                episode_features.append(np.concatenate(features))
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
 
-                total_features.append(np.array(episode_features))
-                gaze_features.append(np.array(episode_gaze_features))
+                # combined_latents = np.concatenate(latents)
+                # ax.set_xlim(np.amin(combined_latents[:, 0]), np.amax(combined_latents[:, 0]))
+                # ax.set_ylim(np.amin(combined_latents[:, 1]), np.amax(combined_latents[:, 1]))
+                # ax.set_zlim(np.amin(combined_latents[:, 2]), np.amax(combined_latents[:, 2]))
 
-        latents = []
-        for eps in total_features:
-            encoder_input = torch.Tensor(eps).to(ptu.device)
-            pred_features = policy.vae.sample(encoder_input, eps=None).detach().cpu().numpy()
-            latents.append(pred_features)
+                ax.xaxis.set_ticklabels([])
+                ax.yaxis.set_ticklabels([])
+                ax.zaxis.set_ticklabels([])
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
+                for line in ax.xaxis.get_ticklines():
+                    line.set_visible(False)
+                for line in ax.yaxis.get_ticklines():
+                    line.set_visible(False)
+                for line in ax.zaxis.get_ticklines():
+                    line.set_visible(False)
 
-        combined_latents = np.concatenate(latents)
-        ax.set_xlim(np.amin(combined_latents[:, 0]), np.amax(combined_latents[:, 0]))
-        ax.set_ylim(np.amin(combined_latents[:, 1]), np.amax(combined_latents[:, 1]))
-        ax.set_zlim(np.amin(combined_latents[:, 2]), np.amax(combined_latents[:, 2]))
+                os.makedirs(os.path.join(logger.get_snapshot_dir(), 'latents', str(j)), exist_ok=True)
+                count = 1
+                for eps in latents:
+                    ax.set_xlim(np.amin(eps[:, 0]), np.amax(eps[:, 0]))
+                    ax.set_ylim(np.amin(eps[:, 1]), np.amax(eps[:, 1]))
+                    ax.set_zlim(np.amin(eps[:, 2]), np.amax(eps[:, 2]))
+                    for i in range(len(eps)):
+                        sc = ax.scatter(eps[:i + 1, 0], eps[:i + 1, 1], eps[:i + 1, 2],
+                                        c=cm.plasma(np.arange(i + 1) / len(eps)))
+                        plt.savefig(os.path.join(logger.get_snapshot_dir(), 'latents', str(j),
+                                                 'latent_' + str(count) + '.png'))
+                        sc.remove()
+                        count += 1
 
-        ax.xaxis.set_ticklabels([])
-        ax.yaxis.set_ticklabels([])
-        ax.zaxis.set_ticklabels([])
+            gaze_estimates = []
+            for eps in gaze_features:
+                estimates = np.stack((self.gaze_user.x_svr_gaze_estimator.predict(eps),
+                                      self.gaze_user.y_svr_gaze_estimator.predict(eps)),
+                                      axis=1)
 
-        for line in ax.xaxis.get_ticklines():
-            line.set_visible(False)
-        for line in ax.yaxis.get_ticklines():
-            line.set_visible(False)
-        for line in ax.zaxis.get_ticklines():
-            line.set_visible(False)
-
-        count = 1
-        for eps in latents:
-            for i in range(len(eps)):
-                sc = ax.scatter(eps[:i + 1, 0], eps[:i + 1, 1], eps[:i + 1, 2],
-                                c=cm.plasma(np.arange(i + 1) / len(eps)))
-                plt.savefig(os.path.join(logger.get_snapshot_dir(), 'latents', 'latent_' + str(count) + '.png'))
-                sc.remove()
-                count += 1
-
-        gaze_estimates = []
-        for eps in gaze_features:
-            estimates = np.stack((self.gaze_user.x_svr_gaze_estimator.predict(eps),
-                                  self.gaze_user.y_svr_gaze_estimator.predict(eps)),
-                                  axis=1)
-
-            # convert from relative displacement from camera to normalized env coordinate system
-            gaze_coords = (estimates + self.gaze_user.cam_coord[None]) * np.array([
-                [2 / self.gaze_user.window_width,
-                 2 * self.gaze_user.height / (self.gaze_user.width * self.gaze_user.window_height)]])
-            gaze_estimates.append(gaze_coords)
+                # convert from relative displacement from camera to normalized env coordinate system
+                gaze_coords = (estimates + self.gaze_user.cam_coord[None]) * np.array([
+                    [2 / self.gaze_user.window_width,
+                     2 * self.gaze_user.height / (self.gaze_user.width * self.gaze_user.window_height)]])
+                gaze_estimates.append(gaze_coords)
 
 
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
 
-        combined_gazes = np.concatenate(gaze_estimates)
-        ax.set_xlim(np.amin(combined_gazes[:, 0]), np.amax(combined_gazes[:, 0]))
-        ax.set_ylim(np.amin(combined_gazes[:, 1]), np.amax(combined_gazes[:, 1]))
+            # combined_gazes = np.concatenate(gaze_estimates)
+            # ax.set_xlim(np.amin(combined_gazes[:, 0]), np.amax(combined_gazes[:, 0]))
+            # ax.set_ylim(np.amin(combined_gazes[:, 1]), np.amax(combined_gazes[:, 1]))
 
-        plt.tick_params(left=False,
-                        bottom=False,
-                        labelleft=False,
-                        labelbottom=False)
+            plt.tick_params(left=False,
+                            bottom=False,
+                            labelleft=False,
+                            labelbottom=False)
 
-        count = 1
-        for eps in gaze_estimates:
-            for i in range(len(eps)):
-                sc = ax.scatter(eps[:i + 1, 0], eps[:i + 1, 1], c=cm.plasma(np.arange(i + 1) / len(eps)))
-                plt.savefig(os.path.join(logger.get_snapshot_dir(), 'gazes', 'gazes_' + str(count) + '.png'))
-                sc.remove()
-                count += 1
+            count = 1
+            for eps in gaze_estimates:
+                ax.set_xlim(np.amin(eps[:, 0]), np.amax(eps[:, 0]))
+                ax.set_ylim(np.amin(eps[:, 1]), np.amax(eps[:, 1]))
+                for i in range(len(eps)):
+                    sc = ax.scatter(eps[:i + 1, 0], eps[:i + 1, 1], c=cm.plasma(np.arange(i + 1) / len(eps)))
+                    plt.savefig(os.path.join(logger.get_snapshot_dir(), 'gazes', 'gazes_' + str(count) + '.png'))
+                    sc.remove()
+                    count += 1
 
         self.expl_env.save()
 
@@ -422,10 +484,10 @@ class GazeUser:
                 if curr_time > last_time + 100:
                     last_time = curr_time
                     _, frame = self.webcam.read()
-                    features = self.face_processor.get_gaze_features(frame)[:-2]
-
+                    features = self.face_processor.get_gaze_features(frame)
 
                     if features is not None:
+                        features = features[:-2]
                         features_list.append(features)
                         gaze_labels_list.append(self.calibration_points[curr_point])
                         samples_left -= 1
@@ -518,3 +580,4 @@ class GazeUser:
 
     def uncenter_coord(self, coord):
         return np.array([coord[0] + self.width / 2, self.height / 2 - coord[1]])
+

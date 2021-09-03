@@ -1,3 +1,5 @@
+# Environment is not present in original assistive_gym library at https://github.com/Healthcare-Robotics/assistive-gym
+
 import os
 from gym import spaces
 import numpy as np
@@ -5,6 +7,7 @@ import pybullet as p
 from numpy.linalg import norm
 from .env import AssistiveEnv
 from gym.utils import seeding
+import colorsys
 
 LOW_LIMIT = -1
 HIGH_LIMIT = .2
@@ -102,6 +105,8 @@ class LightSwitchEnv(AssistiveEnv):
         else:
             color = [0, 0, 1, 1]
         p.changeVisualShape(self.targets1[self.target_index], -1, rgbaColor=color)
+
+        self.update_belief_indicators()
 
         obs = self._get_obs([0])
 
@@ -232,7 +237,7 @@ class LightSwitchEnv(AssistiveEnv):
         p.setPhysicsEngineParameter(numSubSteps=5, numSolverIterations=10, physicsClientId=self.id)
         # Enable rendering
         p.resetDebugVisualizerCamera(cameraDistance=.1, cameraYaw=180, cameraPitch=0,
-                                     cameraTargetPosition=[0, -0.25, 1.3], physicsClientId=self.id)
+                                     cameraTargetPosition=[0, -0.35, 1.3], physicsClientId=self.id)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=self.id)
         self.viewMatrix = p.computeViewMatrixFromYawPitchRoll([0, 0, 1.2], .3, 180, -10, 0, 2)
         fov = 60
@@ -252,10 +257,9 @@ class LightSwitchEnv(AssistiveEnv):
     def init_start_pos(self):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1.1])
-        if self.stochastic:
-            self.init_pos[0] += self.init_pos_random.uniform(-0.5, 0.5)
-            self.init_pos[1] += self.init_pos_random.uniform(-0.1, 0.1)
-            self.init_pos[2] += self.init_pos_random.uniform(-0.1, 0.1)
+        self.init_pos[0] += self.init_pos_random.uniform(-0.5, 0.5)
+        self.init_pos[1] += self.init_pos_random.uniform(-0.1, 0.1)
+        self.init_pos[2] += self.init_pos_random.uniform(-0.1, 0.1)
 
     def init_robot_arm(self):
         self.init_start_pos()
@@ -345,6 +349,7 @@ class LightSwitchEnv(AssistiveEnv):
 
         self.targets = []
         self.targets1 = []
+
         for i, switch in enumerate(self.switches):
             self.targets.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=sphere_collision,
                                                   basePosition=[-10, -10, -10], useMaximalCoordinates=False,
@@ -359,6 +364,34 @@ class LightSwitchEnv(AssistiveEnv):
                                                        useMaximalCoordinates=False, physicsClientId=self.id))
 
         self.update_targets()
+
+        self.belief_indicators = []
+        self.beliefs = np.ones(self.num_targets) / self.num_targets
+
+        for i in range(len(self.switches)):
+            indicator_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=self.success_dist * 1.5,
+                                                   rgbaColor=self._proba_to_color(self.beliefs[i]),
+                                                   physicsClientId=self.id)
+            indicator_pos = self.target_pos[i].copy()
+            indicator_pos[2] += 0.5
+            self.belief_indicators.append(p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1,
+                                                            baseVisualShapeIndex=indicator_visual,
+                                                            basePosition=indicator_pos,
+                                                            useMaximalCoordinates=False, physicsClientId=self.id))
+
+    def update_belief_indicators(self):
+        for belief, indicator in zip(self.beliefs, self.belief_indicators):
+            p.changeVisualShape(indicator, -1, rgbaColor=self._proba_to_color(belief))
+
+    def _proba_to_color(self, proba):
+        """
+        Converts a probability (0-1) to a color for generating a heatmap.
+        """
+        hue = (1 - proba) * 240 / 360
+        color = colorsys.hls_to_rgb(hue, 0.5, 1)
+        color = list(color)
+        color.append(1)
+        return color
 
     def update_targets(self):
         self.target_pos = []
@@ -382,6 +415,8 @@ class LightSwitchEnv(AssistiveEnv):
 
             p.resetBasePositionAndOrientation(self.targets[i], target_pos, [0, 0, 0, 1], physicsClientId=self.id)
             p.resetBasePositionAndOrientation(self.targets1[i], target_pos1, [0, 0, 0, 1], physicsClientId=self.id)
+
+
 
     @property
     def tool_pos(self):

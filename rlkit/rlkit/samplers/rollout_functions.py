@@ -86,7 +86,7 @@ def rollout(
         get_action_kwargs = {}
     if preprocess_obs_for_policy_fn is None:
         preprocess_obs_for_policy_fn = lambda x: x
-    raw_obs = []
+    base_obs = []
     raw_next_obs = []
     observations = []
     actions = []
@@ -103,7 +103,7 @@ def rollout(
     if render:
         env.render(**render_kwargs)
     while path_length < max_path_length:
-        raw_obs.append(o)
+        base_obs.append(o)
         o_for_agent = preprocess_obs_for_policy_fn(o)
         a, agent_info = agent.get_action(o_for_agent, **get_action_kwargs)
 
@@ -131,7 +131,7 @@ def rollout(
     observations = np.array(observations)
     next_observations = np.array(next_observations)
     if return_dict_obs:
-        observations = raw_obs
+        observations = base_obs
         next_observations = raw_next_obs
     rewards = np.array(rewards)
     if len(rewards.shape) == 1:
@@ -144,8 +144,8 @@ def rollout(
         terminals=np.array(terminals).reshape(-1, 1),
         agent_infos=agent_infos,
         env_infos=env_infos,
-        full_observations=raw_obs,
-        full_next_observations=raw_obs,
+        full_observations=base_obs,
+        full_next_observations=base_obs,
     )
 
 

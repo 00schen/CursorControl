@@ -79,7 +79,7 @@ def experiment(variant):
     expl_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=False
@@ -88,7 +88,7 @@ def experiment(variant):
     eval_policy = EncDecPolicy(
         policy=policy,
         features_keys=list(env.feature_sizes.keys()),
-        vae=vae,
+        vaes=[vae],
         incl_state=False,
         sample=False,
         deterministic=True
@@ -140,12 +140,13 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', )
+    parser.add_argument('--env_name', default='OneSwitch')
     parser.add_argument('--exp_name', default='pretrain_sac_oneswitch')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     parser.add_argument('--gpus', default=0, type=int)
     parser.add_argument('--per_gpu', default=1, type=int)
+    parser.add_argument('--det', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
 
@@ -173,7 +174,8 @@ if __name__ == "__main__":
             encoder_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            sample=True,
+            sample=not args.det,
+            beta=0 if args.det else 0.01
         ),
         env_config=dict(
             terminate_on_failure=False,
@@ -189,7 +191,7 @@ if __name__ == "__main__":
             state_type=0,
             reward_max=0,
             reward_min=-1,
-            reward_type='custom_switch',
+            reward_type='sparse',
             reward_temp=1,
             reward_offset=-0.2
         )
@@ -197,7 +199,6 @@ if __name__ == "__main__":
     search_space = {
         'seedid': [2000],
         'from_pretrain': [False],
-        'trainer_kwargs.beta': [.01],
         'algorithm_args.num_trains_per_train_loop': [1000],
         'replay_buffer_size': [int(5e5)],
     }

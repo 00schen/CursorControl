@@ -123,7 +123,7 @@
     <child link="door_link"/>
     <origin xyz="-.3 -.2 0" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-1.7" upper="0" effort="100" velocity="100"/>
+    <limit lower="-2.5" upper="0" effort="100" velocity="100"/>
   </joint>
   <joint name="handle" type="fixed">
     <parent link="door_link"/>

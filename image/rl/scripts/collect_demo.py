@@ -1,4 +1,4 @@
-from rl.policies import EncDecPolicy
+from rl.policies import EncDecPolicy, DemonstrationPolicy, KeyboardPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 import rlkit.pythonplusplus as ppp
@@ -14,19 +14,26 @@ from types import MethodType
 
 
 def collect_demonstrations(variant):
-    env = default_overhead(variant['env_kwargs']['config'])
-    env.seed(variant['seedid'] + 100)
+    import time
 
-    file_name = os.path.join(variant['eval_path'])
-    loaded = th.load(file_name, map_location='cpu')
-    policy = EncDecPolicy(
-        policy=loaded['trainer/policy'],
-        features_keys=list(env.feature_sizes.keys()),
-        vae=loaded['trainer/vae'],
-        incl_state=False,
-        sample=False,
-        deterministic=False
-    )
+    current_time = time.time_ns()
+    env = default_overhead(variant['env_kwargs']['config'])
+    env.seed(variant['seedid'] + 100 + current_time)
+
+    # file_name = os.path.join(variant['eval_path'])
+    # loaded = th.load(file_name, map_location='cpu')
+    # policy = EncDecPolicy(
+    #     policy=loaded['trainer/policy'],
+    #     features_keys=list(env.feature_sizes.keys()),
+    #     vae=loaded['trainer/vae'],
+    #     incl_state=False,
+    #     sample=False,
+    #     deterministic=False
+    # )
+
+    # policy = FollowerPolicy(env)
+    # policy = DemonstrationPolicy(policy, env, p=variant['p'])
+    policy = KeyboardPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -38,60 +45,62 @@ def collect_demonstrations(variant):
     paths = []
     success_count = 0
     while len(paths) < variant['num_episodes']:
-        target_index = 0
-        while target_index < env.base_env.num_targets:
-            def set_target_index(self):
-                self.target_index = target_index
-
-            env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
-            collected_paths = path_collector.collect_new_paths(
-                variant['path_length'],
-                variant['path_length'],
-            )
-            success_found = False
-            for path in collected_paths:
-                if path['env_infos'][-1]['task_success']:
-                    paths.append(path)
-                    success_count += path['env_infos'][-1]['task_success']
-                    success_found = True
-            if success_found:
-                target_index += 1
-            print("total paths collected: ", len(paths), "successes: ", success_count)
+        # target_index = 0
+        # while target_index < env.base_env.num_targets:
+            # def set_target_index(self):
+            #     self.target_index = target_index
+            #
+            # env.base_env.set_target_index = MethodType(set_target_index, env.base_env)
+        collected_paths = path_collector.collect_new_paths(
+            variant['path_length'],
+            1,
+        )
+        # success_found = False
+        for path in collected_paths:
+            # if path['env_infos'][-1]['task_success']:
+            # if sum(path['env_infos'][-1]['tasks']) > 2:
+            paths.append(path)
+            success_count += path['env_infos'][-1]['task_success']
+                # success_found = True
+            # if success_found:
+            #     target_index += 1
+        print("total paths collected: ", len(paths), "successes: ", success_count)
     return paths
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', )
+    parser.add_argument('--suffix', default='test')
     parser.add_argument('--no_render', action='store_false')
     parser.add_argument('--use_ray', action='store_true')
     args, _ = parser.parse_known_args()
     main_dir = str(Path(__file__).resolve().parents[2])
     print(main_dir)
 
-    path_length = 1200
+    path_length = 100
     variant = dict(
         seedid=3000,
         eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
         env_kwargs={'config': dict(
-            env_name='Kitchen',
-            step_limit=path_length,
-            env_kwargs=dict(success_dist=.03, frame_skip=5, stochastic=True, pretrain_assistance=True),
+            env_name='Valve',
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=False,
+                            min_error_threshold=np.pi / 32, use_rand_init_angle=True),
             oracle='keyboard',
             oracle_kwargs=dict(
                 threshold=.5,
             ),
-            action_type='joint',
+            action_type='disc_traj',
             smooth_alpha=1,
 
             factories=[],
-            adapts=['goal', 'reward'],
+            adapts=['goal',],
             state_type=0,
             apply_projection=False,
             reward_max=0,
             reward_min=-1,
             input_penalty=1,
-            reward_type='custom_kitchen',
+            reward_type='sparse',
             terminate_on_failure=False,
             goal_noise_std=0,
             reward_temp=1,
@@ -101,9 +110,9 @@ if __name__ == "__main__":
 
         on_policy=True,
         p=1,
-        num_episodes=1,
+        num_episodes=100,
         path_length=path_length,
-        save_name_suffix="full2",
+        save_name_suffix=args.suffix,
 
     )
     search_space = {
@@ -115,10 +124,10 @@ if __name__ == "__main__":
 
     def process_args(variant):
         variant['env_kwargs']['config']['seedid'] = variant['seedid']
-        variant[
-            'save_name'] = f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
-                           + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
-                           + "_" + variant['save_name_suffix']
+        variant['save_name'] = \
+            f"{variant['env_kwargs']['config']['env_name']}_{variant['env_kwargs']['config']['oracle']}" \
+            + f"_{'on_policy' if variant['on_policy'] else 'off_policy'}_{variant['num_episodes']}" \
+            + "_" + variant['save_name_suffix']
 
 
     if args.use_ray:
@@ -150,7 +159,7 @@ if __name__ == "__main__":
                 return collect_demonstrations(variant)
 
 
-        num_workers = 12
+        num_workers = 16
         variant['num_episodes'] = variant['num_episodes'] // num_workers
 
         samplers = [Sampler.remote() for i in range(num_workers)]
