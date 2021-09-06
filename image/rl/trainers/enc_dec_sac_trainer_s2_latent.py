@@ -67,10 +67,9 @@ class EncDecSACTrainer(TorchTrainer):
         has_goal_set = curr_goal_set is not None
         batch_size = obs.shape[0]
 
-
         encoder_features = [features]
         if self.incl_state:
-            encoder_obs = batch.get('encoder_obs', obs) if self.window_size is None \
+            encoder_obs = batch.get('curr_encoder_obs', obs) if self.window_size is None \
                 else batch.get('encoder_obs_hist', batch['obs_hist'])
             encoder_features.append(encoder_obs)
 
@@ -105,7 +104,7 @@ class EncDecSACTrainer(TorchTrainer):
             if self.prev_vae is not None:
                 prev_encoder_features = [goals]
                 if self.prev_incl_state:
-                    prev_encoder_features.append(obs)
+                    prev_encoder_features.append(batch.get('curr_encoder_obs', obs))
                     if has_goal_set:
                         curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
                         prev_encoder_features.append(curr_goal_set_flat)

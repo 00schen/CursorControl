@@ -73,9 +73,17 @@ class ValveEnv(AssistiveEnv):
         if self.task_success:
             index = 0
             self.n_success += 1
+            tracking_input = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
         else:
-            index = 1 if self.angle_diff(self.valve_angle, self.target_angle) > 0 else 2
+            tracking_angle = self.valve_angle
+            if self.angle_diff(self.valve_angle, self.target_angle) > 0:
+                index = 1
+                tracking_angle = self.wrap_angle(tracking_angle - 2 * self.min_error_threshold)
+            else:
+                index = 2
+                tracking_angle = self.wrap_angle(tracking_angle + 2 * self.min_error_threshold)
             self.n_success = 0
+            tracking_input = np.array([np.sin(tracking_angle), np.cos(tracking_angle)])
         direction[index] = 1
 
         if self.n_success >= self.term_thresh:
@@ -96,7 +104,8 @@ class ValveEnv(AssistiveEnv):
             'error_threshold': self.error_threshold,
             'direction': direction,
             'angle_error': self.angle_diff(self.valve_angle, self.target_angle),
-            'target_position': self.target_position
+            'target_position': self.target_position,
+            'tracking_input': tracking_input
         }
         done = False
         if self.term_cond == 'auto':

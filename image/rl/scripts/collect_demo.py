@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
         on_policy=True,
         p=1,
-        num_episodes=100,
+        num_episodes=50,
         path_length=path_length,
         save_name_suffix=args.suffix,
 

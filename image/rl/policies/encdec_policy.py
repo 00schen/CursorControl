@@ -11,7 +11,7 @@ import random
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False, random_latent=False, window=None, prev_vae=None):
+                 deterministic=False, random_latent=False, window=None, prev_vae=None, prev_incl_state=False):
         super().__init__()
 
         self.vaes = vaes if vaes is not None else []
@@ -34,6 +34,7 @@ class EncDecPolicy(PyTorchModule):
 
         # use encoder to map to goals for prev vae
         self.prev_vae = prev_vae
+        self.prev_incl_state = prev_incl_state
 
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
@@ -69,8 +70,11 @@ class EncDecPolicy(PyTorchModule):
 
                 # use current encoder to map to goal for prev vae
                 else:
-                    mean = th.mean(th.stack(self.past_means), dim=0)
-                    pred_features, _ = self.prev_vae.encode(mean)
+                    prev_encoder_inputs = []
+                    prev_encoder_inputs.append(th.mean(th.stack(self.past_means), dim=0))
+                    if self.prev_incl_state:
+                        prev_encoder_inputs.append(th.Tensor(encoder_obs).to(ptu.device))
+                    pred_features, _ = self.prev_vae.encode(th.cat(prev_encoder_inputs))
 
                 pred_features = pred_features.cpu().numpy()
 

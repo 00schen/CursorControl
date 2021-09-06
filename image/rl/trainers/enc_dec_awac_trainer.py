@@ -74,8 +74,10 @@ class TorchEncDecAWACTrainer(TorchTrainer):
         curr_encoder_features = [curr_goal]
         next_encoder_features = [next_goal]
         if self.incl_state:
-            curr_encoder_features.append(obs)
-            next_encoder_features.append(next_obs)
+            encoder_obs = batch.get('curr_encoder_obs', obs)
+            next_encoder_obs = batch.get('next_encoder_obs', next_obs)
+            curr_encoder_features.append(encoder_obs)
+            next_encoder_features.append(next_encoder_obs)
             if has_goal_set:
                 curr_encoder_features.append(curr_goal_set.reshape((batch_size, -1)))
                 next_encoder_features.append(next_goal_set.reshape((batch_size, -1)))

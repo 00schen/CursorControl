@@ -38,6 +38,11 @@ def experiment(variant):
     action_dim = env.action_space.low.size
     M = variant["layer_size"]
 
+    encoder_obs_space = env.encoder_observation_space
+    if encoder_obs_space is None:
+        encoder_obs_space = env.observation_space
+    encoder_obs_dim = encoder_obs_space.low.size + sum(env.feature_sizes.values())
+
     if not variant['from_pretrain']:
         qf1 = ConcatMlp(
             input_size=obs_dim + action_dim,
@@ -64,7 +69,7 @@ def experiment(variant):
             action_dim=action_dim,
             hidden_sizes=[M, M],
         )
-        vae = VAE(input_size=obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
+        vae = VAE(input_size=encoder_obs_dim if variant['incl_state'] else sum(env.feature_sizes.values()),
                   latent_size=variant['latent_size'],
                   encoder_hidden_sizes=[64],
                   decoder_hidden_sizes=[64]
@@ -210,7 +215,7 @@ if __name__ == "__main__":
             reward_scale=1,
             use_automatic_entropy_tuning=True,
             sample=not args.det,
-            beta=0 if args.det else 0.0001
+            beta=0 if args.det else 1e-4
         ),
         demo_paths=[
             os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_100_test.npy"),

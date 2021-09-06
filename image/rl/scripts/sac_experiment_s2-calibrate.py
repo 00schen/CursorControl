@@ -67,7 +67,6 @@ def experiment(variant):
         optim_params.append({'params': vae.encoder.parameters()})
     if not variant['freeze_decoder']:
         optim_params.append({'params': policy.parameters(), 'lr': 1e-6})
-
     optimizer = optim.Adam(
         optim_params,
         lr=variant['lr'],
@@ -83,7 +82,8 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         random_latent=variant.get('random_latent', False),
         window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None,
+        prev_incl_state=variant['trainer_kwargs']['prev_incl_state']
     )
 
     eval_policy = EncDecPolicy(
@@ -95,7 +95,8 @@ def experiment(variant):
         deterministic=True,
         latent_size=variant['latent_size'],
         window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None,
+        prev_incl_state=variant['trainer_kwargs']['prev_incl_state']
     )
 
     eval_path_collector = FullPathCollector(
@@ -190,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -277,7 +278,7 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [1],
         'lr': [1e-3],
         'algorithm_args.num_trains_per_train_loop': [50],
-        'env_config.feature': ['target_position'],
+        'env_config.feature': ['tracking_input'],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 
