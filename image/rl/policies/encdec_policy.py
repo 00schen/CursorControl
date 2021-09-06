@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.core.numeric import identity
 import torch as th
 from rlkit.torch.core import PyTorchModule
 import rlkit.torch.pytorch_util as ptu

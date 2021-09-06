@@ -37,6 +37,7 @@ def default_overhead(config):
                 'static_gaze': static_gaze,
                 'real_gaze': real_gaze,
                 'joint': joint,
+                'oracle': oracle,
                 'goal': goal,
                 'reward': reward,
                 'sim_target': sim_target,
@@ -228,43 +229,6 @@ class array_to_dict:
         if not isinstance(obs, dict):
             obs = {'raw_obs': obs}
         return obs
-
-
-class oracle:
-    def __init__(self, master_env, config):
-        self.oracle_type = config['oracle']
-        if 'model' in self.oracle_type:
-            self.oracle = master_env.oracle = {
-                "Bottle": BottleOracle,
-            }[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
-        else:
-            oracle_type = {
-                'keyboard': KeyboardOracle,
-                'dummy_gaze': BottleOracle,
-            }[config['oracle']]
-            if config['oracle'] == 'sim_gaze':
-                self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
-            elif config['oracle'] == 'dummy_gaze':
-                self.oracle = master_env.oracle = oracle_type(master_env.rng, **config['oracle_kwargs'])
-            else:
-                self.oracle = master_env.oracle = oracle_type()
-        self.master_env = master_env
-        del master_env.feature_sizes['goal']
-        master_env.feature_sizes['recommend'] = self.oracle.size
-
-    def _step(self, obs, r, done, info):
-        self._predict(obs, info)
-        return obs, r, done, info
-
-    def _reset(self, obs, info=None):
-        self.oracle.reset()
-        self.master_env.recommend = obs['recommend'] = np.zeros(self.oracle.size)
-        return obs
-
-    def _predict(self, obs, info):
-        recommend, _info = self.oracle.get_action(obs, info)
-        self.master_env.recommend = obs['recommend'] = info['recommend'] = recommend
-        info['noop'] = not self.oracle.status.curr_intervention
 
 
 class goal:
@@ -521,6 +485,49 @@ class sim_keyboard:
             action[-3:] = obs['old_block_pos']
         obs['target'] = action
 
+class oracle:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 7)
+        self.blank_p = config.get('blank_p')
+        self.spread = config.get('oracle_noise')
+        self.smoothing = config.get('smoothing')
+
+        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
+        loaded = th.load(file_name, map_location=ptu.device)
+        policy = loaded['trainer/policy']
+        prev_vae = loaded['trainer/vae'].to(ptu.device)
+        self.policy = EncDecPolicy(
+            policy=policy,
+            features_keys=['goal'],
+            vaes=[prev_vae],
+            deterministic=True,
+            latent_size=4,
+            incl_state=False,
+        )
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.policy.reset()
+        self.action = np.zeros(self.size)
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        action, _ = self.policy.get_action(obs)
+        action += np.random.normal(np.zeros(action.shape), self.spread)
+        if np.random.uniform() < self.blank_p:
+            action = np.zeros(action.shape)
+        self.action = self.smoothing * self.action + action
+
+        obs['target'] = action
+
 
 class joint:
     def __init__(self, master_env, config):
@@ -533,7 +540,6 @@ class joint:
     def _reset(self, obs, info=None):
         obs['raw_obs'] = np.concatenate((obs['raw_obs'], obs['joint']))
         return obs
-
 
 class dict_to_array:
     def __init__(self, master_env, config):

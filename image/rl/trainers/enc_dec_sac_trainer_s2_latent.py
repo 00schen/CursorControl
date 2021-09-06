@@ -1,10 +1,10 @@
 import torch as th
 import numpy as np
 from collections import OrderedDict
+from rlkit.torch.distributions import MultivariateDiagonalNormal
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.torch_rl_algorithm import TorchTrainer
-
 
 class EncDecSACTrainer(TorchTrainer):
     def __init__(self,
@@ -111,7 +111,7 @@ class EncDecSACTrainer(TorchTrainer):
             else:
                 target_latent = goals
 
-            latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
+            # latent_error = th.linalg.norm(pred_latent - target_latent, dim=-1)
 
             if has_goal_set:
                 curr_goal_set_flat = curr_goal_set.reshape((batch_size, -1))
@@ -151,6 +151,12 @@ class EncDecSACTrainer(TorchTrainer):
                 )
 
                 supervised_loss = (-q_new_actions).mean()
+            elif self.objective == 'non-parametric':
+                supervised_loss = ptu.zeros(1)
+            elif self.objective == 'dagger':
+                target = self.policy(*target_policy_features).normal
+                pred = MultivariateDiagonalNormal(mean, th.sqrt(sigma_squared))
+                supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
             else:
                 raise NotImplementedError()
 
@@ -173,7 +179,7 @@ class EncDecSACTrainer(TorchTrainer):
             self.eval_statistics['Loss'] = np.mean(ptu.get_numpy(loss))
             self.eval_statistics['SL Loss'] = np.mean(ptu.get_numpy(supervised_loss))
             self.eval_statistics['KL Loss'] = np.mean(ptu.get_numpy(kl_loss))
-            self.eval_statistics['Latent Error'] = np.mean(ptu.get_numpy(latent_error))
+            # self.eval_statistics['Latent Error'] = np.mean(ptu.get_numpy(latent_error))
 
     def _product_of_gaussians(self, means, logvars, mask):
         sigmas_squared = th.clamp(th.exp(logvars), min=1e-7)

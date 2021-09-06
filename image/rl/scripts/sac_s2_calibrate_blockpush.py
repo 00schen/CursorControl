@@ -2,7 +2,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationPolicy, EncDecPolicy
+from rl.policies import CalibrationPolicy, EncDecPolicy, IdentityPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import LatentEncDecSACTrainer
@@ -68,30 +68,36 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    expl_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vaes=vaes,
-        incl_state=variant['incl_state'],
-        sample=variant['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
-        random_latent=variant.get('random_latent', False),
-        window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
-    )
+    if variant['trainer_kwargs']['objective'] == 'non-parametric':
+        expl_policy = IdentityPolicy()
+    else:
+        expl_policy = EncDecPolicy(
+            policy=policy,
+            features_keys=list(env.feature_sizes.keys()),
+            vaes=vaes,
+            incl_state=variant['incl_state'],
+            sample=variant['sample'],
+            deterministic=True,
+            latent_size=variant['latent_size'],
+            random_latent=variant.get('random_latent', False),
+            window=variant['window'],
+            prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None,
+        )
 
-    eval_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vaes=vaes,
-        incl_state=variant['incl_state'],
-        sample=variant['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
-        window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
-    )
+    if variant['trainer_kwargs']['objective'] == 'non-parametric':
+        eval_policy = IdentityPolicy()
+    else:
+        eval_policy = EncDecPolicy(
+            policy=policy,
+            features_keys=list(env.feature_sizes.keys()),
+            vaes=vaes,
+            incl_state=variant['incl_state'],
+            sample=variant['sample'],
+            deterministic=True,
+            latent_size=variant['latent_size'],
+            window=variant['window'],
+            prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None
+        )
 
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -265,15 +271,18 @@ if __name__ == "__main__":
         'lr': [5e-4],
         'algorithm_args.num_trains_per_train_loop': [100],
         'seedid': [0,1,2,3,4],
-        'env_config.adapts': [['goal', 'sim_keyboard'],],
-        'env_config.mode': ['block', 'oracle'],
-        'env_config.keyboard_p': [.5, .6, .7, .8],
+        'env_config.adapts': [['goal', 'oracle'],],
+        # 'env_config.mode': ['oracle',],
+        # 'env_config.keyboard_p': [.5, .6, .7, .8],
         'env_config.blank_p': [.5, .6, .7, .8],
-        'env_config.keyboard_size': [14],
+        # 'env_config.keyboard_size': [14],
+        'action_noise': [0],
+        'env_config.smoothing': [.8, .9, .95, .99],
+
         # 'env_config.env_kwargs.always_reset': [True, False],
         # 'use_np': [True, False]
         'window': [20],
-        'trainer_kwargs.objective': ['normal_kl','goal']
+        'trainer_kwargs.objective': ['normal_kl', 'non-parametric']
     }
 
     sweeper = hyp.DeterministicHyperparameterSweeper(
@@ -285,6 +294,7 @@ if __name__ == "__main__":
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
         variant['algorithm_args']['seedid'] = variant['seedid']
+        variant['env_config']['oracle_noise'] = variant['action_noise']
 
         if not args.use_ray:
             variant['render'] = args.no_render

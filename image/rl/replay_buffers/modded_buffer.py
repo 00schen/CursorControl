@@ -72,6 +72,8 @@ class ModdedReplayBuffer(EnvReplayBuffer):
     def add_sample(self, observation, action, reward, next_observation,
                    terminal, env_info, **kwargs):
         for key in self._obs_dict_keys:
+            if key == 'latents':
+                self._obs_dict[key][self._top] = observation[key][:4]      
             self._obs_dict[key][self._top] = observation[key]
             if key in next_observation.keys():
                 self._next_obs_dict[key][self._top] = next_observation[key]
