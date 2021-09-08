@@ -1,3 +1,4 @@
+from collections import deque
 from functools import reduce
 import os
 from pathlib import Path
@@ -42,6 +43,7 @@ def default_overhead(config):
                 'reward': reward,
                 'sim_target': sim_target,
                 'sim_keyboard': sim_keyboard,
+                'keyboard': keyboard,
                 'dict_to_array': dict_to_array,
             }
             self.adapts = [adapt_map[adapt] for adapt in config['adapts']]
@@ -415,6 +417,42 @@ class sim_target:
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['target'] = target + noise
 
+from rl.policies.keyboard_policy import KeyboardPolicy
+class keyboard:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 6)
+        self.mode = config.get('mode')
+        self.noise_p = config.get('keyboard_p')
+        self.blank_p = config.get('blank_p')
+        self.smoothing = config.get('smoothing')
+        self.lag = config.get('lag')
+
+        self.policy = KeyboardPolicy()
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.policy.reset()
+        self.action = np.zeros(self.size)
+        self.lag_queue = deque(np.zeros((self.lag, self.size))) if self.lag else deque()
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        action, _ = self.policy.get_action(obs)
+        obs['user_input'] = action
+        self.action = self.smoothing * self.action + action
+        action = (1-self.smoothing)*self.action
+        self.lag_queue.append(action)
+        lag_action = self.lag_queue.popleft()
+        action = lag_action
+        obs['target'] = action
 
 from rl.policies.encdec_policy import EncDecPolicy
 import rlkit.torch.pytorch_util as ptu
@@ -495,6 +533,7 @@ class oracle:
         self.blank_p = config.get('blank_p')
         self.spread = config.get('oracle_noise')
         self.smoothing = config.get('smoothing')
+        self.lag = config.get('lag')
 
         file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
         loaded = th.load(file_name, map_location=ptu.device)
@@ -516,6 +555,7 @@ class oracle:
     def _reset(self, obs, info=None):
         self.policy.reset()
         self.action = np.zeros(self.size)
+        self.lag_queue = deque(np.zeros((self.lag, self.size))) if self.lag else deque()
         self.add_target(obs, info)
         return obs
 
@@ -525,6 +565,10 @@ class oracle:
         if np.random.uniform() < self.blank_p:
             action = np.zeros(action.shape)
         self.action = self.smoothing * self.action + action
+        action = (1-self.smoothing)*self.action
+        self.lag_queue.append(action)
+        lag_action = self.lag_queue.popleft()
+        action = lag_action
 
         obs['target'] = action
 

@@ -22,12 +22,14 @@ class EncDecSACTrainer(TorchTrainer):
                  grad_norm_clip=1,
                  incl_state=True,
                  prev_incl_state=False,
-                 window_size=None
+                 window_size=None,
+                 dagger_policy=None,
                  ):
         super().__init__()
         self.policy = policy
         self.qf1 = qf1
         self.qf2 = qf2
+        self.dagger_policy = dagger_policy
         self.optimizer = optimizer
         self.vaes = vaes
         self.prev_vae = prev_vae
@@ -155,7 +157,7 @@ class EncDecSACTrainer(TorchTrainer):
                 supervised_loss = ptu.zeros(1)
             elif self.objective == 'dagger':
                 target = self.policy(*target_policy_features).normal
-                pred = MultivariateDiagonalNormal(mean, th.sqrt(sigma_squared))
+                pred = self.dagger_policy(*pred_policy_features).normal
                 supervised_loss = th.mean(th.distributions.kl.kl_divergence(target, pred))
             else:
                 raise NotImplementedError()
@@ -202,5 +204,6 @@ class EncDecSACTrainer(TorchTrainer):
     def get_snapshot(self):
         return dict(
             vaes=tuple(self.vaes),
-            policy=self.policy
+            policy=self.policy,
+            dagger_policy=self.dagger_policy,
         )

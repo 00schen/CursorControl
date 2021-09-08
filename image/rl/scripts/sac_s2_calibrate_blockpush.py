@@ -1,6 +1,7 @@
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
+from rlkit.torch.sac.policies import ConcatTanhGaussianPolicy
 
 from rl.policies import CalibrationPolicy, EncDecPolicy, IdentityPolicy
 from rl.path_collectors import FullPathCollector
@@ -39,6 +40,7 @@ def experiment(variant):
     feat_dim = env.observation_space.low.size + reduce(operator.mul,
                                                        getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
+    action_dim = env.action_space.low.size
 
     vaes = []
     for _ in range(variant['n_encoders']):
@@ -57,6 +59,16 @@ def experiment(variant):
     else:
         prev_vae = None
 
+    use_dagger = variant['trainer_kwargs']['objective'] == 'dagger'
+    if use_dagger:
+        dagger_policy = ConcatTanhGaussianPolicy(
+            obs_dim=feat_dim + variant['latent_size'],
+            action_dim=action_dim,
+            hidden_sizes=[M, M],
+        )
+    else:
+        dagger_policy = None
+
     optim_params = []
     for vae in vaes:
         optim_params += list(vae.encoder.parameters())
@@ -69,10 +81,10 @@ def experiment(variant):
     )
 
     if variant['trainer_kwargs']['objective'] == 'non-parametric':
-        expl_policy = IdentityPolicy()
+        expl_policy = IdentityPolicy(env, variant.get('demo', False))
     else:
         expl_policy = EncDecPolicy(
-            policy=policy,
+            policy= dagger_policy if use_dagger else policy,
             features_keys=list(env.feature_sizes.keys()),
             vaes=vaes,
             incl_state=variant['incl_state'],
@@ -85,10 +97,10 @@ def experiment(variant):
         )
 
     if variant['trainer_kwargs']['objective'] == 'non-parametric':
-        eval_policy = IdentityPolicy()
+        eval_policy = IdentityPolicy(eval_env, variant.get('demo', False))
     else:
         eval_policy = EncDecPolicy(
-            policy=policy,
+            policy= dagger_policy if use_dagger else policy,
             features_keys=list(env.feature_sizes.keys()),
             vaes=vaes,
             incl_state=variant['incl_state'],
@@ -143,6 +155,7 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         feature_keys=list(env.feature_sizes.keys()),
         incl_state=variant['incl_state'],
+        dagger_policy = dagger_policy,
         **variant['trainer_kwargs']
     )
 
@@ -197,6 +210,7 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
+    parser.add_argument('--demo', action='store_true')
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -209,6 +223,7 @@ if __name__ == "__main__":
     pretrain_path += '.pkl'
 
     default_variant = dict(
+        demo=args.demo,
         mode=args.mode,
         incl_state=True,
         sample=False,
@@ -226,7 +241,7 @@ if __name__ == "__main__":
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else 1e-4,
-            # objective=args.objective,
+            objective=args.objective,
             grad_norm_clip=None,
             prev_incl_state=args.prev_incl_state
         ),
@@ -270,26 +285,53 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [5],
         'lr': [5e-4],
         'algorithm_args.num_trains_per_train_loop': [100],
-        'seedid': [0,1,2,3,4],
-        'env_config.adapts': [['goal', 'oracle'],],
+        'seedid': [0],
+        'env_config.adapts': [['goal', 'keyboard'],],
         # 'env_config.mode': ['oracle',],
         # 'env_config.keyboard_p': [.5, .6, .7, .8],
-        'env_config.blank_p': [.5, .6, .7, .8],
+        'env_config.blank_p': [0],
         # 'env_config.keyboard_size': [14],
         'action_noise': [0],
-        'env_config.smoothing': [.8, .9, .95, .99],
+        'env_config.smoothing': [0],
+        'env_config.lag': [5],
 
         # 'env_config.env_kwargs.always_reset': [True, False],
         # 'use_np': [True, False]
         'window': [20],
-        'trainer_kwargs.objective': ['normal_kl', 'non-parametric']
+        # 'trainer_kwargs.objective': ['normal_kl', 'dagger']
     }
-
     sweeper = hyp.DeterministicHyperparameterSweeper(
         search_space, default_parameters=default_variant,
     )
     for variant in sweeper.iterate_hyperparameters():
         variants.append(variant)
+
+    # search_space = {
+    #     'algorithm_args.trajs_per_index': [5],
+    #     'lr': [5e-4],
+    #     'algorithm_args.num_trains_per_train_loop': [100],
+    #     'seedid': [0,1,2,3],
+    #     'env_config.adapts': [['goal', 'oracle'],],
+    #     # 'env_config.mode': ['oracle',],
+    #     # 'env_config.keyboard_p': [.5, .6, .7, .8],
+    #     'env_config.blank_p': [.5, .6, .7, .8],
+    #     # 'env_config.keyboard_size': [14],
+    #     'action_noise': [0],
+    #     'env_config.smoothing': [0],
+    #     'env_config.lag': [5, 10, 25, 50],
+
+    #     # 'env_config.env_kwargs.always_reset': [True, False],
+    #     # 'use_np': [True, False]
+    #     'window': [20],
+    #     'trainer_kwargs.objective': ['normal_kl', 'dagger']
+    # }
+    # sweeper = hyp.DeterministicHyperparameterSweeper(
+    #     search_space, default_parameters=default_variant,
+    # )
+    # for variant in sweeper.iterate_hyperparameters():
+    #     variants.append(variant)
+
+    # np.random.shuffle(variants)
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
