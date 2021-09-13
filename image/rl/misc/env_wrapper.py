@@ -411,7 +411,7 @@ class sim_target:
         if self.feature == 'direction':
             self.target_size = master_env.feature_sizes['target'] = 3
         elif self.feature == 'target_position':
-            self.target_size = master_env.feature_sizes['target'] = 3
+            self.target_size = master_env.feature_sizes['target'] = 2
 
         self.goal_noise_std = config['goal_noise_std']
 

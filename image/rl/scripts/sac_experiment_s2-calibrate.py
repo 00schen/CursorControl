@@ -82,8 +82,9 @@ def experiment(variant):
         latent_size=variant['latent_size'],
         random_latent=variant.get('random_latent', False),
         window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None,
-        prev_incl_state=variant['trainer_kwargs']['prev_incl_state']
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
+        prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
+        goal_baseline=variant['goal_baseline']
     )
 
     eval_policy = EncDecPolicy(
@@ -95,8 +96,9 @@ def experiment(variant):
         deterministic=True,
         latent_size=variant['latent_size'],
         window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' else None,
-        prev_incl_state=variant['trainer_kwargs']['prev_incl_state']
+        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
+        prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
+        goal_baseline=variant['goal_baseline']
     )
 
     eval_path_collector = FullPathCollector(
@@ -172,6 +174,8 @@ def experiment(variant):
         calibration_data_collector=calibration_path_collector,
         calibration_buffer=calibration_buffer,
         real_user=variant['real_user'],
+        goal_baseline=variant['goal_baseline'],
+        latent_calibrate=variant['latent_calibrate'],
         **variant['algorithm_args']
     )
     algorithm.to(ptu.device)
@@ -191,7 +195,7 @@ if __name__ == "__main__":
     parser.add_argument('--per_gpu', default=1, type=int)
     parser.add_argument('--mode', default='default', type=str)
     parser.add_argument('--sim', action='store_true')
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--det', action='store_true')
     parser.add_argument('--pre_det', action='store_true')
     parser.add_argument('--no_failures', action='store_true')
@@ -199,8 +203,11 @@ if __name__ == "__main__":
     parser.add_argument('--curriculum', action='store_true')
     parser.add_argument('--objective', default='normal_kl', type=str)
     parser.add_argument('--prev_incl_state', action='store_true')
-    parser.add_argument('--window', default=20, type=int)
+    parser.add_argument('--window', default=10, type=int)
     parser.add_argument('--unfreeze_decoder', action='store_true')
+    parser.add_argument('--goal_baseline', action='store_true')
+    parser.add_argument('--latent_calibrate', action='store_true')
+    parser.add_argument('--feature', default=None, type=str)
 
     args, _ = parser.parse_known_args()
     main_dir = args.main_dir = str(Path(__file__).resolve().parents[2])
@@ -209,7 +216,7 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.1}[args.env_name]
+                      'Valve': 0.2}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
 
@@ -219,6 +226,8 @@ if __name__ == "__main__":
     pretrain_path += '.pkl'
 
     default_variant = dict(
+        goal_baseline=args.goal_baseline,
+        latent_calibrate=args.latent_calibrate,
         freeze_decoder=not args.unfreeze_decoder,
         mode=args.mode,
         incl_state=True,
@@ -249,7 +258,8 @@ if __name__ == "__main__":
             max_failures=3,
             eval_paths=False,
             relabel_failures=not args.no_failures,
-            curriculum=args.curriculum
+            curriculum=args.curriculum,
+            goal_noise_std=goal_noise_std
         ),
 
         env_config=dict(
@@ -267,6 +277,7 @@ if __name__ == "__main__":
             gaze_dim=128,
             gaze_path=f'{args.env_name}_gaze_data_train.h5',
             eval_gaze_path=f'{args.env_name}_gaze_data_eval.h5',
+            feature=args.feature
         )
     )
     variants = []
@@ -278,7 +289,7 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [1],
         'lr': [1e-3],
         'algorithm_args.num_trains_per_train_loop': [50],
-        'env_config.feature': ['tracking_input'],
+        # 'algorithm_args.calibrate_input': ['target_position'],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 

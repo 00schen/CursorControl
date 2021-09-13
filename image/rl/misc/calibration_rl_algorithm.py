@@ -7,6 +7,7 @@ import pybullet as p
 from rlkit.core import logger
 import numpy as np
 import time
+from rl.misc.env_wrapper import sim_target
 
 
 class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
@@ -24,6 +25,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             relabel_failures=True,
             seedid=0,
             curriculum=False,
+            goal_baseline=False,
+            goal_noise_std=0,
+            latent_calibrate=False,
+            calibrate_input=None,
             **kwargs,
     ):
         super().__init__(
@@ -42,6 +47,10 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         self.relabel_failures = relabel_failures
         self.seedid = seedid
         self.curriculum = curriculum
+        self.goal_baseline = goal_baseline
+        self.goal_noise_std = goal_noise_std
+        self.latent_calibrate = latent_calibrate
+        self.calibrate_input = calibrate_input
         self.blocks = []
 
         self.metrics = {'success_episodes': [],
@@ -69,8 +78,30 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         gt.stamp('training', unique=False)
         self.training_mode(False)
 
-    def _train(self):
-        # calibrate
+    def _calibrate_goal_baseline(self):
+        if self.real_user:
+            pass
+        else:
+            calibration_points = np.array([(-1, -1), (-1, 0), (-1, 1),
+                                           (0, -1), (0, 0), (0, 1),
+                                           (1, -1), (1, 0), (1, -1)])
+            calibration_points = np.tile(calibration_points, (self.trajs_per_index, 1))
+
+            data = calibration_points + np.random.normal(0, self.goal_noise_std, calibration_points.shape)
+            self.expl_data_collector._policy.x_svr_estimator.fit(data, y=calibration_points[:, 0])
+            self.expl_data_collector._policy.y_svr_estimator.fit(data, y=calibration_points[:, 1])
+
+    def _calibrate(self):
+        old_feature = None
+        sim_target_adapt = None
+        if self.calibrate_input is not None:
+            for adapt in self.expl_env.adapts:
+                if isinstance(adapt, sim_target):
+                    sim_target_adapt = adapt
+                    old_feature = adapt.feature
+                    adapt.feature = self.calibrate_input
+                    break
+
         self.expl_env.seed(self.seedid)
         self.expl_env.base_env.calibrate_mode(True, self.calibrate_split)
         calibration_data = []
@@ -94,7 +125,26 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
         logger.save_extra_data(calibration_data, 'calibration_data.pkl', mode='pickle')
 
         gt.stamp('pretrain exploring', unique=False)
+
+        old_objective = None
+        if self.latent_calibrate:
+            old_objective = self.trainer.objective
+            self.trainer.objective = 'latent'
         self._sample_and_train(self.pretrain_steps, [calibration_buffer])
+
+        if self.latent_calibrate:
+            self.trainer.objective = old_objective
+            self.trainer.second_half_latent = True
+
+        if old_feature is not None and sim_target_adapt is not None:
+            sim_target_adapt.feature = old_feature
+
+    def _train(self):
+        if self.goal_baseline:
+            self._calibrate_goal_baseline()
+
+        else:
+            self._calibrate()
 
         self.expl_env.seed(self.seedid + 100)
         self.eval_env.seed(self.seedid + 200)

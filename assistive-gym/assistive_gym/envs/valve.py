@@ -56,6 +56,8 @@ class ValveEnv(AssistiveEnv):
         self.term_thresh = term_thresh
         self.n_success = 0  # number of consecutive steps in success condition
 
+        self.target_norm = .55
+
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         self.init_pos_random, _ = seeding.np_random(seed)
@@ -73,7 +75,7 @@ class ValveEnv(AssistiveEnv):
         if self.task_success:
             index = 0
             self.n_success += 1
-            tracking_input = np.array([np.sin(self.target_angle), np.cos(self.target_angle)])
+            tracking_angle = self.valve_angle
         else:
             tracking_angle = self.valve_angle
             if self.angle_diff(self.valve_angle, self.target_angle) > 0:
@@ -83,7 +85,10 @@ class ValveEnv(AssistiveEnv):
                 index = 2
                 tracking_angle = self.wrap_angle(tracking_angle + 2 * self.min_error_threshold)
             self.n_success = 0
-            tracking_input = np.array([np.sin(tracking_angle), np.cos(tracking_angle)])
+
+        tracking_input = self.target_norm * np.array((-np.cos(tracking_angle), np.sin(tracking_angle))) + \
+                         np.delete(self.valve_pos, 1)
+
         direction[index] = 1
 
         if self.n_success >= self.term_thresh:
@@ -196,7 +201,7 @@ class ValveEnv(AssistiveEnv):
         valve_pos, valve_orient = p.multiplyTransforms(wall_pos, wall_orient, [0, 0.1, 0],
                                                        p.getQuaternionFromEuler([0, 0, 0]),
                                                        physicsClientId=self.id)
-        if self.stochastic and not self.calibrate:
+        if self.stochastic:
             valve_pos = np.array(valve_pos) + self.valve_pos_noise
 
         self.valve = p.loadURDF(os.path.join(self.world_creation.directory, 'valve', 'valve.urdf'),
@@ -223,8 +228,9 @@ class ValveEnv(AssistiveEnv):
         sphere_visual = p.createVisualShape(shapeType=p.GEOM_SPHERE, radius=0.1,
                                             rgbaColor=[1, 0, 0, 1], physicsClientId=self.id)
 
-        target_coord = 0.55 * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + valve_pos + \
-                       [0, 0.105, 0]
+        target_coord = self.target_norm * np.array((-np.cos(self.target_angle), 0, np.sin(self.target_angle))) + \
+                       valve_pos + [0, 0.105, 0]
+
 
         self.target_indicator = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=-1,
                                                   baseVisualShapeIndex=sphere_visual, basePosition=target_coord,
@@ -283,7 +289,9 @@ class ValveEnv(AssistiveEnv):
 
         if self.stochastic:
             self.valve_pos_noise = np.array([self.np_random.uniform(-.05, .05), 0, 0])
-            self.wall_noise = np.array([0, self.np_random.uniform(-.05, .05), 0])
+            # self.wall_noise = np.array([0, self.np_random.uniform(-.05, .05), 0])
+            # no y noise so can use 2D coordinates only for goal estimation
+            self.wall_noise = np.zeros(3)
 
     def wrong_goal_reached(self):
         return False
@@ -323,7 +331,7 @@ class ValveEnv(AssistiveEnv):
 
     @property
     def target_position(self):
-        return np.array(p.getBasePositionAndOrientation(self.target_indicator, physicsClientId=self.id)[0])
+        return np.delete(np.array(p.getBasePositionAndOrientation(self.target_indicator, physicsClientId=self.id)[0]), 1)
 
     def wrap_angle(self, angle):
         return angle - 2 * np.pi * np.floor((angle + np.pi) / (2 * np.pi))

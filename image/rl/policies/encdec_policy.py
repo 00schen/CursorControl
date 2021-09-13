@@ -7,11 +7,13 @@ from rlkit.torch.distributions import (
 )
 from rlkit.torch.networks.stochastic.distribution_generator import DistributionGenerator
 import random
+from sklearn.svm import LinearSVR
 
 
 class EncDecPolicy(PyTorchModule):
     def __init__(self, policy, features_keys, vaes=None, incl_state=True, sample=False, latent_size=None,
-                 deterministic=False, random_latent=False, window=None, prev_vae=None, prev_incl_state=False):
+                 deterministic=False, random_latent=False, window=None, prev_vae=None, prev_incl_state=False,
+                 goal_baseline=False):
         super().__init__()
 
         self.vaes = vaes if vaes is not None else []
@@ -36,6 +38,11 @@ class EncDecPolicy(PyTorchModule):
         self.prev_vae = prev_vae
         self.prev_incl_state = prev_incl_state
 
+        self.goal_baseline = goal_baseline
+        if self.goal_baseline:
+            self.x_svr_estimator = LinearSVR(max_iter=5000)
+            self.y_svr_estimator = LinearSVR(max_iter=5000)
+
     def get_action(self, obs):
         features = [obs[k] for k in self.features_keys]
         with th.no_grad():
@@ -45,6 +52,25 @@ class EncDecPolicy(PyTorchModule):
 
             if self.random_latent:
                 pred_features = self.episode_latent.detach().cpu().numpy()
+            elif self.goal_baseline:
+                # baseline specific to valve env
+                x_pred = self.x_svr_estimator.predict(np.concatenate(features)[None])[0]
+                y_pred = self.y_svr_estimator.predict(np.concatenate(features)[None])[0]
+                # x_pred = features[0][0]
+                # y_pred = features[0][1]
+                self.past_means.append([x_pred, y_pred])
+                self.past_means = self.past_means[-self.window:]
+                avg_pred = np.mean(self.past_means, axis=0)
+                valve_pos = encoder_obs[-3:]
+                valve_xy = np.delete(valve_pos, 1)
+                avg_pred = avg_pred - valve_xy
+                angle_pred = np.arctan2(avg_pred[1], -avg_pred[0])
+                prev_encoder_inputs = [th.Tensor([np.sin(angle_pred), np.cos(angle_pred)]).to(ptu.device)]
+                if self.prev_incl_state:
+                    prev_encoder_inputs.append(th.Tensor(encoder_obs).to(ptu.device))
+                pred_features, _ = self.prev_vae.encode(th.cat(prev_encoder_inputs))
+                pred_features = pred_features.cpu().numpy()
+
             elif len(self.vaes):
                 if self.incl_state:
                     features.append(encoder_obs)
