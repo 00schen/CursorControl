@@ -169,6 +169,8 @@ class EncDecSACTrainer(TorchTrainer):
                     )
 
                     supervised_loss += l * (-q_new_actions).mean()
+                elif self.objective == 'non-parametric':
+                    supervised_loss = ptu.zeros(1)
                 else:
                     raise NotImplementedError()
 

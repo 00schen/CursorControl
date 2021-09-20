@@ -2,7 +2,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.networks import VAE
 from rl.misc.calibration_rl_algorithm import BatchRLAlgorithm as TorchCalibrationRLAlgorithm
 
-from rl.policies import CalibrationPolicy, EncDecPolicy
+from rl.policies import CalibrationPolicy, EncDecPolicy, IdentityPolicy
 from rl.path_collectors import FullPathCollector
 from rl.misc.env_wrapper import default_overhead
 from rl.trainers import LatentEncDecSACTrainer
@@ -72,34 +72,40 @@ def experiment(variant):
         lr=variant['lr'],
     )
 
-    expl_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vaes=vaes,
-        incl_state=variant['incl_state'],
-        sample=variant['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
-        random_latent=variant.get('random_latent', False),
-        window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
-        prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
-        goal_baseline=variant['goal_baseline']
-    )
+    if variant['trainer_kwargs']['objective'] == 'non-parametric':
+        expl_policy = IdentityPolicy(env, variant.get('demo', False))
+    else:
+        expl_policy = EncDecPolicy(
+            policy=policy,
+            features_keys=list(env.feature_sizes.keys()),
+            vaes=vaes,
+            incl_state=variant['incl_state'],
+            sample=variant['sample'],
+            deterministic=True,
+            latent_size=variant['latent_size'],
+            random_latent=variant.get('random_latent', False),
+            window=variant['window'],
+            prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
+            prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
+            goal_baseline=variant['goal_baseline']
+        )
 
-    eval_policy = EncDecPolicy(
-        policy=policy,
-        features_keys=list(env.feature_sizes.keys()),
-        vaes=vaes,
-        incl_state=variant['incl_state'],
-        sample=variant['sample'],
-        deterministic=True,
-        latent_size=variant['latent_size'],
-        window=variant['window'],
-        prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
-        prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
-        goal_baseline=variant['goal_baseline']
-    )
+    if variant['trainer_kwargs']['objective'] == 'non-parametric':
+        eval_policy = IdentityPolicy(eval_env, variant.get('demo', False))
+    else:
+        eval_policy = EncDecPolicy(
+            policy=policy,
+            features_keys=list(env.feature_sizes.keys()),
+            vaes=vaes,
+            incl_state=variant['incl_state'],
+            sample=variant['sample'],
+            deterministic=True,
+            latent_size=variant['latent_size'],
+            window=variant['window'],
+            prev_vae=prev_vae if variant['trainer_kwargs']['objective'] == 'goal' or variant['goal_baseline'] else None,
+            prev_incl_state=variant['trainer_kwargs']['prev_incl_state'],
+            goal_baseline=variant['goal_baseline']
+        )
 
     eval_path_collector = FullPathCollector(
         eval_env,
@@ -216,7 +222,8 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = {'OneSwitch': 0.1,
                       'Bottle': 0.15,
-                      'Valve': 0.2}[args.env_name]
+                      'Valve': 0.2,
+                      'BlockPush': 0.1}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
     latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
 
@@ -341,11 +348,20 @@ if __name__ == "__main__":
                                         'calibration_indices': None,
                                         'num_trains_per_train_loop': 0},
                           }
+                     'BlockPush':
+                         {'default': {'calibrate_split': False,
+                                      'calibration_indices': None},
+                          'no_online': {'calibrate_split': False,
+                                        'calibration_indices': None,
+                                        'num_trains_per_train_loop': 0},
+                          }
                      }[variant['env_config']['env_name']][variant['mode']]
 
         variant['algorithm_args'].update(mode_dict)
-
-        target = 'real_gaze' if variant['real_user'] else 'sim_target'
+        if args.env_name != 'BlockPush':
+            target = 'real_gaze' if variant['real_user'] else 'sim_target'
+        else:
+            target = 'keyboard' if variant['real_user'] else 'oracle'
         variant['env_config']['adapts'].append(target)
 
         if variant['trainer_kwargs']['objective'] == 'awr':

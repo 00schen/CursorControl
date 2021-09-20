@@ -157,7 +157,7 @@ class EncDecSACTrainer(SACTrainer):
 
         else:
             curr_latent, next_latent = curr_goal, next_goal
-            kl_loss = 0
+            kl_loss = ptu.zeros(1, requires_grad=False)
 
         """
         Policy and Alpha Loss

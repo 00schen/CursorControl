@@ -38,6 +38,8 @@ def default_overhead(config):
                 'static_gaze': static_gaze,
                 'real_gaze': real_gaze,
                 'joint': joint,
+                'sim_keyboard': sim_keyboard,
+                'keyboard': keyboard,
                 'goal': goal,
                 'reward': reward,
                 'sim_target': sim_target,
@@ -124,9 +126,7 @@ def action_factory(base):
         def joint(self, action, info={}):
             clip_by_norm = lambda traj, limit: traj / max(1e-4, norm(traj)) * np.clip(norm(traj), None, limit)
             action = clip_by_norm(action, .25)
-            self.action = self.smooth_alpha * action + (1 - self.smooth_alpha) * self.action if np.count_nonzero(
-                self.action) else action
-            info['joint'] = self.action
+            info['joint'] = action
             return action, info
 
         def target(self, coor, info={}):
@@ -217,43 +217,6 @@ class array_to_dict:
         return obs
 
 
-class oracle:
-    def __init__(self, master_env, config):
-        self.oracle_type = config['oracle']
-        if 'model' in self.oracle_type:
-            self.oracle = master_env.oracle = {
-                "Bottle": BottleOracle,
-            }[master_env.env_name](master_env.rng, **config['oracle_kwargs'])
-        else:
-            oracle_type = {
-                'keyboard': KeyboardOracle,
-                'dummy_gaze': BottleOracle,
-            }[config['oracle']]
-            if config['oracle'] == 'sim_gaze':  # TODO: look at how oracke works (why oracle_type)
-                self.oracle = master_env.oracle = oracle_type(**config['gaze_oracle_kwargs'])
-            elif config['oracle'] == 'dummy_gaze':
-                self.oracle = master_env.oracle = oracle_type(master_env.rng, **config['oracle_kwargs'])
-            else:
-                self.oracle = master_env.oracle = oracle_type()
-        self.master_env = master_env
-        del master_env.feature_sizes['goal']
-        master_env.feature_sizes['recommend'] = self.oracle.size
-
-    def _step(self, obs, r, done, info):
-        self._predict(obs, info)
-        return obs, r, done, info
-
-    def _reset(self, obs, info=None):
-        self.oracle.reset()
-        self.master_env.recommend = obs['recommend'] = np.zeros(self.oracle.size)
-        return obs
-
-    def _predict(self, obs, info):
-        recommend, _info = self.oracle.get_action(obs, info)
-        self.master_env.recommend = obs['recommend'] = info['recommend'] = recommend
-        info['noop'] = not self.oracle.status.curr_intervention
-
-
 class goal:
     """
     Chooses what features from info to add to obs
@@ -269,7 +232,7 @@ class goal:
             Bottle=None,
             OneSwitch=None,
             Valve=None,
-            AnySwitch=lambda info: [info['switch_pos']]
+            BlockPush=lambda info: [info['ground_truth']]
         )[self.env_name]
         self.hindsight_feat = dict(
             # Kitchen=({'tool_pos': 3, 'orders': 2},{'tool_pos': 3, 'orders': 2, 'tasks': 6}),
@@ -277,7 +240,7 @@ class goal:
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
             Valve={'valve_angle': 2},
-            AnySwitch={'tool_pos': 3}
+            BlockPush={'ground_truth': 3}
         )[self.env_name]
         # if isinstance(self.goal_feat_func,tuple):
         #     self.goal_feat_func = self.goal_feat_func[config['goal_func_ind']]
@@ -368,6 +331,7 @@ class real_gaze:
         features = self.face_processor.get_gaze_features(frame)
 
         if features is None:
+            print("GAZE NOT CAPTURED")
             gaze = np.zeros(self.gaze_dim)
         else:
             i_tracker_input = [torch.from_numpy(feature)[None].float().to(self.device) for feature in features]
@@ -433,6 +397,171 @@ class sim_target:
         noise = np.random.normal(scale=self.goal_noise_std, size=target.shape) if self.goal_noise_std else 0
         obs['target'] = target + noise
 
+from rl.policies.keyboard_policy import KeyboardPolicy
+class keyboard:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 6)
+        self.mode = config.get('mode')
+        self.noise_p = config.get('keyboard_p')
+        self.blank_p = config.get('blank_p')
+        self.smoothing = config.get('smoothing')
+        self.lag = config.get('lag')
+
+        self.policy = KeyboardPolicy(master_env, demo=False)
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.policy.reset()
+        self.action = np.zeros(self.size)
+        self.lag_queue = deque(np.zeros((self.lag, self.size))) if self.lag else deque()
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        action, _ = self.policy.get_action(obs)
+        obs['user_input'] = action
+        self.action = self.smoothing * self.action + action
+        action = (1-self.smoothing)*self.action
+        self.lag_queue.append(action)
+        lag_action = self.lag_queue.popleft()
+        action = lag_action
+        obs['target'] = action
+
+from rl.policies.encdec_policy import EncDecPolicy
+import rlkit.torch.pytorch_util as ptu
+import torch as th
+class sim_keyboard:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 6)
+        self.mode = config.get('mode')
+        self.noise_p = config.get('keyboard_p')
+        self.blank_p = config.get('blank_p')
+
+        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
+        loaded = th.load(file_name, map_location=ptu.device)
+        policy = loaded['trainer/policy']
+        prev_vae = loaded['trainer/vae'].to(ptu.device)
+        self.policy = EncDecPolicy(
+            policy=policy,
+            features_keys=['goal'],
+            vaes=[prev_vae],
+            deterministic=True,
+            latent_size=4,
+            incl_state=False,
+        )
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.policy.reset()
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        dist = norm(obs[self.feature] - obs['block_pos'])
+        old_dist = norm(obs[self.feature] - obs['old_block_pos'])
+        if self.mode == 'tool':
+            traj = obs[self.feature] - obs['tool_pos']
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'block':
+            traj = obs[self.feature] - obs['block_pos']
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'sip-puff':
+            index = dist < old_dist
+        elif self.mode == 'xy':
+            traj = obs[self.feature][:2] - obs['block_pos'][:2]
+            axis = np.argmax(np.abs(traj))
+            index = 2 * axis + (traj[axis] > 0)
+        elif self.mode == 'oracle':
+            oracle_action, _ = self.policy.get_action(obs)
+            axis = np.argmax(np.abs(oracle_action))
+            index = 2 * axis + (oracle_action[axis] > 0)
+
+        if np.random.uniform() < self.noise_p:
+            index = np.random.randint(self.size)
+        action = np.zeros(self.size)
+        action[index] = 1
+        if np.random.uniform() < self.blank_p:
+            action = np.zeros(self.size)
+
+        if self.mode == 'sip-puff':
+            action[-3:] = obs['old_block_pos']
+        obs['target'] = action
+
+from rl.policies.block_push_oracle import BlockPushOracle
+class oracle:
+    def __init__(self, master_env, config):
+        self.env_name = master_env.env_name
+        self.master_env = master_env
+        self.feature = config.get('feature')
+        del master_env.feature_sizes['goal']
+        self.size = master_env.feature_sizes['target'] = config.get('keyboard_size', 7)
+        self.blank_p = config.get('blank_p',0)
+        self.spread = config.get('oracle_noise',0)
+        self.smoothing = config.get('smoothing',0)
+        self.lag = 0
+        # self.lag = config.get('lag',0)
+
+        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
+        # loaded = th.load(file_name, map_location=ptu.device)
+        loaded = th.load(file_name, map_location='cpu')
+        policy = loaded['trainer/policy']
+        # prev_vae = loaded['trainer/vae'].to(ptu.device)
+        prev_vae = loaded['trainer/vae'].to('cpu')
+        self.policy = EncDecPolicy(
+            policy=policy,
+            features_keys=['goal'],
+            vaes=[prev_vae],
+            deterministic=True,
+            latent_size=4,
+            incl_state=False,
+        )
+        # self.policy = BlockPushOracle()
+        # file_name = os.path.join('util_models', f'{self.env_name}_joint_tool_mapping.pkl')
+        # self.joint_tool_mapping = th.load(file_name, map_location=ptu.device)
+        self.use_tool_action = config.get('use_tool_action',False)
+
+    def _step(self, obs, r, done, info):
+        self.add_target(obs, info)
+        return obs, r, done, info
+
+    def _reset(self, obs, info=None):
+        self.policy.reset()
+        self.action = np.zeros(self.size)
+        self.lag_queue = deque(np.zeros((self.lag, self.size))) if self.lag else deque()
+        self.add_target(obs, info)
+        return obs
+
+    def add_target(self, obs, info):
+        action, _ = self.policy.get_action(obs)
+        action += np.random.normal(np.zeros(action.shape), self.spread)
+        if np.random.uniform() < self.blank_p:
+            action = np.zeros(action.shape)
+        self.action = self.smoothing * self.action + action
+        action = (1-self.smoothing)*self.action
+        self.lag_queue.append(action)
+        lag_action = self.lag_queue.popleft()
+        action = lag_action
+        # if self.use_tool_action:
+        #     action = ptu.get_numpy(self.joint_tool_mapping(ptu.from_numpy(action)))
+ 
+        obs['target'] = action
+
 
 class joint:
     def __init__(self, master_env, config):
@@ -445,7 +574,6 @@ class joint:
     def _reset(self, obs, info=None):
         obs['raw_obs'] = np.concatenate((obs['raw_obs'], obs['joint']))
         return obs
-
 
 class dict_to_array:
     def __init__(self, master_env, config):
@@ -553,6 +681,15 @@ class reward:
         elif self.reward_type == 'valve_exp':
             dist = np.abs(self.master_env.base_env.angle_diff(info['valve_angle'], info['target_angle']))
             r = np.exp(-self.reward_temp * dist) - 1
+        elif self.reward_type == 'blockpush_exp':
+            r = -1
+            dist = norm(info['block_pos']-info['target_pos']) + norm(info['tool_pos'] - info['block_pos'])/2
+            old_dist = norm(info['old_block_pos']-info['target_pos']) + norm(info['old_tool_pos'] - info['old_block_pos'])/2
+            under_table_penalty = max(0, info['target_pos'][2]-info['tool_pos'][2]-.1)
+            sigmoid = lambda x: 1/(1 + np.exp(-x))
+            r += sigmoid(self.reward_temp*(old_dist-dist-under_table_penalty))*self.reward_offset
+            if info['task_success']:
+                r = 0
         else:
             raise Exception
 
