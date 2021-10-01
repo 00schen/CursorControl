@@ -218,7 +218,7 @@ if __name__ == "__main__":
             beta=0 if args.det else 1e-4
         ),
         demo_paths=[
-            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_100_test.npy"),
+            os.path.join(main_dir, "demos", f"{args.env_name}_keyboard_on_policy_50_test.npy"),
         ],
         env_config=dict(
             terminate_on_failure=False,
