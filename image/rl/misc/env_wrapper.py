@@ -2,6 +2,7 @@ from functools import reduce
 import os
 from pathlib import Path
 import h5py
+from collections import deque
 
 import numpy as np
 from numpy.random import default_rng
@@ -72,6 +73,7 @@ class LibraryWrapper(Env):
             "OneSwitch": ag.OneSwitchJacoEnv,
             "Bottle": ag.BottleJacoEnv,
             "Valve": ag.ValveJacoEnv,
+            "BlockPush": ag.BlockPushJacoEnv,
         }[config['env_name']]
         self.base_env = self.base_env(**config['env_kwargs'])
         self.observation_space = self.base_env.observation_space
@@ -84,7 +86,6 @@ class LibraryWrapper(Env):
 
     def step(self, action):
         obs, r, done, info = self.base_env.step(action)
-        # done = info['task_success']
         if self.terminate_on_failure and hasattr(self.base_env, 'wrong_goal_reached'):
             done = done or self.base_env.wrong_goal_reached()
         return obs, r, done, info
@@ -116,7 +117,6 @@ def action_factory(base):
                 "disc_traj": spaces.Box(0, 1, (6,)),
             }[config['action_type']]
             self.translate = {
-                # 'target': target,
                 'trajectory': self.trajectory,
                 'joint': self.joint,
                 'disc_traj': self.disc_traj,
@@ -226,25 +226,19 @@ class goal:
         self.env_name = master_env.env_name
         self.master_env = master_env
         self.goal_feat_func = dict(
-            # Kitchen=(lambda info: [info['target1_pos'], info['orders']],lambda info: [info['target1_pos'], info['orders'],info['tasks']]),
             Kitchen=lambda info: [info['target1_pos'], info['orders'], info['tasks']],
-            # Kitchen=None,
             Bottle=None,
             OneSwitch=None,
             Valve=None,
             BlockPush=lambda info: [info['ground_truth']]
         )[self.env_name]
         self.hindsight_feat = dict(
-            # Kitchen=({'tool_pos': 3, 'orders': 2},{'tool_pos': 3, 'orders': 2, 'tasks': 6}),
             Kitchen={'tool_pos': 3, 'orders': 2, 'tasks': 6},
             Bottle={'tool_pos': 3},
             OneSwitch={'tool_pos': 3},
             Valve={'valve_angle': 2},
             BlockPush={'ground_truth': 3}
         )[self.env_name]
-        # if isinstance(self.goal_feat_func,tuple):
-        #     self.goal_feat_func = self.goal_feat_func[config['goal_func_ind']]
-        #     self.hindsight_feat = self.hindsight_feat[config['goal_func_ind']]
         master_env.goal_size = self.goal_size = sum(self.hindsight_feat.values())
 
     def _step(self, obs, r, done, info):
@@ -319,7 +313,7 @@ class real_gaze:
         else:
             self.device = "cpu"
             state = torch.load(os.path.join(main_dir, 'gaze_capture', 'checkpoint.pth.tar'),
-                               map_location=torch.device('cpu'))['state_dict']
+                               map_location=torch.device(ptu.device))['state_dict']
         self.i_tracker.load_state_dict(state, strict=False)
 
         self.gaze = np.zeros(self.gaze_dim)
@@ -448,7 +442,7 @@ class sim_keyboard:
         self.noise_p = config.get('keyboard_p')
         self.blank_p = config.get('blank_p')
 
-        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
+        file_name = os.path.join('image','util_models', f'{self.env_name}_params_s1_sac.pkl')
         loaded = th.load(file_name, map_location=ptu.device)
         policy = loaded['trainer/policy']
         prev_vae = loaded['trainer/vae'].to(ptu.device)
@@ -515,14 +509,11 @@ class oracle:
         self.spread = config.get('oracle_noise',0)
         self.smoothing = config.get('smoothing',0)
         self.lag = 0
-        # self.lag = config.get('lag',0)
 
-        file_name = os.path.join('util_models', f'{self.env_name}_params_s1_sac_det.pkl')
-        # loaded = th.load(file_name, map_location=ptu.device)
-        loaded = th.load(file_name, map_location='cpu')
+        file_name = os.path.join('image','util_models', f'{self.env_name}_params_s1_sac.pkl')
+        loaded = th.load(file_name, map_location=ptu.device)
         policy = loaded['trainer/policy']
-        # prev_vae = loaded['trainer/vae'].to(ptu.device)
-        prev_vae = loaded['trainer/vae'].to('cpu')
+        prev_vae = loaded['trainer/vae'].to(ptu.device)
         self.policy = EncDecPolicy(
             policy=policy,
             features_keys=['goal'],
@@ -531,9 +522,6 @@ class oracle:
             latent_size=4,
             incl_state=False,
         )
-        # self.policy = BlockPushOracle()
-        # file_name = os.path.join('util_models', f'{self.env_name}_joint_tool_mapping.pkl')
-        # self.joint_tool_mapping = th.load(file_name, map_location=ptu.device)
         self.use_tool_action = config.get('use_tool_action',False)
 
     def _step(self, obs, r, done, info):
@@ -557,8 +545,6 @@ class oracle:
         self.lag_queue.append(action)
         lag_action = self.lag_queue.popleft()
         action = lag_action
-        # if self.use_tool_action:
-        #     action = ptu.get_numpy(self.joint_tool_mapping(ptu.from_numpy(action)))
  
         obs['target'] = action
 
@@ -578,7 +564,6 @@ class joint:
 class dict_to_array:
     def __init__(self, master_env, config):
         pass
-        # master_env.observation_space = spaces.Box(-np.inf,np.inf,(master_env.observation_space.low.size+3,))
 
     def _step(self, obs, r, done, info):
         obs = np.concatenate((obs['raw_obs'], obs['target']))
@@ -610,12 +595,6 @@ class reward:
                 r = 0
         elif self.reward_type == 'custom_kitchen':
             r = -1
-            # print(
-            # 	max(0,info['microwave_angle'] - -.7),
-            # 	max(0,.7-info['fridge_angle']),
-            # 	norm(info['tool_pos'] - info['target1_pos']),
-            # 	norm(info['tool_pos'] - info['target_pos'])
-            # 	)
             if not info['tasks'][0] and (info['orders'][0] == 0 or info['tasks'][1]):
                 r += np.exp(-10 * max(0, info['microwave_angle'] - -.7)) / 6 * 3 / 4 * 1 / 2
                 r += np.exp(-self.reward_temp * norm(info['tool_pos'] - info['microwave_handle'])) / 6 / 4 * 1 / 2
@@ -675,7 +654,6 @@ class reward:
             r = -1 + .5 * (info['task_success'] + info['door_open'])
         elif self.reward_type == 'terminal_interrupt':
             r = info['noop']
-        # done = info['noop']
         elif self.reward_type == 'part_sparse_kitchen':
             r = -1 + sum(info['tasks']) / 6
         elif self.reward_type == 'valve_exp':

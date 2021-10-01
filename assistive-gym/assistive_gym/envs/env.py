@@ -6,8 +6,6 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 import pybullet as p
-# import cv2
-# from keras.models import load_model
 from screeninfo import get_monitors
 
 from .util import Util
@@ -17,7 +15,6 @@ class AssistiveEnv(gym.Env):
     def __init__(self, robot_type='pr2', task='scratch_itch', human_control=False, frame_skip=5, time_step=0.02, action_robot_len=7, action_human_len=0, obs_robot_len=30, obs_human_len=0):
         # Start the bullet physics server
         self.id = p.connect(p.DIRECT)
-        # print('Physics server ID:', self.id)
         self.gui = False
 
         self.robot_type = robot_type
@@ -60,12 +57,9 @@ class AssistiveEnv(gym.Env):
         except Exception as e:
             self.width = 1920
             self.height = 1080
-            # self.width = 3840
-            # self.height = 2160
 
         if human_control:
             pass
-            # self.human_limits_model = load_model(os.path.join(self.world_creation.directory, 'realistic_arm_limits_model.h5'))
         self.right_arm_previous_valid_pose = None
         self.left_arm_previous_valid_pose = None
         self.human_joint_lower_limits = None
@@ -89,10 +83,7 @@ class AssistiveEnv(gym.Env):
 
     def take_step(self, action, robot_arm='left', gains=0.05, forces=1, human_gains=0.1, human_forces=1, step_sim=True):
         action = np.clip(action, a_min=self.action_space.low, a_max=self.action_space.high)
-        # print('cameraYaw=%.2f, cameraPitch=%.2f, distance=%.2f' % p.getDebugVisualizerCamera(physicsClientId=self.id)[-4:-1])
 
-        # print('Total time:', self.total_time)
-        # self.total_time += 0.1
         self.iteration += 1
         if self.last_sim_time is None:
             self.last_sim_time = time.time()
@@ -198,7 +189,6 @@ class AssistiveEnv(gym.Env):
                 upper_limit = joint_info[9]
                 self.human_joint_lower_limits.append(lower_limit)
                 self.human_joint_upper_limits.append(upper_limit)
-                # print(joint_name, joint_pos, lower_limit, upper_limit)
         for i, j in enumerate(self.human_controllable_joint_indices):
             if joint_positions[i] < self.human_joint_lower_limits[i]:
                 p.resetJointState(self.human, jointIndex=j, targetValue=self.human_joint_lower_limits[i], targetVelocity=0, physicsClientId=self.id)
@@ -398,16 +388,12 @@ class AssistiveEnv(gym.Env):
                 self.video_writer.release()
             now = datetime.datetime.now()
             date = now.strftime('%Y-%m-%d_%H-%M-%S')
-            # self.video_writer = cv2.VideoWriter('%s_%s.avi' % (task, date), cv2.VideoWriter_fourcc(*'MJPG'), 10, (self.width, self.height))
 
     def record_video_frame(self):
         pass
     def get_frame(self):
-        # if self.record_video and self.gui:
         frame = np.reshape(p.getCameraImage(width=self.width//4, height=self.height//3, viewMatrix=self.viewMatrix, projectionMatrix=self.projMatrix, renderer=p.ER_BULLET_HARDWARE_OPENGL, physicsClientId=self.id)[2], (self.height//3, self.width//4, 4))[:, :, :4]
         return frame
-            # frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            # self.video_writer.write(frame)
 
     def update_targets(self):
         pass
@@ -421,19 +407,9 @@ class AssistiveEnv(gym.Env):
 
                 self.world_creation = WorldCreation(self.id, robot_type=self.robot_type, task=self.task, time_step=self.time_step, np_random=self.np_random, config=self.config)
                 self.util = Util(self.id, self.np_random)
-                # print('Physics server ID:', self.id)
             else:
                 p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
                 p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         else:
-            # if width is None:
-            #     # return np.reshape(p.getCameraImage(width=self.width, height=self.height, renderer=p.ER_BULLET_HARDWARE_OPENGL, physicsClientId=self.id)[2], (self.height, self.width, 4))[:, :, :3]
-            #     return np.reshape(p.getCameraImage(width=self.width, height=self.height, viewMatrix=self.viewMatrix, physicsClientId=self.id)[2], (self.height, self.width, 4))[:, :, :3]
-            # else:
-            #     # image = np.reshape(p.getCameraImage(width=width, height=height, renderer=p.ER_BULLET_HARDWARE_OPENGL, physicsClientId=self.id)[2], (height, width, 4))[:, :, :3]
-            #     image = np.reshape(p.getCameraImage(width=width, height=height, viewMatrix=self.viewMatrix, physicsClientId=self.id)[2], (height, width, 4))[:, :, :3]
-            #     # image = image.transpose((2,0,1))
-            #     return image
-            #     # return np.reshape(p.getCameraImage(width=width, height=height, physicsClientId=self.id)[2], (height, width, 4))[:, :, :3]
             pass
 

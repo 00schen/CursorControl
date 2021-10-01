@@ -77,24 +77,12 @@ class ValveEnv(AssistiveEnv):
             color = [0, 0, 1, 1]
         p.changeVisualShape(self.target_indicator, -1, rgbaColor=color)
 
-        # if self.task_success:
-        #     target_color = [0, 1, 0, 1]
-        #     p.changeVisualShape(self.target, -1, rgbaColor=target_color)
-        # elif self.curr_step >= self.step_limit:
-        #     target_color = [1, 0, 0, 1]
-        #     p.changeVisualShape(self.target, -1, rgbaColor=target_color)
-
         if self.task_success:
             reward = 0
         else:
             reward = -np.abs(self.angle_diff(self.valve_angle, self.target_angle)) / np.pi
 
-            # reward so far between (-1, 0), want to make between (-0.5, -0.1)
-            # reward = reward / 2
-            # reward = 0.4 * reward - 0.1
             reward = 0.9 * reward - 0.1
-            # if not (self.is_success or self.has_moved):
-            #     reward += (np.exp(-np.linalg.norm(self.valve_pos - self.tool_pos)) - 1) / 2
 
         direction = np.zeros(3)
         if self.is_success:
@@ -224,7 +212,6 @@ class ValveEnv(AssistiveEnv):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1.1])
 
-        # if self.stochastic:
         self.init_pos += self.init_pos_random.uniform([-0.1, -0.1, -0.1], [0.1, 0.1, 0.1], size=3)
 
     def init_robot_arm(self):

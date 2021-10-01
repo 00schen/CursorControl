@@ -71,7 +71,6 @@ class ITrackerData(data.Dataset):
 
         print('Loading iTracker dataset...')
         metaFile = os.path.join(dataPath, 'metadata.mat')
-        #metaFile = 'metadata.mat'
         if metaFile is None or not os.path.isfile(metaFile):
             raise RuntimeError('There is no such file %s! Provide a valid dataset path.' % metaFile)
         self.metadata = loadMetadata(metaFile)
@@ -114,7 +113,6 @@ class ITrackerData(data.Dataset):
             im = Image.open(path).convert('RGB')
         except OSError:
             raise RuntimeError('Could not read image: ' + path)
-            #im = Image.new("RGB", self.imSize, "white")
 
         return im
 

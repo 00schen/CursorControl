@@ -83,15 +83,6 @@ class FaceProcessor:
         eye_landmarks = self._get_landmarks(landmarks, points)
         left, top, width, height = cv2.boundingRect(eye_landmarks)
 
-        # adjusted_height = width * (self.eye_height / self.eye_width)
-        # margin = (adjusted_height - height) / 2
-        # top_margin = math.ceil(margin)
-        # bot_margin = math.floor(margin)
-        #
-        # eye = frame[top - top_margin: top + height + bot_margin, left: left + width]
-        # eye = cv2.resize(eye, (self.eye_width, self.eye_height))
-        # eye = cv2.equalizeHist(eye)
-
         w_margin = int(width / 3)
         h_margin = (width + 2 * w_margin - height) / 2
         top_margin = math.ceil(h_margin)

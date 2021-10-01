@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import pybullet as p
-# from .human_creation import HumanCreation
 
 class WorldCreation:
     def __init__(self, pid, robot_type='pr2', task='scratch_itch', time_step=0.02, np_random=None, config=None):
@@ -12,7 +11,6 @@ class WorldCreation:
         self.np_random = np_random
         self.config = config
         self.directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'assets')
-        # self.human_creation = HumanCreation(self.id, np_random=np_random, cloth=(task=='dressing'))
         self.human_limit_scale = 1.0
         self.human_strength = 1.0
         self.human_tremors = np.zeros(10)
@@ -52,20 +50,6 @@ class WorldCreation:
         else:
             furniture = None
 
-        # if init_human:
-        #     # Choose gender
-        #     if gender not in ['male', 'female']:
-        #         gender = self.np_random.choice(['male', 'female'])
-        #     # Specify human impairments
-        #     if human_impairment == 'random':
-        #         human_impairment = self.np_random.choice(['none', 'limits', 'weakness', 'tremor'])
-        #     elif human_impairment == 'no_tremor':
-        #         human_impairment = self.np_random.choice(['none', 'limits', 'weakness'])
-        #     self.human_impairment = human_impairment
-        #     self.human_limit_scale = 1.0 if human_impairment != 'limits' else self.np_random.uniform(0.5, 1.0)
-        #     self.human_strength = 1.0 if human_impairment != 'weakness' else self.np_random.uniform(0.25, 1.0)
-        #     human, human_lower_limits, human_upper_limits = self.init_human(static_human_base, self.human_limit_scale, print_joints, gender=gender)
-        # else:
         self.human_impairment = 'none'
         self.human_limit_scale = 1.0
         self.human_strength = 1.0
@@ -90,16 +74,6 @@ class WorldCreation:
         
         return human, furniture, robot, robot_lower_limits, robot_upper_limits, human_lower_limits, human_upper_limits, robot_right_arm_joint_indices, robot_left_arm_joint_indices, gender
 
-
-    # def init_human(self, static_human_base=False, limit_scale=1.0, print_joints=False, gender='random'):
-    #     human = self.human_creation.create_human(static=static_human_base, limit_scale=limit_scale, specular_color=[0.1, 0.1, 0.1], gender=gender, config=self.config)
-    #     if print_joints:
-    #         self.print_joint_info(human, show_fixed=True)
-
-    #     lower_limits, upper_limits = self.enforce_joint_limits(human)
-
-    #     return human, lower_limits, upper_limits
-
     def enforce_joint_limits(self, body):
         # Enforce joint limits
         joint_states = p.getJointStates(body, jointIndices=list(range(p.getNumJoints(body, physicsClientId=self.id))), physicsClientId=self.id)
@@ -117,7 +91,6 @@ class WorldCreation:
                 upper_limit = 1e10
             lower_limits.append(lower_limit)
             upper_limits.append(upper_limit)
-            # print(joint_name, joint_pos, lower_limit, upper_limit)
             if joint_pos < lower_limit:
                 p.resetJointState(body, jointIndex=j, targetValue=lower_limit, targetVelocity=0, physicsClientId=self.id)
             elif joint_pos > upper_limit:

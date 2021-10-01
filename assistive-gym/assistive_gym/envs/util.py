@@ -64,10 +64,7 @@ class Util:
                     joint_info = p.getJointInfo(body, j, physicsClientId=self.id)
                     lower_limit = joint_info[8]
                     upper_limit = joint_info[9]
-                    # print(len(self.ik_lower_limits[key]), joint_info[1], lower_limit, upper_limit)
                     if lower_limit == 0 and upper_limit == -1:
-                        # lower_limit = -1e10
-                        # upper_limit = 1e10
                         lower_limit = -2*np.pi
                         upper_limit = 2*np.pi
                     self.ik_lower_limits[key].append(lower_limit)
@@ -76,7 +73,6 @@ class Util:
                         self.ik_joint_ranges[key].append(upper_limit - lower_limit)
                     else:
                         self.ik_joint_ranges[key].append((upper_limit - lower_limit)/2.0)
-                    # self.ik_rest_poses[key].append((upper_limit + lower_limit)/2.0)
                     j_names.append([len(j_names)] + list(joint_info[:2]))
         self.ik_rest_poses[key] = self.np_random.uniform(self.ik_lower_limits[key], self.ik_upper_limits[key])
         if mean_rest_pose is not None:
@@ -86,9 +82,6 @@ class Util:
             ik_joint_poses = np.array(p.calculateInverseKinematics(body, target_joint, targetPosition=target_pos, targetOrientation=target_orient, lowerLimits=self.ik_lower_limits[key], upperLimits=self.ik_upper_limits[key], jointRanges=self.ik_joint_ranges[key], restPoses=self.ik_rest_poses[key], maxNumIterations=max_iterations, physicsClientId=self.id))
         else:
             ik_joint_poses = np.array(p.calculateInverseKinematics(body, target_joint, targetPosition=target_pos, lowerLimits=self.ik_lower_limits[key], upperLimits=self.ik_upper_limits[key], jointRanges=self.ik_joint_ranges[key], restPoses=self.ik_rest_poses[key], maxNumIterations=max_iterations, physicsClientId=self.id))
-        # print(j_names)
-        # print(ik_joint_poses)
-        # exit()
         target_joint_positions = ik_joint_poses[ik_indices]
         return target_joint_positions
 
@@ -230,12 +223,6 @@ class Util:
 
         forearm_in_sleeve = points_above_below_forearm and (forearm_intersects_triangle1 or forearm_intersects_triangle2)
         upperarm_in_sleeve = points_above_below_upperarm and (upperarm_intersects_triangle1 or upperarm_intersects_triangle2)
-
-        # Find the point at which the arm central axis intersects one of the triangles
-        # p0, p1, p2 = triangle1_points
-        # N = np.cross(p1-p0, p2-p0)
-        # t = -np.dot(hand_end_pos, N-p0) / np.dot(hand_end_pos, elbow_end_pos-hand_end_pos)
-        # intersection_point = hand_end_pos + t*(elbow_end_pos-hand_end_pos)
 
         return forearm_in_sleeve, upperarm_in_sleeve, distance_along_forearm, distance_along_upperarm, distance_to_hand, distance_to_elbow, distance_to_shoulder, np.linalg.norm(hand_end_pos - elbow_end_pos), np.linalg.norm(elbow_pos - shoulder_pos)
 

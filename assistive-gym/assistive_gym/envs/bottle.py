@@ -16,7 +16,7 @@ default_orientation = p.getQuaternionFromEuler([0, 0, 0])
 
 class BottleEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
-                 capture_frames=False, stochastic=True, debug=False, step_limit=200):
+                 capture_frames=False, stochastic=True, debug=False, step_limit=200,**kwargs):
         super(BottleEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                         action_robot_len=7, obs_robot_len=14)
         self.observation_space = spaces.Box(-np.inf, np.inf, (7 + 3 + 6 + 7,), dtype=np.float32)
@@ -68,7 +68,6 @@ class BottleEnv(AssistiveEnv):
             'tool_pos': self.tool_pos,
             'sub_target': self.sub_target_pos.copy(),
             'target_pos': self.target_pos,
-            # 'unique_index': self.unique_index,
             'unique_targets': self.bottle_poses,
         }
         done = False

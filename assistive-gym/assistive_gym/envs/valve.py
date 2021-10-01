@@ -238,9 +238,6 @@ class ValveEnv(AssistiveEnv):
 
         self.n_success = 0
 
-        # if self.term_cond == 'keyboard':
-        #     self.success = None
-
         obs = self._get_obs([0])
         return obs
 
@@ -248,7 +245,6 @@ class ValveEnv(AssistiveEnv):
         """exchange this function for curriculum"""
         self.init_pos = np.array([0, -.5, 1.1])
 
-        # if self.stochastic:
         self.init_pos += self.init_pos_random.uniform([-0.1, -0.1, -0.1], [0.1, 0.1, 0.1], size=3)
 
     def init_robot_arm(self):
@@ -289,7 +285,6 @@ class ValveEnv(AssistiveEnv):
 
         if self.stochastic:
             self.valve_pos_noise = np.array([self.np_random.uniform(-.05, .05), 0, 0])
-            # self.wall_noise = np.array([0, self.np_random.uniform(-.05, .05), 0])
             # no y noise so can use 2D coordinates only for goal estimation
             self.wall_noise = np.zeros(3)
 

@@ -9,7 +9,6 @@ class ModdedReplayBuffer(EnvReplayBuffer):
             max_replay_buffer_size,
             env,
             env_info_sizes={'episode_success': 1},
-            # env_info_sizes={'noop':1,},
             sample_base=0,
             latent_size=3,
             store_latents=True,
@@ -33,12 +32,6 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         self.window_size = window_size
         if self.window_size is not None:
             self._hist_indices = []
-            # for key in env.feature_sizes.keys():
-            #     iter_dict[key] *= window
-            # self._obs_dict_keys.add('obs_hist')
-            # iter_dict['obs_hist'] = self._observation_dim * window
-            # self._obs_dict_keys.add('hist_mask')
-            # iter_dict['hist_mask'] = window
 
         if store_latents:
             self._obs_dict_keys.add('latents')
@@ -127,10 +120,6 @@ class ModdedReplayBuffer(EnvReplayBuffer):
         if self._size < batch_size:
             batch_size = self._size
         indices = np.random.choice(self._size, size=batch_size, replace=self._replace)
-        # indices = np.random.choice(self._size, size=batch_size, replace=self._replace or self._size < batch_size)
-        # if not self._replace and self._size < batch_size:
-        #     warnings.warn(
-        #         'Replace was set to false, but is temporarily set to true because batch size is larger than current size of replay.')
         return self._get_batch(indices)
 
     def add_path(self, path):

@@ -22,6 +22,8 @@ import numpy as np
 
 def experiment(variant):
     import torch as th
+    if variant['cpu']:
+        ptu.set_gpu_mode(False)
 
     expl_config = deepcopy(variant['env_config'])
     expl_config['factories'] += ['session']
@@ -41,7 +43,7 @@ def experiment(variant):
         obs_space = env.observation_space
 
     feat_dim = obs_space.low.size + reduce(operator.mul,
-                                                       getattr(env.base_env, 'goal_set_shape', (0,)), 1)
+                                            getattr(env.base_env, 'goal_set_shape', (0,)), 1)
     obs_dim = feat_dim + sum(env.feature_sizes.values())
 
     vaes = []
@@ -139,7 +141,7 @@ def experiment(variant):
         sample_base=0,
         latent_size=variant['latent_size'],
         store_latents=True,
-        window_size=args.window
+        window_size=variant['window']
     )
     trainer = LatentEncDecSACTrainer(
         vaes=vaes,
@@ -162,7 +164,7 @@ def experiment(variant):
             sample_base=0,
             latent_size=variant['latent_size'],
             store_latents=True,
-            window_size=args.window
+            window_size=variant['window']
         )
     else:
         calibration_buffer = None
@@ -225,7 +227,10 @@ if __name__ == "__main__":
                       'Valve': 0.2,
                       'BlockPush': 0.1}[args.env_name]
     beta = 1e-4 if args.env_name == 'Valve' else 1e-2
-    latent_size = 2 if args.env_name == 'Valve' else 3  # abuse of notation, but same dim if encoder outputs goals
+    latent_size = {'OneSwitch': 3,
+                      'Bottle': 3,
+                      'Valve': 2,
+                      'BlockPush': 4}[args.env_name]  # abuse of notation, but same dim if encoder outputs goals
 
     pretrain_path = f'{args.env_name}_params_s1_sac'
     if args.pre_det:
@@ -233,6 +238,7 @@ if __name__ == "__main__":
     pretrain_path += '.pkl'
 
     default_variant = dict(
+        cpu=args.gpus > 0,
         goal_baseline=args.goal_baseline,
         latent_calibrate=args.latent_calibrate,
         freeze_decoder=not args.unfreeze_decoder,
@@ -245,14 +251,14 @@ if __name__ == "__main__":
         layer_size=64,
         replay_buffer_size=int(1e4 * path_length),
         balance_calibration=True,
-        window=args.window,
+        window=args.window if args.window else None,
         trainer_kwargs=dict(
             sample=not args.det,
             beta=0 if args.det else beta,
             objective=args.objective,
             grad_norm_clip=None,
             prev_incl_state=args.prev_incl_state,
-            window_size=args.window,
+            window_size=args.window if args.window else None,
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -274,7 +280,7 @@ if __name__ == "__main__":
             goal_noise_std=goal_noise_std,
             terminate_on_failure=True,
             env_kwargs=dict(frame_skip=5, debug=False, target_indices=target_indices,
-                            stochastic=True, num_targets=8, min_error_threshold=np.pi / 16,
+                            stochastic=True, num_targets=8 if args.env_name == 'Valve' else 5, min_error_threshold=np.pi / 16,
                             use_rand_init_angle=False, term_thresh=20,
                             term_cond='keyboard' if not args.sim else 'auto'),
             action_type='joint',
@@ -296,7 +302,6 @@ if __name__ == "__main__":
         'algorithm_args.trajs_per_index': [1],
         'lr': [1e-3],
         'algorithm_args.num_trains_per_train_loop': [50],
-        # 'algorithm_args.calibrate_input': ['target_position'],
         'seedid': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     }
 
@@ -347,7 +352,7 @@ if __name__ == "__main__":
                           'no_online': {'calibrate_split': False,
                                         'calibration_indices': None,
                                         'num_trains_per_train_loop': 0},
-                          }
+                          },
                      'BlockPush':
                          {'default': {'calibrate_split': False,
                                       'calibration_indices': None},

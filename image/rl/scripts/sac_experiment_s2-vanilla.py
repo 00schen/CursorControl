@@ -128,7 +128,6 @@ if __name__ == "__main__":
     target_indices = [1, 2, 3] if args.env_name == 'OneSwitch' else None
     goal_noise_std = 0.1 if args.env_name == 'OneSwitch' else 0.15
     default_variant = dict(
-        # mode=args.mode,
         real_user=not args.sim,
         pretrain_path=f'{args.env_name}_params_s1_sac.pkl',
         latent_size=3,
@@ -143,8 +142,6 @@ if __name__ == "__main__":
             qf_lr=3e-4,
             reward_scale=1,
             use_automatic_entropy_tuning=True,
-            # beta=0.01,
-            # grad_norm_clip=None
         ),
         algorithm_args=dict(
             batch_size=256,
@@ -197,7 +194,6 @@ if __name__ == "__main__":
 
     def process_args(variant):
         variant['env_config']['seedid'] = variant['seedid']
-        # variant['algorithm_args']['seedid'] = variant['seedid']
 
         if not args.use_ray:
             variant['render'] = args.no_render
@@ -235,10 +231,6 @@ if __name__ == "__main__":
 
         target = 'real_gaze' if variant['real_user'] else 'sim_target'
         variant['env_config']['adapts'].insert(1,target)
-
-        # if variant['trainer_kwargs']['objective'] == 'awr':
-            # variant['algorithm_args']['relabel_failures'] = False
-
 
     args.process_args = process_args
 

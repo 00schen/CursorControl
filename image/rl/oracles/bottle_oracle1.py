@@ -13,7 +13,6 @@ class BottleOracle(UserModelOracle):
 		final_door_pos = (np.array([-.15,.17,0]) if info['target_index']//2 else np.array([.15,.17,0])) + shelf_pos
 		door_offset = np.array([.02,0,0]) if info['target_index']%2 else np.array([-.02,0,0])
 		aux_pos = target + np.array([.1,.4,0])
-		# door_open = norm(door_pos-final_door_pos) < .05
 
 		if not info['door_open']:
 			if not self.aux_reached and info['target_index'] == 3:
@@ -32,7 +31,6 @@ class BottleOracle(UserModelOracle):
 		new_traj = info['tool_pos'] - info['old_tool_pos']
 		cos_error = np.dot(old_traj,new_traj)/(norm(old_traj)*norm(new_traj))
 		criterion = cos_error < self.threshold
-		# info['distance_to_target'] = norm(info['tool_pos']-target_pos)
 		return criterion, target_pos
 	def reset(self):
 		self.aux_reached = False

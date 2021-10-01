@@ -58,7 +58,6 @@ class FullPathCollector(MdpPathCollector):
             )
             path_len = len(path['actions'])
             num_steps_collected += path_len
-            # path['terminals'] = np.logical_or(path['rewards'] < 0, path['terminals'])
             paths.append(path)
         self._num_paths_total += len(paths)
         self._num_steps_total += num_steps_collected

@@ -15,7 +15,7 @@ HIGH_LIMIT = .2
 class LightSwitchEnv(AssistiveEnv):
     def __init__(self, message_indices=None, success_dist=.03, session_goal=False, frame_skip=5, robot_type='jaco',
                  capture_frames=False, stochastic=True, debug=False, target_indices=None, num_targets=5,
-                 step_limit=200):
+                 step_limit=200,**kwargs):
         super(LightSwitchEnv, self).__init__(robot_type=robot_type, task='switch', frame_skip=frame_skip,
                                              time_step=0.02, action_robot_len=7, obs_robot_len=18)
         self.success_dist = success_dist

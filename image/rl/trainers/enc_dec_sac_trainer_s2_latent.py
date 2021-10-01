@@ -174,7 +174,6 @@ class EncDecSACTrainer(TorchTrainer):
                 else:
                     raise NotImplementedError()
 
-        # supervised_loss /= len(batches)
         kl_loss /= len(batches)
         latent_error /= len(batches)
 

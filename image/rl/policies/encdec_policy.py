@@ -56,8 +56,6 @@ class EncDecPolicy(PyTorchModule):
                 # baseline specific to valve env
                 x_pred = self.x_svr_estimator.predict(np.concatenate(features)[None])[0]
                 y_pred = self.y_svr_estimator.predict(np.concatenate(features)[None])[0]
-                # x_pred = features[0][0]
-                # y_pred = features[0][1]
                 self.past_means.append([x_pred, y_pred])
                 self.past_means = self.past_means[-self.window:]
                 avg_pred = np.mean(self.past_means, axis=0)

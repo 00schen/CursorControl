@@ -179,10 +179,6 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
             real_success = path['env_infos'][-1]['task_success']
             timeout = len(path['observations']) == self.max_path_length and not real_success
 
-            # valve is still successful if timeout in success state
-            # if self.expl_env.env_name == 'Valve' and timeout:
-            #     real_success = path['env_infos'][-1]['is_success']
-
             gt.stamp('exploration sampling', unique=False)
             if self.real_user:
                 success = None
@@ -220,15 +216,7 @@ class BatchRLAlgorithm(TorchBatchRLAlgorithm, metaclass=abc.ABCMeta):
 
                                 else:
                                     raise NotImplementedError()
-
-                                # assumes same goal each timestep
-                                # not necessary when relabeling with final angle anyways
-                                # if not self.expl_env.env_name == 'Valve':
-                                #     for failed_path in failed_paths + [path]:
-                                #         for i in range(len(failed_path['observations'])):
-                                #             failed_path['observations'][i]['goal'] = wrong_reached_goal.copy()
-                                #             failed_path['next_observations'][i]['goal'] = wrong_reached_goal.copy()
-
+                                    
                             break
                         elif p.B3G_SHIFT in keys and keys[p.B3G_SHIFT] & p.KEY_WAS_TRIGGERED:
                             success = False
