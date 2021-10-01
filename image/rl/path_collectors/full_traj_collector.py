@@ -38,6 +38,7 @@ class FullPathCollector(MdpPathCollector):
                          rollout_fn,
                          save_env_in_snapshot)
         self.reset_callback = _wait_for_key if real_user else None
+        self.reset_callback = None
 
     def collect_new_paths(
             self,

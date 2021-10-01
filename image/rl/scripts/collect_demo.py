@@ -20,16 +20,16 @@ def collect_demonstrations(variant):
     env = default_overhead(variant['env_kwargs']['config'])
     env.seed(variant['seedid'] + 100 + current_time)
 
-    # file_name = os.path.join(variant['eval_path'])
-    # loaded = th.load(file_name, map_location='cpu')
-    # policy = EncDecPolicy(
-    #     policy=loaded['trainer/policy'],
-    #     features_keys=list(env.feature_sizes.keys()),
-    #     vae=loaded['trainer/vae'],
-    #     incl_state=False,
-    #     sample=False,
-    #     deterministic=False
-    # )
+    file_name = os.path.join(variant['eval_path'])
+    loaded = th.load(file_name, map_location='cpu')
+    policy = EncDecPolicy(
+        policy=loaded['trainer/policy'],
+        features_keys=list(env.feature_sizes.keys()),
+        vaes=[loaded['trainer/vae']],
+        incl_state=False,
+        sample=False,
+        deterministic=False
+    )
 
     # policy = FollowerPolicy(env)
     # policy = DemonstrationPolicy(policy, env, p=variant['p'])
@@ -69,10 +69,10 @@ if __name__ == "__main__":
     path_length = 100
     variant = dict(
         seedid=3000,
-        eval_path=os.path.join(main_dir, 'util_models', 'kitchen_debug.pkl'),
+        eval_path=os.path.join(main_dir, 'util_models', 'OneSwitch_params_s1_sac.pkl'),
         env_kwargs={'config': dict(
-            env_name='Valve',
-            env_kwargs=dict(frame_skip=5, debug=False, num_targets=None, stochastic=True,
+            env_name='OneSwitch',
+            env_kwargs=dict(frame_skip=5, debug=False, num_targets=5, stochastic=True,
                             min_error_threshold=np.pi / 32, use_rand_init_angle=True),
             oracle='keyboard',
             oracle_kwargs=dict(
