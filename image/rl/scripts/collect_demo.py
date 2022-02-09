@@ -33,7 +33,7 @@ def collect_demonstrations(variant):
 
     # policy = FollowerPolicy(env)
     # policy = DemonstrationPolicy(policy, env, p=variant['p'])
-    policy = KeyboardPolicy()
+    # policy = KeyboardPolicy()
 
     path_collector = FullPathCollector(
         env,
@@ -78,7 +78,7 @@ if __name__ == "__main__":
             oracle_kwargs=dict(
                 threshold=.5,
             ),
-            action_type='disc_traj',
+            action_type='joint',
             smooth_alpha=1,
 
             factories=[],

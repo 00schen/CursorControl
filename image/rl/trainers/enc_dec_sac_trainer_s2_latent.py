@@ -77,7 +77,6 @@ class EncDecSACTrainer(TorchTrainer):
 
         for b, objective, l in zip(batches, objectives, lambdas):
             obs = b['observations']
-
             features = th.cat([b[feature_name(key)] for key in self.feature_keys], dim=1)
             latents = b['curr_latents']
             goals = b['curr_goal']

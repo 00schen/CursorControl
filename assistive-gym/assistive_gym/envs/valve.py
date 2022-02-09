@@ -17,7 +17,7 @@ class ValveEnv(AssistiveEnv):
     def __init__(self, robot_type='jaco', success_dist=.05, target_indices=None, session_goal=False, frame_skip=5,
                  capture_frames=False, stochastic=True, debug=False, min_error_threshold=np.pi / 16,
                  max_error_threshold=np.pi / 4, num_targets=None, use_rand_init_angle=True, term_cond=None,
-                 term_thresh=20, preserve_angle=False):
+                 term_thresh=20, preserve_angle=False, **kwargs):
         super(ValveEnv, self).__init__(robot_type=robot_type, task='reaching', frame_skip=frame_skip, time_step=0.02,
                                        action_robot_len=7, obs_robot_len=14)
         obs_dim = 3 + 4 + 3 + 2 + 1 + 7 + 7

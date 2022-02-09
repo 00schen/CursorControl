@@ -231,6 +231,8 @@ if __name__ == "__main__":
                       'Bottle': 3,
                       'Valve': 2,
                       'BlockPush': 4}[args.env_name]  # abuse of notation, but same dim if encoder outputs goals
+    if args.env_name == 'OneSwitch':
+        args.window = 0
 
     pretrain_path = f'{args.env_name}_params_s1_sac'
     if args.pre_det:
